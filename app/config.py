@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     )
 
     # --- FastAPI ---
-    APP_NAME: str = "RyoukAI"
+    APP_NAME: str = "GEMEROTIC"
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = False
 

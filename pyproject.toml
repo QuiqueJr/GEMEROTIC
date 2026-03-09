@@ -1,5 +1,5 @@
 [project]
-name = "ryoukai"
+name = "gemerotic"
 version = "0.1.0"
 description = "Digital Twin platform for OT/IT network orchestration"
 requires-python = ">=3.11"
