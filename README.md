@@ -1,10 +1,10 @@
-# RyoukAI - Plataforma Digital Twin para Redes OT/IT
+# GEMEROTIC - Plataforma Digital Twin para Redes OT/IT
 
-## Descripcion del Proyecto
+## Descripción del Proyecto
 
-RyoukAI es un orquestador web que permite disenar una topologia de red, almacenarla en una Fuente Unica de Verdad (SSoT) y desplegarla como un Digital Twin funcional.
+GEMEROTIC es un orquestador web que permite diseñar una topología de red, almacenarla en una Fuente Unica de Verdad (SSoT) y desplegarla como un Digital Twin funcional.
 
-### Flujo Arquitectonico Completo (objetivo final)
+### Flujo Arquitectónico Completo (objetivo final)
 
 ```
 UI (React Flow) -> Core API (FastAPI) -> SSoT (NetBox) -> Generador de Configuracion (Jinja2)
@@ -18,9 +18,9 @@ UI (React Flow) -> Core API (FastAPI) -> SSoT (NetBox) -> Generador de Configura
 
 ## Estado Actual: Step 1 - Scaffolding del Proyecto
 
-### Que se construyo en este paso
+### Que se construyó en este paso
 
-Se creo la estructura base completa del proyecto FastAPI, siguiendo principios de escalabilidad y separacion de responsabilidades.
+Se creó la estructura base completa del proyecto FastAPI, siguiendo principios de escalabilidad y separacion de responsabilidades.
 
 ### Estructura de Carpetas
 
@@ -29,7 +29,7 @@ RyoukAI/
 ├── app/
 │   ├── __init__.py
 │   ├── main.py                  # Punto de entrada FastAPI (patron factory)
-│   ├── config.py                # Configuracion centralizada via pydantic-settings
+│   ├── config.py                # Configuración centralizada via pydantic-settings
 │   ├── dependencies.py          # Dependencias compartidas (inyeccion)
 │   │
 │   ├── api/
@@ -40,7 +40,7 @@ RyoukAI/
 │   │           └── topology.py  # (pendiente) POST /topology
 │   │
 │   ├── schemas/
-│   │   ├── topology.py          # (pendiente) Modelos Pydantic para topologia
+│   │   ├── topology.py          # (pendiente) Modelos Pydantic para topología
 │   │   └── responses.py         # (pendiente) Modelos de respuesta estandarizados
 │   │
 │   ├── services/
@@ -63,14 +63,14 @@ RyoukAI/
 └── pyproject.toml
 ```
 
-### Decisiones Arquitectonicas
+### Decisiones Arquitectónicas
 
-| Decision | Justificacion |
+| Decision | Justificación |
 |---|---|
-| **Patron Factory (`create_app`)** | Permite crear multiples instancias de la app para testing sin estado compartido |
+| **Patron Factory (`create_app`)** | Permite crear múltiples instancias de la app para testing sin estado compartido |
 | **API versionado (`/api/v1/`)** | Preparado para cambios incompatibles futuros sin romper clientes existentes |
-| **`schemas/` en lugar de `models/`** | Evita confusion con modelos ORM de base de datos (NetBox es nuestro SSoT, no tenemos ORM propio) |
-| **`pydantic-settings`** | Validacion y tipado de variables de entorno al arrancar, con soporte nativo para `.env` |
+| **`schemas/` en lugar de `models/`** | Evita confusión con modelos ORM de base de datos (NetBox es nuestro SSoT, no tenemos ORM propio) |
+| **`pydantic-settings`** | Validación y tipado de variables de entorno al arrancar, con soporte nativo para `.env` |
 | **Directorios placeholder** | `templates/` e `integrations/` estan listos para fases futuras (Jinja2, Containerlab, Ansible) |
 
 ### Dependencias Instaladas
@@ -79,8 +79,8 @@ RyoukAI/
 |---|---|---|
 | `fastapi` | >=0.115.0 | Framework web principal |
 | `uvicorn[standard]` | >=0.30.0 | Servidor ASGI |
-| `pydantic` | >=2.9.0 | Validacion de datos |
-| `pydantic-settings` | >=2.5.0 | Configuracion via entorno |
+| `pydantic` | >=2.9.0 | Validación de datos |
+| `pydantic-settings` | >=2.5.0 | Configuración vía entorno |
 | `pynetbox` | >=7.4.0 | Cliente para API de NetBox |
 | `httpx` | >=0.27.0 | Cliente HTTP async + TestClient |
 | `pytest` | >=8.3.0 | Framework de testing |
@@ -103,7 +103,7 @@ pip install -r requirements.txt
 python -c "from app.main import app; print(f'{app.title} - OK')"
 ```
 
-> La app aun no tiene endpoints funcionales. Se implementaran en los siguientes pasos.
+> La app aún no tiene endpoints funcionales. Se implementaran en los siguientes pasos.
 
 ---
 
@@ -113,21 +113,21 @@ python -c "from app.main import app; print(f'{app.title} - OK')"
 |---|---|---|
 | **Step 1** | Scaffolding del proyecto + dependencias | Completado |
 | **Step 2** | Schemas Pydantic + tests unitarios | Pendiente |
-| **Step 3** | Endpoint health + wiring basico de FastAPI | Pendiente |
-| **Step 4** | Docker Compose de NetBox + guia de conexion | Pendiente |
+| **Step 3** | Endpoint health + wiring básico de FastAPI | Pendiente |
+| **Step 4** | Docker Compose de NetBox + guía de conexion | Pendiente |
 | **Step 5** | Servicio NetBox + endpoint bootstrap | Pendiente |
 | **Step 6** | Endpoint de topologia (POST /api/v1/topology) | Pendiente |
 | **Step 7** | Seguridad transversal (rate limiting, error handlers) | Pendiente |
 
 ---
 
-## Topologia MVP Base
+## Topología MVP Base
 
-La topologia minima que maneja el sistema consiste en:
+La topologia mínima que maneja el sistema consiste en:
 - 1 Router
 - 1 Switch
-- 2 Dispositivos genericos (Hosts/PCs)
-- Enlaces fisicos basicos entre ellos
+- 2 Dispositivos genéricos (Hosts/PCs)
+- Enlaces físicos básicos entre ellos
 
 ```
 [host-01] ── eth0 ──── eth1 ── [switch-01] ── eth0 ──── eth0 ── [router-01]
