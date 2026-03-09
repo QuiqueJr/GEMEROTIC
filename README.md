@@ -16,7 +16,65 @@ UI (React Flow) -> Core API (FastAPI) -> SSoT (NetBox) -> Generador de Configura
 
 ---
 
-## Estado Actual: Step 2 (Refactor) - Modelo de Datos de 3 Capas
+## Estado Actual: Step 3 - Health Endpoint + Wiring FastAPI
+
+### Que se construyo en este paso
+
+Se implemento el primer endpoint funcional del API (`GET /api/v1/health`) y se conecto el sistema completo de routing de FastAPI: factory pattern -> v1 router -> endpoint. Tambien se creo el fixture `client` de TestClient para tests de endpoints.
+
+### Archivos modificados/creados
+
+| Archivo | Descripcion |
+|---|---|
+| `app/api/v1/endpoints/health.py` | **IMPLEMENTADO** - Endpoint GET /health con status, uptime, checks (NetBox stub) |
+| `app/api/v1/router.py` | **ACTUALIZADO** - Registra health_router en v1 |
+| `app/main.py` | **ACTUALIZADO** - Conecta v1_router con prefijo /api/v1 |
+| `tests/conftest.py` | **ACTUALIZADO** - Fixture `client` con TestClient y patron factory |
+| `tests/test_health.py` | **NUEVO** - 14 tests del endpoint health (respuesta, estructura, metodos HTTP, 404) |
+
+### Respuesta del Health Check
+
+```
+GET /api/v1/health -> 200
+```
+
+```json
+{
+  "status": "healthy",
+  "app_name": "GEMEROTIC",
+  "version": "0.1.0",
+  "uptime_seconds": 12.34,
+  "checks": {
+    "netbox_connected": false
+  }
+}
+```
+
+| Campo | Tipo | Descripcion |
+|---|---|---|
+| `status` | string | Estado general del servicio ("healthy") |
+| `app_name` | string | Nombre de la aplicacion (desde config) |
+| `version` | string | Version semver (desde config) |
+| `uptime_seconds` | float | Segundos desde el arranque del servicio |
+| `checks.netbox_connected` | boolean | Conexion a NetBox (stub false hasta Step 5) |
+
+### Resultados de Tests
+
+```
+tests/test_health.py  - 14 passed
+tests/test_schemas.py - 108 passed
+Total: 122 passed in 0.30s
+
+TestHealthEndpoint             (9 tests)  - HTTP 200, content-type, estructura, campos, uptime
+TestHealthMethodNotAllowed     (3 tests)  - POST/PUT/DELETE retornan 405
+TestNotFound                   (2 tests)  - rutas inexistentes retornan 404
+```
+
+---
+
+## Historial de Pasos Anteriores
+
+### Step 2 (Refactor) - Modelo de Datos de 3 Capas
 
 ### Que se construyo en este paso
 
@@ -211,23 +269,13 @@ Se creo la estructura base completa del proyecto FastAPI, siguiendo principios d
 
 Se implementaron schemas Pydantic simples (`DeviceRole`, `InterfaceSchema`, `DeviceSchema`, `LinkSchema`, `TopologyCreate`) con 35 tests unitarios. **Reemplazado por el refactor a continuacion.**
 
-### Step 2 (Refactor) - Modelo de Datos de 3 Capas OT (paso actual)
+### Step 2 (Refactor) - Modelo de Datos de 3 Capas
 
-Se refactorizo completamente el modelo de datos hacia una arquitectura de 3 capas alineada con estandares industriales. Los schemas planos fueron reemplazados por un sistema modular con validacion referencial cruzada entre capas.
+Se refactorizo el modelo de datos hacia una arquitectura de 3 capas alineada con estandares industriales OT (IEC 62443, Purdue, NIS2, ISO 11801, TIA-606-C). Schemas modulares en `physical.py`, `logical.py`, `ot_security.py` con 11 validadores de integridad referencial cruzada en `TopologyCreate`. 108 tests unitarios.
 
-**Decisiones arquitectonicas del refactor:**
+### Step 3 - Health Endpoint + Wiring FastAPI (paso actual)
 
-| Decision | Justificacion |
-|---|---|
-| **3 capas (fisico, logico, seguridad)** | Mapeo directo a estandares IEC 62443 / Purdue / NIS2 |
-| **Schemas en modulos separados** | `physical.py`, `logical.py`, `ot_security.py`, `topology.py` para mantenibilidad |
-| **String IDs con regex** | Mapea a slugs de NetBox, validacion estricta contra inyeccion |
-| **Campos OT opcionales (None default)** | Mantiene MVP limpio pero soporta payloads enterprise |
-| **Port ID formato `device:port`** | Identificacion global unica sin UUIDs, legible y compatible con NetBox |
-| **Validadores centralizados** | `validators.py` con funciones reutilizables evita duplicacion de regex |
-| **model_validator para referencias cruzadas** | 11 validadores en TopologyCreate verifican integridad entre las 3 capas |
-| **AssetType con tipos OT** | PLC, HMI, RTU, SCADA_SERVER como ciudadanos de primera clase |
-| **CableSchema con terminaciones** | Modelo punto-a-punto con 2 terminaciones, soporta rutas Device->Panel->Device |
+Se implemento `GET /api/v1/health` con diagnostico del servicio (app_name, version, uptime, checks). Se conecto el sistema de routing completo (main.py -> v1_router -> health_router). Se creo el fixture `client` de TestClient. 14 tests del endpoint.
 
 ---
 
@@ -245,7 +293,7 @@ GEMEROTIC/
 │   │   └── v1/
 │   │       ├── router.py        # Router agregado v1
 │   │       └── endpoints/
-│   │           ├── health.py    # (pendiente) GET /health
+│   │           ├── health.py    # GET /api/v1/health (implementado)
 │   │           └── topology.py  # (pendiente) POST /topology
 │   │
 │   ├── schemas/
@@ -269,7 +317,8 @@ GEMEROTIC/
 │
 ├── tests/
 │   ├── __init__.py
-│   ├── conftest.py              # Fixtures compartidos para pytest
+│   ├── conftest.py              # Fixtures compartidos (TestClient)
+│   ├── test_health.py           # 14 tests del endpoint health
 │   └── test_schemas.py          # 108 tests unitarios (3 capas + seguridad)
 │
 ├── .env.example                 # Plantilla de variables de entorno
@@ -310,6 +359,12 @@ python -c "from app.main import app; print(f'{app.title} - OK')"
 
 # Ejecutar tests
 python -m pytest tests/ -v
+
+# Levantar el servidor de desarrollo
+uvicorn app.main:app --reload
+
+# Probar el health check (en otra terminal)
+curl http://localhost:8000/api/v1/health
 ```
 
 ---
@@ -321,7 +376,7 @@ python -m pytest tests/ -v
 | **Step 1** | Scaffolding del proyecto + dependencias | Completado |
 | **Step 2** | Schemas Pydantic planos + 35 tests | Completado (reemplazado) |
 | **Step 2 Refactor** | Modelo de 3 capas OT + 108 tests | Completado |
-| **Step 3** | Endpoint health + wiring basico de FastAPI | Pendiente |
+| **Step 3** | Endpoint health + wiring basico de FastAPI | Completado |
 | **Step 4** | Docker Compose de NetBox + guia de conexion | Pendiente |
 | **Step 5** | Servicio NetBox + endpoint bootstrap | Pendiente |
 | **Step 6** | Endpoint de topologia (POST /api/v1/topology) | Pendiente |

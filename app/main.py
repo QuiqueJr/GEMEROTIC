@@ -4,6 +4,7 @@ Punto de entrada de la aplicación FastAPI.
 
 from fastapi import FastAPI
 
+from app.api.v1.router import v1_router
 from app.config import settings
 
 
@@ -17,9 +18,8 @@ def create_app() -> FastAPI:
         redoc_url="/redoc",
     )
 
-    # Registrar routers aquí conforme se vayan creando
-    # from app.api.v1.router import v1_router
-    # application.include_router(v1_router, prefix="/api/v1")
+    # Registrar routers del API versionado
+    application.include_router(v1_router, prefix="/api/v1")
 
     return application
 
