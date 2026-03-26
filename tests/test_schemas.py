@@ -13,34 +13,6 @@ Cubre validaciones de:
 import pytest
 from pydantic import ValidationError
 
-# --- Validadores compartidos ---
-from app.schemas.validators import (
-    find_duplicates,
-    validate_interface_name,
-    validate_label,
-    validate_mac_address,
-    validate_slug,
-)
-
-# --- Layer 1 ---
-from app.schemas.physical import (
-    AssetType,
-    CableCategory,
-    CableMedium,
-    CableSchema,
-    CableTerminationSchema,
-    Criticality,
-    DevicePortSchema,
-    DeviceSchema,
-    PatchPanelPortSchema,
-    PatchPanelSchema,
-    PortType,
-    RackSchema,
-    RackType,
-    RoomSchema,
-    SiteSchema,
-)
-
 # --- Layer 2 ---
 from app.schemas.logical import (
     InterfaceLogicalSchema,
@@ -55,12 +27,38 @@ from app.schemas.ot_security import (
     SecurityZoneSchema,
 )
 
-# --- Root ---
-from app.schemas.topology import TopologyCreate
+# --- Layer 1 ---
+from app.schemas.physical import (
+    AssetType,
+    CableCategory,
+    CableMedium,
+    CableSchema,
+    CableTerminationSchema,
+    Criticality,
+    DevicePortSchema,
+    DeviceSchema,
+    PatchPanelSchema,
+    PortType,
+    RackSchema,
+    RackType,
+    RoomSchema,
+    SiteSchema,
+)
 
 # --- Respuestas ---
 from app.schemas.responses import APIError, APIResponse
 
+# --- Root ---
+from app.schemas.topology import TopologyCreate
+
+# --- Validadores compartidos ---
+from app.schemas.validators import (
+    find_duplicates,
+    validate_interface_name,
+    validate_label,
+    validate_mac_address,
+    validate_slug,
+)
 
 # =============================================================================
 # Helpers: bloques reutilizables para construir payloads válidos
@@ -311,7 +309,11 @@ class TestRoomSchema:
     """Tests para validación de salas."""
 
     def test_valid_room(self):
-        room = RoomSchema(id="room-srv-01", name="Cuarto Servidores", site_id="site-main")
+        room = RoomSchema(
+            id="room-srv-01",
+            name="Cuarto Servidores",
+            site_id="site-main",
+        )
         assert room.site_id == "site-main"
 
     def test_reject_invalid_site_id_format(self):
@@ -551,7 +553,11 @@ class TestPatchPanelSchema:
                 rack_id="rack-01",
                 port_count=24,
                 ports=[
-                    {"id": "pp-99:front-1", "name": "front-1", "port_type": "front_port"}
+                    {
+                        "id": "pp-99:front-1",
+                        "name": "front-1",
+                        "port_type": "front_port",
+                    }
                 ],
             )
 

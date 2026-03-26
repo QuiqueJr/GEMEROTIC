@@ -6,11 +6,22 @@ ot_security.py (Layer 3) para componer el payload completo de una
 topología. Incluye validaciones de integridad referencial entre capas.
 """
 
-from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.schemas.validators import find_duplicates, validate_slug
+# --- Layer 2: Conectividad Lógica ---
+from app.schemas.logical import (
+    InterfaceLogicalSchema,
+    VLANSchema,
+)
+
+# --- Layer 3: Seguridad y Segmentación OT ---
+from app.schemas.ot_security import (
+    ConduitSchema,
+    PurdueLevel,
+    SecurityLevel,
+    SecurityZoneSchema,
+)
 
 # --- Layer 1: Infraestructura Física ---
 from app.schemas.physical import (
@@ -28,21 +39,7 @@ from app.schemas.physical import (
     RoomSchema,
     SiteSchema,
 )
-
-# --- Layer 2: Conectividad Lógica ---
-from app.schemas.logical import (
-    InterfaceLogicalSchema,
-    VLANSchema,
-)
-
-# --- Layer 3: Seguridad y Segmentación OT ---
-from app.schemas.ot_security import (
-    ConduitSchema,
-    PurdueLevel,
-    SecurityLevel,
-    SecurityZoneSchema,
-)
-
+from app.schemas.validators import find_duplicates, validate_slug
 
 # Re-exportar para que se puedan importar desde topology.py directamente
 __all__ = [
@@ -92,7 +89,7 @@ class TopologyCreate(BaseModel):
         ..., min_length=1, max_length=128,
         examples=["mvp-lab-01"],
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None, max_length=512,
     )
 
@@ -208,7 +205,10 @@ class TopologyCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_devices_reference_racks(self) -> "TopologyCreate":
-        """Verificar que los dispositivos montados en rack referencien racks existentes."""
+        """
+        Verificar que los dispositivos montados en rack referencien
+        racks existentes.
+        """
         rack_ids = {r.id for r in self.racks}
         for device in self.devices:
             if device.rack_id is not None and device.rack_id not in rack_ids:

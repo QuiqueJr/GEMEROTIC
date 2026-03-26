@@ -11,7 +11,8 @@ import re
 # Patrones regex reutilizables
 # =============================================================================
 
-# Identificadores: alfanuméricos, guiones, guiones bajos (para IDs, nombres de dispositivos)
+# Identificadores: alfanuméricos, guiones y guiones bajos
+# para IDs y nombres de dispositivos.
 SLUG_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 # Nombres de interfaz: incluye barras y puntos (GigabitEthernet0/0/1, eth0.100)

@@ -6,13 +6,11 @@ o interfaces. Incluye niveles Purdue, zonas IEC 62443 y conductos
 de comunicación entre zonas.
 """
 
-from enum import Enum
-from typing import Optional
+from enum import Enum, StrEnum
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.schemas.validators import find_duplicates, validate_label, validate_slug
-
 
 # =============================================================================
 # Enums — Layer 3
@@ -37,7 +35,7 @@ class PurdueLevel(int, Enum):
     LEVEL_5 = 5
 
 
-class SecurityLevel(str, Enum):
+class SecurityLevel(StrEnum):
     """
     Niveles de seguridad IEC 62443-3-3 (SL).
     Define la capacidad de seguridad requerida para una zona.
@@ -67,7 +65,7 @@ class SecurityZoneSchema(BaseModel):
         ..., min_length=1, max_length=128,
         examples=["Zona Control OT"],
     )
-    purdue_level: Optional[PurdueLevel] = Field(
+    purdue_level: PurdueLevel | None = Field(
         default=None,
         description="Nivel Purdue predominante de esta zona",
     )
@@ -75,7 +73,7 @@ class SecurityZoneSchema(BaseModel):
         default=SecurityLevel.SL_1,
         description="Nivel de seguridad objetivo (SL-T) según IEC 62443-3-3",
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None, max_length=256,
     )
     device_ids: list[str] = Field(
@@ -148,7 +146,7 @@ class ConduitSchema(BaseModel):
         description="Protocolos permitidos a través del conducto",
         examples=[["Modbus/TCP", "OPC-UA", "HTTPS"]],
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None, max_length=256,
     )
 

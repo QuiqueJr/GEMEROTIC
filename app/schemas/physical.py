@@ -6,8 +6,7 @@ patch panels, puertos y cableado. Mapea directamente a objetos de NetBox
 (Sites, Racks, Devices, Cables, etc.).
 """
 
-from enum import Enum
-from typing import Optional
+from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -18,12 +17,11 @@ from app.schemas.validators import (
     validate_slug,
 )
 
-
 # =============================================================================
 # Enums — Layer 1
 # =============================================================================
 
-class AssetType(str, Enum):
+class AssetType(StrEnum):
     """Tipos de activo de red/OT soportados. Extensible para futuras fases."""
     ROUTER = "router"
     SWITCH = "switch"
@@ -38,7 +36,7 @@ class AssetType(str, Enum):
     WIRELESS_AP = "wireless_ap"
 
 
-class RackType(str, Enum):
+class RackType(StrEnum):
     """Tipos de rack según uso."""
     NETWORK = "network"
     SERVER = "server"
@@ -47,7 +45,7 @@ class RackType(str, Enum):
     MIXED = "mixed"
 
 
-class CableMedium(str, Enum):
+class CableMedium(StrEnum):
     """Medio físico del cable (ISO 11801)."""
     COPPER = "copper"
     FIBER = "fiber"
@@ -55,7 +53,7 @@ class CableMedium(str, Enum):
     COAXIAL = "coaxial"
 
 
-class CableCategory(str, Enum):
+class CableCategory(StrEnum):
     """Categoría del cable según estándar (ISO 11801 / TIA-568)."""
     CAT5E = "Cat5e"
     CAT6 = "Cat6"
@@ -69,14 +67,14 @@ class CableCategory(str, Enum):
     RS485 = "RS485"
 
 
-class PortType(str, Enum):
+class PortType(StrEnum):
     """Tipo de puerto/terminación."""
     DEVICE_INTERFACE = "device_interface"
     FRONT_PORT = "front_port"
     REAR_PORT = "rear_port"
 
 
-class Criticality(str, Enum):
+class Criticality(StrEnum):
     """Nivel de criticidad del activo (alineado con NIS2 y análisis de riesgo)."""
     CRITICAL = "critical"
     HIGH = "high"
@@ -99,7 +97,7 @@ class SiteSchema(BaseModel):
         ..., min_length=1, max_length=128,
         examples=["Planta Industrial Norte"],
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None, max_length=256,
     )
 
@@ -248,27 +246,27 @@ class DeviceSchema(BaseModel):
         ...,
         description="Tipo de activo (determina rol en NetBox)",
     )
-    rack_id: Optional[str] = Field(
+    rack_id: str | None = Field(
         default=None, max_length=64,
         description="Rack donde está montado (opcional para hosts sin rack)",
     )
-    rack_position: Optional[int] = Field(
+    rack_position: int | None = Field(
         default=None, ge=1, le=60,
         description="Posición en unidades de rack (RU) dentro del rack",
     )
-    manufacturer: Optional[str] = Field(
+    manufacturer: str | None = Field(
         default=None, max_length=128,
         examples=["Cisco", "Siemens", "Allen-Bradley"],
     )
-    model: Optional[str] = Field(
+    model: str | None = Field(
         default=None, max_length=128,
         examples=["ISR 4321", "S7-1500"],
     )
-    firmware_version: Optional[str] = Field(
+    firmware_version: str | None = Field(
         default=None, max_length=64,
         examples=["16.9.4", "V2.8.3"],
     )
-    serial_number: Optional[str] = Field(
+    serial_number: str | None = Field(
         default=None, max_length=128,
     )
     criticality: Criticality = Field(
@@ -292,7 +290,7 @@ class DeviceSchema(BaseModel):
 
     @field_validator("rack_id")
     @classmethod
-    def validate_rack_id(cls, v: Optional[str]) -> Optional[str]:
+    def validate_rack_id(cls, v: str | None) -> str | None:
         if v is not None:
             return validate_slug(v, "Device rack_id")
         return v
@@ -453,7 +451,7 @@ class CableSchema(BaseModel):
         ..., min_length=1, max_length=64,
         examples=["cable-001"],
     )
-    label: Optional[str] = Field(
+    label: str | None = Field(
         default=None, max_length=128,
         description="Etiqueta física del cable (TIA-606-C)",
         examples=["C-R01-PP01-001"],
@@ -462,11 +460,11 @@ class CableSchema(BaseModel):
         default=CableMedium.COPPER,
         description="Medio físico del cable",
     )
-    category: Optional[CableCategory] = Field(
+    category: CableCategory | None = Field(
         default=None,
         description="Categoría del cable según estándar",
     )
-    length_meters: Optional[float] = Field(
+    length_meters: float | None = Field(
         default=None, gt=0, le=10000,
         description="Longitud del cable en metros",
     )

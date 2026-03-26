@@ -6,7 +6,6 @@ direccionamiento IP, MAC, y segmentación por VLANs. Complementa la capa
 física con la información necesaria para la configuración de red.
 """
 
-from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -15,7 +14,6 @@ from app.schemas.validators import (
     validate_mac_address,
     validate_slug,
 )
-
 
 # =============================================================================
 # Modelos — Interfaces lógicas
@@ -32,17 +30,17 @@ class InterfaceLogicalSchema(BaseModel):
         description="Referencia al puerto físico (formato: device_id:port_name)",
         examples=["router-01:eth0"],
     )
-    mac_address: Optional[str] = Field(
+    mac_address: str | None = Field(
         default=None, max_length=17,
         description="Dirección MAC (formato AA:BB:CC:DD:EE:FF)",
         examples=["00:1A:2B:3C:4D:5E"],
     )
-    ipv4_address: Optional[str] = Field(
+    ipv4_address: str | None = Field(
         default=None, max_length=18,
         description="Dirección IPv4 con máscara CIDR",
         examples=["192.168.1.1/24"],
     )
-    ipv6_address: Optional[str] = Field(
+    ipv6_address: str | None = Field(
         default=None, max_length=43,
         description="Dirección IPv6 con prefijo CIDR",
         examples=["2001:db8::1/64"],
@@ -55,7 +53,7 @@ class InterfaceLogicalSchema(BaseModel):
         default=True,
         description="Estado administrativo de la interfaz",
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None, max_length=256,
     )
 
@@ -70,7 +68,7 @@ class InterfaceLogicalSchema(BaseModel):
 
     @field_validator("mac_address")
     @classmethod
-    def validate_mac(cls, v: Optional[str]) -> Optional[str]:
+    def validate_mac(cls, v: str | None) -> str | None:
         """Normalizar MAC a formato uppercase con dos puntos."""
         if v is not None:
             return validate_mac_address(v)
@@ -78,7 +76,7 @@ class InterfaceLogicalSchema(BaseModel):
 
     @field_validator("ipv4_address")
     @classmethod
-    def validate_ipv4(cls, v: Optional[str]) -> Optional[str]:
+    def validate_ipv4(cls, v: str | None) -> str | None:
         """Validar formato básico de IPv4 con CIDR."""
         if v is not None:
             import ipaddress
@@ -90,7 +88,7 @@ class InterfaceLogicalSchema(BaseModel):
 
     @field_validator("ipv6_address")
     @classmethod
-    def validate_ipv6(cls, v: Optional[str]) -> Optional[str]:
+    def validate_ipv6(cls, v: str | None) -> str | None:
         """Validar formato de IPv6 con CIDR."""
         if v is not None:
             import ipaddress
@@ -124,7 +122,7 @@ class VLANSchema(BaseModel):
         ..., min_length=1, max_length=128,
         examples=["Corporativa", "OT-Control"],
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None, max_length=256,
     )
     assigned_interfaces: list[str] = Field(
