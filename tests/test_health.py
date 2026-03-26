@@ -13,7 +13,6 @@ Cubre:
 
 from fastapi.testclient import TestClient
 
-
 # =============================================================================
 # GET /api/v1/health — Respuesta exitosa
 # =============================================================================
@@ -70,8 +69,8 @@ class TestHealthEndpoint:
         assert "netbox_connected" in checks
         assert isinstance(checks["netbox_connected"], bool)
 
-    def test_health_netbox_not_connected_in_mvp(self, client: TestClient):
-        """En el MVP sin NetBox, netbox_connected debe ser False."""
+    def test_health_netbox_reports_disconnected_dependency(self, client: TestClient):
+        """Si la dependencia reporta desconexión, el health debe reflejarlo."""
         data = client.get("/api/v1/health").json()
         assert data["checks"]["netbox_connected"] is False
 

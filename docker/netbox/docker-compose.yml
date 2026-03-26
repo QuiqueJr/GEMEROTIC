@@ -1,0 +1,119 @@
+services:
+  netbox: &netbox
+    build:
+      context: ../..
+      dockerfile: docker/netbox/Dockerfile
+      args:
+        NETBOX_BASE_IMAGE: docker.io/netboxcommunity/netbox:${NETBOX_IMAGE_TAG:-v4.5-4.0.2}
+    image: gemerotic/netbox-local:${NETBOX_IMAGE_TAG:-v4.5-4.0.2}
+    container_name: gemerotic-netbox
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+    env_file:
+      - env/netbox.local.env
+    ports:
+      - "${NETBOX_HOST_PORT:-8080}:8080"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -fsS http://localhost:8080/login/ >/dev/null || exit 1
+      start_period: 120s
+      interval: 20s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    volumes:
+      - netbox-media-files:/opt/netbox/netbox/media:rw
+      - netbox-reports-files:/opt/netbox/netbox/reports:rw
+      - netbox-scripts-files:/opt/netbox/netbox/scripts:rw
+
+  netbox-worker:
+    <<: *netbox
+    container_name: gemerotic-netbox-worker
+    depends_on:
+      netbox:
+        condition: service_healthy
+    command:
+      - /opt/netbox/venv/bin/python
+      - /opt/netbox/netbox/manage.py
+      - rqworker
+    ports: []
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - ps -aux | grep -v grep | grep -q rqworker || exit 1
+      start_period: 30s
+      interval: 20s
+      timeout: 5s
+      retries: 10
+
+  postgres:
+    image: docker.io/postgres:18-alpine
+    container_name: gemerotic-netbox-postgres
+    env_file:
+      - env/postgres.local.env
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -q -t 2 -d $$POSTGRES_DB -U $$POSTGRES_USER
+      start_period: 20s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    volumes:
+      - netbox-postgres:/var/lib/postgresql/data:rw
+
+  redis:
+    image: docker.io/valkey/valkey:9.0-alpine
+    container_name: gemerotic-netbox-redis
+    env_file:
+      - env/redis.local.env
+    command:
+      - sh
+      - -c
+      - valkey-server --appendonly yes --requirepass $$REDIS_PASSWORD
+    healthcheck: &redis-healthcheck
+      test:
+        - CMD-SHELL
+        - '[ "$$(valkey-cli --pass "$${REDIS_PASSWORD}" ping)" = "PONG" ]'
+      start_period: 5s
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    volumes:
+      - netbox-redis-data:/data:rw
+
+  redis-cache:
+    image: docker.io/valkey/valkey:9.0-alpine
+    container_name: gemerotic-netbox-redis-cache
+    env_file:
+      - env/redis-cache.local.env
+    command:
+      - sh
+      - -c
+      - valkey-server --requirepass $$REDIS_PASSWORD
+    healthcheck: *redis-healthcheck
+    restart: unless-stopped
+    volumes:
+      - netbox-redis-cache-data:/data:rw
+
+volumes:
+  netbox-media-files:
+    driver: local
+  netbox-postgres:
+    driver: local
+  netbox-redis-cache-data:
+    driver: local
+  netbox-redis-data:
+    driver: local
+  netbox-reports-files:
+    driver: local
+  netbox-scripts-files:
+    driver: local

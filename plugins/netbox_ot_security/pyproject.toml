@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=69.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "netbox-ot-security"
+version = "0.1.0"
+description = "Plugin de NetBox para zonas y conductos OT de GEMEROTIC"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [
+  { name = "Equipo GEMEROTIC" },
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Framework :: Django",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.12",
+]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
