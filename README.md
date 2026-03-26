@@ -16,7 +16,154 @@ UI (React Flow) -> Core API (FastAPI) -> SSoT (NetBox) -> Generador de Configura
 
 ---
 
-## Estado Actual: Step 3 - Health Endpoint + Wiring FastAPI
+## Estado Actual: Step 7 - Seguridad transversal
+
+### Que se construyo hasta este punto
+
+El backend previo al frontend ya esta operativo en localhost con NetBox real,
+plugin OT nativo y seguridad transversal basica:
+
+- `GET /api/v1/health` valida conectividad real con NetBox.
+- `POST /api/v1/netbox/bootstrap` prepara roles de dispositivo, roles de rack
+  y custom fields requeridos por GEMEROTIC.
+- `POST /api/v1/topology` persiste Layer 1 y Layer 2 en NetBox core, y Layer 3
+  en el plugin `netbox_ot_security`.
+- NetBox se levanta con una imagen custom que instala el plugin OT y expone su
+  API en `/api/plugins/ot-security/...`.
+- El API aplica handlers de error uniformes, rate limiting basico, CORS
+  restringido a localhost y proteccion obligatoria por `X-API-Key` en
+  endpoints mutantes.
+- GitHub Actions valida lint global, tests, `docker compose config` y un smoke
+  real del stack de NetBox con el plugin cargado.
+
+### Componentes nuevos o extendidos
+
+| Ruta | Descripcion |
+|---|---|
+| `plugins/netbox_ot_security/` | **NUEVO** - Plugin NetBox 4.5 para `SecurityZone` y `Conduit` |
+| `docker/netbox/Dockerfile` | **NUEVO** - Imagen custom de NetBox con el plugin OT instalado |
+| `docker/netbox/configuration/plugins.py` | **NUEVO** - Activacion declarativa del plugin en NetBox |
+| `app/services/topology_importer.py` | **NUEVO** - Traduccion del schema GEMEROTIC al modelo real de NetBox |
+| `app/api/v1/endpoints/topology.py` | **IMPLEMENTADO** - Endpoint `POST /api/v1/topology` |
+| `app/core/security.py` | **IMPLEMENTADO** - API key obligatoria en escrituras, rate limit, CORS y headers defensivos |
+| `app/core/exceptions.py` | **IMPLEMENTADO** - Respuestas de error uniformes para todo el API |
+| `.github/workflows/ci.yml` | **NUEVO** - CI automatico en push/pull request |
+| `scripts/render_netbox_env.sh` | **NUEVO** - Generacion reproducible de `.local.env` para NetBox |
+| `tests/test_topology.py` | **NUEVO** - Tests del importador y endpoint de topologia |
+| `tests/test_security.py` | **NUEVO** - Tests de Step 7 |
+
+### Validacion local realizada
+
+- `docker compose -f docker/netbox/docker-compose.yml up -d --build`
+  levanta `netbox`, `netbox-worker`, `postgres`, `redis` y `redis-cache`
+  en estado `healthy`.
+- `GET /api/plugins/installed-plugins/` confirma el plugin
+  `netbox_ot_security`.
+- `GET /api/plugins/ot-security/security-zones/` y
+  `GET /api/plugins/ot-security/conduits/` responden correctamente.
+- `GET /api/v1/health` responde `200` con `checks.netbox_connected=true`.
+- `POST /api/v1/netbox/bootstrap` responde `200` y es idempotente.
+- `POST /api/v1/topology` responde `201` y devuelve resumen de objetos
+  creados/existentes en las 3 capas.
+- Suite de tests local: `150 passed`.
+
+### Variables de entorno adicionales del API
+
+Ademas de `NETBOX_URL`, `NETBOX_TOKEN`, `NETBOX_TIMEOUT_SECONDS` y
+`NETBOX_VERIFY_SSL`, el backend ahora requiere:
+
+- `API_KEY` para permitir `POST /api/v1/netbox/bootstrap` y
+  `POST /api/v1/topology`.
+- `RATE_LIMIT_ENABLED`, `RATE_LIMIT_MAX_REQUESTS` y
+  `RATE_LIMIT_WINDOW_SECONDS` para controlar el rate limiting mutante.
+- `CORS_ALLOWED_ORIGINS` para autorizar la futura UI local
+  (`localhost:3000` / `localhost:5173`) sin abrir CORS globalmente.
+
+---
+
+## Historial de Pasos Implementados
+
+### Step 4 - Docker Compose NetBox + guia de conexion
+
+### Que se construyo en este paso
+
+Se agrego una pila local de NetBox orientada a desarrollo seguro en `localhost`,
+sin colisionar con FastAPI. El stack usa Docker Compose con servicios separados
+para NetBox, worker, PostgreSQL y Valkey (cache y cola), ademas de archivos de
+entorno versionados como plantillas y secretos locales ignorados por git.
+
+La idea de este paso es dejar lista la Fuente Unica de Verdad (SSoT) para que
+los siguientes pasos puedan:
+
+- validar conectividad real desde FastAPI
+- bootstrapear objetos base en NetBox
+- persistir topologias contra la API oficial
+- preparar el backend que mas tarde consumira la UI con React Flow
+
+### Archivos modificados/creados
+
+| Archivo | Descripcion |
+|---|---|
+| `docker/netbox/docker-compose.yml` | **NUEVO** - Stack local de NetBox con web, worker, PostgreSQL y Valkey |
+| `docker/netbox/env/netbox.env.example` | **NUEVO** - Variables de entorno seguras para NetBox y superusuario local |
+| `docker/netbox/env/postgres.env.example` | **NUEVO** - Plantilla de credenciales para PostgreSQL |
+| `docker/netbox/env/redis.env.example` | **NUEVO** - Plantilla de credenciales para Valkey (cola) |
+| `docker/netbox/env/redis-cache.env.example` | **NUEVO** - Plantilla de credenciales para Valkey (cache) |
+| `docker/netbox/configuration/README.md` | **NUEVO** - Punto de extension para configuracion adicional de NetBox |
+| `app/config.py` | **ACTUALIZADO** - `NETBOX_URL` por defecto apunta a `http://localhost:8080` |
+| `tests/test_config.py` | **NUEVO** - Test del default de `NETBOX_URL` |
+
+### Topologia local de puertos
+
+| Servicio | Puerto host | Puerto contenedor |
+|---|---|---|
+| FastAPI GEMEROTIC | `8000` | `8000` |
+| NetBox | `8080` | `8080` |
+
+### Preparacion del entorno local
+
+1. Copiar cada archivo `*.example` de `docker/netbox/env/` a su variante
+   `*.local.env`.
+2. Generar secretos aleatorios fuertes para:
+   - `SECRET_KEY`
+   - `API_TOKEN_PEPPER_1`
+   - `POSTGRES_PASSWORD`
+   - `REDIS_PASSWORD`
+   - `REDIS_CACHE_PASSWORD`
+   - `SUPERUSER_PASSWORD`
+   - `SUPERUSER_API_TOKEN`
+3. Levantar NetBox:
+
+```bash
+docker compose -f docker/netbox/docker-compose.yml up -d
+```
+
+4. Verificar salud del contenedor principal:
+
+```bash
+docker compose -f docker/netbox/docker-compose.yml ps
+curl http://localhost:8080/login/
+```
+
+5. Confirmar que FastAPI mantiene su puerto independiente:
+
+```bash
+uvicorn app.main:app --reload --port 8000
+curl http://localhost:8000/api/v1/health
+```
+
+### Consideraciones de seguridad del entorno local
+
+- Los secretos operativos reales no se commitean.
+- El puerto de NetBox se fija en `8080` para evitar apuntar el health check de
+  GEMEROTIC a si mismo.
+- `LOGIN_REQUIRED=true` se mantiene activo en NetBox.
+- CORS queda preparado solo para orígenes locales esperados de desarrollo
+  (`3000` y `5173`) de cara a la futura UI.
+
+---
+
+### Step 3 - Health Endpoint + Wiring FastAPI
 
 ### Que se construyo en este paso
 
@@ -71,8 +218,6 @@ TestNotFound                   (2 tests)  - rutas inexistentes retornan 404
 ```
 
 ---
-
-## Historial de Pasos Anteriores
 
 ### Step 2 (Refactor) - Modelo de Datos de 3 Capas
 
@@ -377,10 +522,10 @@ curl http://localhost:8000/api/v1/health
 | **Step 2** | Schemas Pydantic planos + 35 tests | Completado (reemplazado) |
 | **Step 2 Refactor** | Modelo de 3 capas OT + 108 tests | Completado |
 | **Step 3** | Endpoint health + wiring basico de FastAPI | Completado |
-| **Step 4** | Docker Compose de NetBox + guia de conexion | Pendiente |
-| **Step 5** | Servicio NetBox + endpoint bootstrap | Pendiente |
-| **Step 6** | Endpoint de topologia (POST /api/v1/topology) | Pendiente |
-| **Step 7** | Seguridad transversal (rate limiting, error handlers) | Pendiente |
+| **Step 4** | Docker Compose de NetBox + guia de conexion | Completado |
+| **Step 5** | Servicio NetBox + endpoint bootstrap | Completado |
+| **Step 6** | Endpoint de topologia (POST /api/v1/topology) | Completado |
+| **Step 7** | Seguridad transversal (rate limiting, error handlers) | Completado |
 
 ---
 
