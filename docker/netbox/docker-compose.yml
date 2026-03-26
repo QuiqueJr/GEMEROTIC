@@ -14,6 +14,8 @@ services:
         condition: service_healthy
       redis-cache:
         condition: service_healthy
+      rate-limit-store:
+        condition: service_healthy
     env_file:
       - env/netbox.local.env
     ports:
@@ -104,7 +106,32 @@ services:
     volumes:
       - netbox-redis-cache-data:/data:rw
 
+  rate-limit-store:
+    image: docker.io/valkey/valkey:9.0-alpine
+    container_name: gemerotic-rate-limit-store
+    env_file:
+      - env/rate-limit.local.env
+    command:
+      - sh
+      - -c
+      - valkey-server --appendonly yes --requirepass $$REDIS_PASSWORD
+    ports:
+      - "${RATE_LIMIT_HOST_PORT:-6380}:6379"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - '[ "$$(valkey-cli --pass "$${REDIS_PASSWORD}" ping)" = "PONG" ]'
+      start_period: 5s
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    volumes:
+      - gemerotic-rate-limit-data:/data:rw
+
 volumes:
+  gemerotic-rate-limit-data:
+    driver: local
   netbox-media-files:
     driver: local
   netbox-postgres:

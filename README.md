@@ -21,7 +21,7 @@ UI (React Flow) -> Core API (FastAPI) -> SSoT (NetBox) -> Generador de Configura
 ### Que se construyo hasta este punto
 
 El backend previo al frontend ya esta operativo en localhost con NetBox real,
-plugin OT nativo y seguridad transversal basica:
+plugin OT nativo y seguridad transversal basada en backend compartido:
 
 - `GET /api/v1/health` valida conectividad real con NetBox.
 - `POST /api/v1/netbox/bootstrap` prepara roles de dispositivo, roles de rack
@@ -30,11 +30,11 @@ plugin OT nativo y seguridad transversal basica:
   en el plugin `netbox_ot_security`.
 - NetBox se levanta con una imagen custom que instala el plugin OT y expone su
   API en `/api/plugins/ot-security/...`.
-- El API aplica handlers de error uniformes, rate limiting basico, CORS
-  restringido a localhost y proteccion obligatoria por `X-API-Key` en
-  endpoints mutantes.
+- El API aplica handlers de error uniformes, rate limiting compartido sobre
+  Valkey, CORS restringido a localhost, headers defensivos y proteccion
+  obligatoria por `X-API-Key` en endpoints mutantes.
 - GitHub Actions valida lint global, tests, `docker compose config` y un smoke
-  real del stack de NetBox con el plugin cargado.
+  real del stack de NetBox, del plugin OT y del backend de rate limiting.
 
 ### Componentes nuevos o extendidos
 
@@ -45,27 +45,34 @@ plugin OT nativo y seguridad transversal basica:
 | `docker/netbox/configuration/plugins.py` | **NUEVO** - Activacion declarativa del plugin en NetBox |
 | `app/services/topology_importer.py` | **NUEVO** - Traduccion del schema GEMEROTIC al modelo real de NetBox |
 | `app/api/v1/endpoints/topology.py` | **IMPLEMENTADO** - Endpoint `POST /api/v1/topology` |
-| `app/core/security.py` | **IMPLEMENTADO** - API key obligatoria en escrituras, rate limit, CORS y headers defensivos |
+| `app/core/rate_limit.py` | **NUEVO** - Backend compartido de rate limiting sobre Redis/Valkey |
+| `app/core/security.py` | **IMPLEMENTADO** - API key obligatoria, middleware fail-closed y headers defensivos |
 | `app/core/exceptions.py` | **IMPLEMENTADO** - Respuestas de error uniformes para todo el API |
 | `.github/workflows/ci.yml` | **NUEVO** - CI automatico en push/pull request |
 | `scripts/render_netbox_env.sh` | **NUEVO** - Generacion reproducible de `.local.env` para NetBox |
+| `docs/security/rate_limit.md` | **NUEVO** - Documentacion operativa del rate limiting compartido |
 | `tests/test_topology.py` | **NUEVO** - Tests del importador y endpoint de topologia |
 | `tests/test_security.py` | **NUEVO** - Tests de Step 7 |
+| `tests/test_rate_limit_backend.py` | **NUEVO** - Tests unitarios del backend Redis/Valkey |
 
 ### Validacion local realizada
 
 - `docker compose -f docker/netbox/docker-compose.yml up -d --build`
-  levanta `netbox`, `netbox-worker`, `postgres`, `redis` y `redis-cache`
-  en estado `healthy`.
+  levanta `netbox`, `netbox-worker`, `postgres`, `redis`, `redis-cache` y
+  `rate-limit-store` en estado `healthy`.
 - `GET /api/plugins/installed-plugins/` confirma el plugin
   `netbox_ot_security`.
 - `GET /api/plugins/ot-security/security-zones/` y
   `GET /api/plugins/ot-security/conduits/` responden correctamente.
-- `GET /api/v1/health` responde `200` con `checks.netbox_connected=true`.
+- `GET /api/v1/health` responde `200` con
+  `checks.netbox_connected=true` y
+  `checks.rate_limit_backend_connected=true`.
 - `POST /api/v1/netbox/bootstrap` responde `200` y es idempotente.
 - `POST /api/v1/topology` responde `201` y devuelve resumen de objetos
   creados/existentes en las 3 capas.
-- Suite de tests local: `150 passed`.
+- Dos llamadas mutantes consecutivas con umbral `1/60s` devuelven `200` y
+  luego `429`, usando el backend compartido en `localhost:6380`.
+- Suite de tests local: `159 passed`.
 
 ### Variables de entorno adicionales del API
 
@@ -76,8 +83,14 @@ Ademas de `NETBOX_URL`, `NETBOX_TOKEN`, `NETBOX_TIMEOUT_SECONDS` y
   `POST /api/v1/topology`.
 - `RATE_LIMIT_ENABLED`, `RATE_LIMIT_MAX_REQUESTS` y
   `RATE_LIMIT_WINDOW_SECONDS` para controlar el rate limiting mutante.
+- `RATE_LIMIT_REDIS_URL`, `RATE_LIMIT_REDIS_KEY_PREFIX`,
+  `RATE_LIMIT_REDIS_CONNECT_TIMEOUT_SECONDS` y
+  `RATE_LIMIT_REDIS_OPERATION_TIMEOUT_SECONDS` para el backend compartido.
 - `CORS_ALLOWED_ORIGINS` para autorizar la futura UI local
   (`localhost:3000` / `localhost:5173`) sin abrir CORS globalmente.
+
+La documentacion completa de esta capa esta en
+`docs/security/rate_limit.md`.
 
 ---
 
@@ -89,8 +102,9 @@ Ademas de `NETBOX_URL`, `NETBOX_TOKEN`, `NETBOX_TIMEOUT_SECONDS` y
 
 Se agrego una pila local de NetBox orientada a desarrollo seguro en `localhost`,
 sin colisionar con FastAPI. El stack usa Docker Compose con servicios separados
-para NetBox, worker, PostgreSQL y Valkey (cache y cola), ademas de archivos de
-entorno versionados como plantillas y secretos locales ignorados por git.
+para NetBox, worker, PostgreSQL y Valkey (cola, cache y rate limiting),
+ademas de archivos de entorno versionados como plantillas y secretos locales
+ignorados por git.
 
 La idea de este paso es dejar lista la Fuente Unica de Verdad (SSoT) para que
 los siguientes pasos puedan:
@@ -109,6 +123,7 @@ los siguientes pasos puedan:
 | `docker/netbox/env/postgres.env.example` | **NUEVO** - Plantilla de credenciales para PostgreSQL |
 | `docker/netbox/env/redis.env.example` | **NUEVO** - Plantilla de credenciales para Valkey (cola) |
 | `docker/netbox/env/redis-cache.env.example` | **NUEVO** - Plantilla de credenciales para Valkey (cache) |
+| `docker/netbox/env/rate-limit.env.example` | **NUEVO** - Plantilla de credenciales para Valkey de rate limiting |
 | `docker/netbox/configuration/README.md` | **NUEVO** - Punto de extension para configuracion adicional de NetBox |
 | `app/config.py` | **ACTUALIZADO** - `NETBOX_URL` por defecto apunta a `http://localhost:8080` |
 | `tests/test_config.py` | **NUEVO** - Test del default de `NETBOX_URL` |
@@ -119,6 +134,7 @@ los siguientes pasos puedan:
 |---|---|---|
 | FastAPI GEMEROTIC | `8000` | `8000` |
 | NetBox | `8080` | `8080` |
+| Valkey Rate Limit | `6380` | `6379` |
 
 ### Preparacion del entorno local
 
@@ -130,6 +146,7 @@ los siguientes pasos puedan:
    - `POSTGRES_PASSWORD`
    - `REDIS_PASSWORD`
    - `REDIS_CACHE_PASSWORD`
+   - `RATE_LIMIT_REDIS_PASSWORD`
    - `SUPERUSER_PASSWORD`
    - `SUPERUSER_API_TOKEN`
 3. Levantar NetBox:

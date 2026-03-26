@@ -58,3 +58,15 @@ class TestSettings:
         assert settings.RATE_LIMIT_ENABLED is True
         assert settings.RATE_LIMIT_MAX_REQUESTS == 60
         assert settings.RATE_LIMIT_WINDOW_SECONDS == 60
+
+    def test_rate_limit_redis_defaults_point_to_local_shared_store(self, monkeypatch):
+        """El backend compartido debe apuntar al Valkey local por defecto."""
+        monkeypatch.delenv("RATE_LIMIT_REDIS_URL", raising=False)
+        monkeypatch.delenv("RATE_LIMIT_REDIS_KEY_PREFIX", raising=False)
+
+        settings = Settings(_env_file=None)
+
+        assert settings.RATE_LIMIT_REDIS_URL == (
+            "redis://:gemerotic-rate-limit-password@localhost:6380/0"
+        )
+        assert settings.RATE_LIMIT_REDIS_KEY_PREFIX == "gemerotic:rate-limit"

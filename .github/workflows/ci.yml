@@ -11,6 +11,9 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  PYTHON_VERSION: "3.11"
+
 jobs:
   backend:
     name: Backend Quality
@@ -23,7 +26,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
 
       - name: Install dependencies
@@ -47,6 +50,17 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
 
       - name: Render NetBox env files
         run: ./scripts/render_netbox_env.sh --force
@@ -84,27 +98,64 @@ jobs:
           echo "NetBox did not become ready in time" >&2
           exit 1
 
-      - name: Verify OT Security plugin API
+      - name: Provision NetBox API token
+        id: netbox-token
         run: |
           token_json="$(curl -fsS \
             -X POST http://localhost:8080/api/users/tokens/provision/ \
             -H 'Content-Type: application/json' \
             -d '{"username":"gemerotic-admin","password":"netbox-admin-password"}')"
-          export NETBOX_BEARER_TOKEN="$(TOKEN_JSON="${token_json}" python - <<'PY'
-import json
-import os
+          bearer_token="$(TOKEN_JSON="${token_json}" python -c 'import json, os; payload = json.loads(os.environ["TOKEN_JSON"]); print(f"nbt_{payload[\"key\"]}.{payload[\"token\"]}")')"
+          echo "token=${bearer_token}" >> "${GITHUB_OUTPUT}"
 
-payload = json.loads(os.environ["TOKEN_JSON"])
-print(f"nbt_{payload['key']}.{payload['token']}")
-PY
-          )"
+      - name: Verify OT Security plugin API
+        run: |
           curl -fsS \
-            -H "Authorization: Bearer ${NETBOX_BEARER_TOKEN}" \
+            -H "Authorization: Bearer ${{ steps.netbox-token.outputs.token }}" \
             http://localhost:8080/api/plugins/installed-plugins/ >/tmp/installed-plugins.json
           grep -q "netbox_ot_security" /tmp/installed-plugins.json
           curl -fsS \
-            -H "Authorization: Bearer ${NETBOX_BEARER_TOKEN}" \
+            -H "Authorization: Bearer ${{ steps.netbox-token.outputs.token }}" \
             http://localhost:8080/api/plugins/ot-security/security-zones/ >/tmp/security-zones.json
+
+      - name: Verify shared rate limit store
+        run: |
+          docker exec gemerotic-rate-limit-store sh -lc \
+            'valkey-cli --pass "$REDIS_PASSWORD" ping | grep -q PONG'
+
+      - name: Smoke shared rate limit through FastAPI
+        env:
+          API_KEY: ci-rate-limit-key
+          NETBOX_TOKEN: ${{ steps.netbox-token.outputs.token }}
+          NETBOX_URL: http://localhost:8080
+          NETBOX_TIMEOUT_SECONDS: "10.0"
+          NETBOX_VERIFY_SSL: "true"
+          RATE_LIMIT_ENABLED: "true"
+          RATE_LIMIT_MAX_REQUESTS: "1"
+          RATE_LIMIT_WINDOW_SECONDS: "60"
+          RATE_LIMIT_REDIS_URL: redis://:gemerotic-rate-limit-password@localhost:6380/0
+        run: |
+          python - <<'PY'
+          from fastapi.testclient import TestClient
+
+          from app.main import create_app
+
+          with TestClient(create_app()) as client:
+              health = client.get("/api/v1/health")
+              first = client.post(
+                  "/api/v1/netbox/bootstrap",
+                  headers={"X-API-Key": "ci-rate-limit-key"},
+              )
+              second = client.post(
+                  "/api/v1/netbox/bootstrap",
+                  headers={"X-API-Key": "ci-rate-limit-key"},
+              )
+
+          assert health.status_code == 200
+          assert health.json()["checks"]["rate_limit_backend_connected"] is True
+          assert first.status_code == 200
+          assert second.status_code == 429
+          PY
 
       - name: Show container status
         if: always()

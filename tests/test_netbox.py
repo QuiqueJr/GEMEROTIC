@@ -8,6 +8,7 @@ from app.config import settings
 from app.dependencies import get_netbox_client
 from app.main import create_app
 from app.services.netbox_client import NetBoxClient, NetBoxClientError
+from tests.conftest import AllowAllRateLimiter
 
 
 class FakeNamedEndpoint:
@@ -98,7 +99,7 @@ def _build_client_with_override(
     api_key: str = "test-api-key",
 ) -> TestClient:
     monkeypatch.setattr(settings, "API_KEY", api_key)
-    application = create_app()
+    application = create_app(rate_limiter=AllowAllRateLimiter())
     application.dependency_overrides[get_netbox_client] = lambda: fake_client
     return TestClient(application)
 

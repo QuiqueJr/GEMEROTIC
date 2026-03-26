@@ -2,11 +2,8 @@
 Seguridad transversal del API.
 """
 
-from collections import defaultdict, deque
-from math import ceil
+from hashlib import sha256
 from secrets import compare_digest
-from threading import Lock
-from time import monotonic
 
 from fastapi import HTTPException, Request, Security, status
 from fastapi.security import APIKeyHeader
@@ -14,6 +11,10 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 
 from app.config import settings
+from app.core.rate_limit import (
+    RateLimitBackend,
+    RateLimitBackendError,
+)
 from app.schemas.responses import APIError
 
 API_KEY_HEADER_NAME = "X-API-Key"
@@ -63,29 +64,40 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    """Rate limiting básico en memoria para operaciones mutantes del API."""
+    """Rate limiting compartido para operaciones mutantes del API."""
 
-    def __init__(self, app):
+    def __init__(self, app, rate_limiter: RateLimitBackend):
         super().__init__(app)
-        self._buckets: dict[str, deque[float]] = defaultdict(deque)
-        self._lock = Lock()
+        self._rate_limiter = rate_limiter
 
     async def dispatch(self, request: Request, call_next) -> Response:
         if not self._should_limit(request):
             return await call_next(request)
 
         bucket_key = self._build_bucket_key(request)
-        allowed, retry_after_seconds, remaining = self._consume(bucket_key)
-        if not allowed:
+        try:
+            decision = await self._rate_limiter.consume(
+                bucket_key=bucket_key,
+                limit=max(settings.RATE_LIMIT_MAX_REQUESTS, 1),
+                window_seconds=max(settings.RATE_LIMIT_WINDOW_SECONDS, 1),
+            )
+        except RateLimitBackendError:
+            body = APIError(message="Rate limit backend unavailable")
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content=body.model_dump(),
+            )
+
+        if not decision.allowed:
             body = APIError(
                 message="Rate limit exceeded",
-                detail={"retry_after_seconds": retry_after_seconds},
+                detail={"retry_after_seconds": decision.retry_after_seconds},
             )
             return JSONResponse(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 content=body.model_dump(),
                 headers={
-                    "Retry-After": str(retry_after_seconds),
+                    "Retry-After": str(decision.retry_after_seconds),
                     "X-RateLimit-Limit": str(max(settings.RATE_LIMIT_MAX_REQUESTS, 1)),
                     "X-RateLimit-Remaining": "0",
                 },
@@ -96,7 +108,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             "X-RateLimit-Limit",
             str(max(settings.RATE_LIMIT_MAX_REQUESTS, 1)),
         )
-        response.headers.setdefault("X-RateLimit-Remaining", str(remaining))
+        response.headers.setdefault(
+            "X-RateLimit-Remaining",
+            str(max(decision.remaining, 0)),
+        )
         return response
 
     def _should_limit(self, request: Request) -> bool:
@@ -107,29 +122,34 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return request.method.upper() in MUTATING_METHODS
 
     def _build_bucket_key(self, request: Request) -> str:
+        client_host = self._client_host(request)
+        identity = self._client_identity(request)
+        method = request.method.upper()
+        path = request.url.path
+        return f"{identity}:{client_host}:{method}:{path}"
+
+    def _client_host(self, request: Request) -> str:
         forwarded_for = request.headers.get("X-Forwarded-For", "")
-        client_host = forwarded_for.split(",")[0].strip()
-        if not client_host:
-            client_host = (
-                request.client.host if request.client is not None else "unknown"
-            )
-        return f"{client_host}:{request.method}:{request.url.path}"
+        if forwarded_for.strip():
+            return forwarded_for.split(",")[0].strip()
 
-    def _consume(self, bucket_key: str) -> tuple[bool, int, int]:
-        current_time = monotonic()
-        window_seconds = max(settings.RATE_LIMIT_WINDOW_SECONDS, 1)
-        max_requests = max(settings.RATE_LIMIT_MAX_REQUESTS, 1)
-        threshold = current_time - window_seconds
+        real_ip = request.headers.get("X-Real-IP", "").strip()
+        if real_ip:
+            return real_ip
 
-        with self._lock:
-            bucket = self._buckets[bucket_key]
-            while bucket and bucket[0] <= threshold:
-                bucket.popleft()
+        if request.client is not None:
+            return request.client.host
+        return "unknown"
 
-            if len(bucket) >= max_requests:
-                retry_after = ceil(window_seconds - (current_time - bucket[0]))
-                return False, max(retry_after, 1), 0
+    def _client_identity(self, request: Request) -> str:
+        configured_api_key = settings.API_KEY.strip()
+        api_key = request.headers.get(API_KEY_HEADER_NAME, "").strip()
+        if (
+            not configured_api_key
+            or not api_key
+            or not compare_digest(api_key, configured_api_key)
+        ):
+            return "anonymous"
 
-            bucket.append(current_time)
-            remaining = max(max_requests - len(bucket), 0)
-            return True, 0, remaining
+        fingerprint = sha256(configured_api_key.encode("utf-8")).hexdigest()[:16]
+        return f"api-key:{fingerprint}"

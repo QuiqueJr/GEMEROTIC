@@ -31,6 +31,7 @@ secret_key="${NETBOX_SECRET_KEY:-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 postgres_password="${POSTGRES_PASSWORD:-netbox-postgres-password}"
 redis_password="${REDIS_PASSWORD:-netbox-redis-password}"
 redis_cache_password="${REDIS_CACHE_PASSWORD:-netbox-redis-cache-password}"
+rate_limit_password="${RATE_LIMIT_REDIS_PASSWORD:-gemerotic-rate-limit-password}"
 superuser_password="${SUPERUSER_PASSWORD:-netbox-admin-password}"
 superuser_api_token="${SUPERUSER_API_TOKEN:-ci-netbox-admin-token}"
 netbox_host_port="${NETBOX_HOST_PORT:-8080}"
@@ -51,6 +52,11 @@ EOF
 
 write_file "${env_dir}/redis-cache.local.env" "$(cat <<EOF
 REDIS_PASSWORD=${redis_cache_password}
+EOF
+)"
+
+write_file "${env_dir}/rate-limit.local.env" "$(cat <<EOF
+REDIS_PASSWORD=${rate_limit_password}
 EOF
 )"
 

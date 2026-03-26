@@ -14,6 +14,7 @@ from app.schemas.physical import AssetType, RackType
 from app.schemas.topology import TopologyCreate
 from app.services.netbox_client import NetBoxClientError
 from app.services.topology_importer import TopologyImporter, TopologyImportError
+from tests.conftest import AllowAllRateLimiter
 from tests.test_schemas import _mvp_topology_payload
 
 
@@ -170,7 +171,7 @@ def _build_client_with_override(
     api_key: str = "test-api-key",
 ) -> TestClient:
     monkeypatch.setattr(settings, "API_KEY", api_key)
-    application = create_app()
+    application = create_app(rate_limiter=AllowAllRateLimiter())
     application.dependency_overrides[get_netbox_client] = lambda: fake_client
     return TestClient(application)
 

@@ -7,10 +7,11 @@ uptime y verificaciones de dependencias externas.
 
 import time
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
 from app.config import settings
+from app.core.rate_limit import RateLimitBackend
 from app.dependencies import get_netbox_client
 from app.services.netbox_client import NetBoxClient
 
@@ -30,6 +31,10 @@ class DependencyChecks(BaseModel):
     netbox_connected: bool = Field(
         default=False,
         description="Indica si la conexión a NetBox está activa",
+    )
+    rate_limit_backend_connected: bool = Field(
+        default=False,
+        description="Indica si el backend compartido de rate limiting está activo",
     )
 
 
@@ -70,6 +75,7 @@ class HealthResponse(BaseModel):
     description="Retorna el estado del servicio, versión y uptime.",
 )
 async def health_check(
+    request: Request,
     netbox_client: NetBoxClient = Depends(get_netbox_client),
 ) -> HealthResponse:
     """
@@ -78,6 +84,8 @@ async def health_check(
     Retorna información básica del servicio y el estado de las
     dependencias externas (NetBox).
     """
+    rate_limiter: RateLimitBackend = request.app.state.rate_limiter
+
     return HealthResponse(
         status="healthy",
         app_name=settings.APP_NAME,
@@ -85,5 +93,6 @@ async def health_check(
         uptime_seconds=round(time.monotonic() - _start_time, 2),
         checks=DependencyChecks(
             netbox_connected=netbox_client.health_check(),
+            rate_limit_backend_connected=await rate_limiter.ping(),
         ),
     )

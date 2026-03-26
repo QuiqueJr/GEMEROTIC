@@ -6,7 +6,7 @@ Cubre:
 - Estructura completa del JSON de respuesta
 - Valores esperados (app_name, version, status)
 - Uptime positivo
-- Objeto checks con netbox_connected (stub)
+- Objeto checks con netbox_connected y estado del rate limit
 - Content-Type correcto
 - Métodos HTTP no permitidos
 """
@@ -63,16 +63,23 @@ class TestHealthEndpoint:
         assert data["uptime_seconds"] >= 0
 
     def test_health_checks_structure(self, client: TestClient):
-        """El objeto checks debe contener netbox_connected."""
+        """El objeto checks debe contener dependencias críticas del servicio."""
         data = client.get("/api/v1/health").json()
         checks = data["checks"]
         assert "netbox_connected" in checks
+        assert "rate_limit_backend_connected" in checks
         assert isinstance(checks["netbox_connected"], bool)
+        assert isinstance(checks["rate_limit_backend_connected"], bool)
 
     def test_health_netbox_reports_disconnected_dependency(self, client: TestClient):
         """Si la dependencia reporta desconexión, el health debe reflejarlo."""
         data = client.get("/api/v1/health").json()
         assert data["checks"]["netbox_connected"] is False
+
+    def test_health_reports_rate_limit_backend_as_connected(self, client: TestClient):
+        """El backend compartido de rate limiting debe verse en health."""
+        data = client.get("/api/v1/health").json()
+        assert data["checks"]["rate_limit_backend_connected"] is True
 
 
 # =============================================================================

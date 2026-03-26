@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_MAX_REQUESTS: int = 60
     RATE_LIMIT_WINDOW_SECONDS: int = 60
+    RATE_LIMIT_REDIS_URL: str = "redis://:gemerotic-rate-limit-password@localhost:6380/0"
+    RATE_LIMIT_REDIS_KEY_PREFIX: str = "gemerotic:rate-limit"
+    RATE_LIMIT_REDIS_CONNECT_TIMEOUT_SECONDS: float = 0.5
+    RATE_LIMIT_REDIS_OPERATION_TIMEOUT_SECONDS: float = 1.0
     CORS_ALLOWED_ORIGINS: tuple[str, ...] = (
         "http://localhost:3000",
         "http://127.0.0.1:3000",

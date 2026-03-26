@@ -5,6 +5,7 @@ Fixtures compartidos para todos los tests.
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.rate_limit import RateLimitDecision
 from app.dependencies import get_netbox_client
 from app.main import create_app
 
@@ -16,13 +17,35 @@ class DisconnectedNetBoxClient:
         return False
 
 
+class AllowAllRateLimiter:
+    """Stub de rate limiting que siempre permite la operación."""
+
+    async def consume(
+        self,
+        bucket_key: str,
+        limit: int,
+        window_seconds: int,
+    ) -> RateLimitDecision:
+        return RateLimitDecision(
+            allowed=True,
+            remaining=max(limit - 1, 0),
+            retry_after_seconds=0,
+        )
+
+    async def ping(self) -> bool:
+        return True
+
+    async def aclose(self) -> None:
+        return None
+
+
 @pytest.fixture()
 def client() -> TestClient:
     """
     Cliente HTTP síncrono para tests de endpoints.
     Usa el patrón factory para crear una instancia limpia de la app por test.
     """
-    application = create_app()
+    application = create_app(rate_limiter=AllowAllRateLimiter())
     application.dependency_overrides[get_netbox_client] = (
         lambda: DisconnectedNetBoxClient()
     )
