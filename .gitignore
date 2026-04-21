@@ -7,6 +7,9 @@ dist/
 build/
 .eggs/
 
+# Node
+node_modules/
+
 # Virtual environments
 .venv/
 venv/
