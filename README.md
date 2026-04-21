@@ -12,11 +12,52 @@ UI (React Flow) -> Core API (FastAPI) -> SSoT (NetBox) -> Generador de Configura
 -> Observabilidad (LibreNMS/Oxidized) -> Auditoria de Cumplimiento (OPA)
 ```
 
-> **Nota:** El proyecto se construye fase por fase. El frontend esta fuera de alcance por ahora. Toda interaccion con el API se realiza mediante payloads JSON directos.
+> **Nota:** El proyecto se construye fase por fase. Desde Step 8, el frontend
+> entra en alcance como constructor visual de topologias. La fuente canonica de
+> persistencia sigue siendo el API y NetBox; la UI solo debe producir payloads
+> `TopologyCreate` validos y enviarlos al backend.
 
 ---
 
-## Estado Actual: Step 7 - Seguridad transversal
+## Estado Actual: Step 8 - UI Builder OT con React Flow
+
+### Objetivo de este paso
+
+Construir una primera interfaz profesional tipo GNS3 / Packet Tracer para
+disenar topologias OT/IT de forma visual, manteniendo la arquitectura objetivo:
+
+```
+UI (React Flow) -> Core API (FastAPI) -> SSoT (NetBox)
+```
+
+La UI debe respetar el modelo de 3 capas:
+
+- **Layer 1:** sitios, salas, racks, dispositivos, puertos y cables.
+- **Layer 2:** interfaces logicas y VLANs.
+- **Layer 3:** zonas IEC 62443, niveles Purdue, Security Levels y conductos.
+
+### Alcance inicial permitido
+
+- Crear un frontend React con React Flow para editar nodos y enlaces.
+- Mantener un mapeo explicito desde el estado visual al schema
+  `TopologyCreate`.
+- Conectar la UI a:
+  - `GET /api/v1/health`
+  - `POST /api/v1/netbox/bootstrap`
+  - `POST /api/v1/topology`
+- Enviar `X-API-Key` desde configuracion local del navegador.
+- Agregar tests de frontend y CI para build/lint/test del UI.
+
+### Fuera de alcance de Step 8
+
+- No implementar Containerlab, Ansible, Batfish, LibreNMS, Oxidized ni OPA.
+- No cambiar los schemas Pydantic salvo que el builder demuestre una necesidad
+  directa y compatible.
+- No persistir estado de UI fuera del navegador, NetBox o el API existente.
+
+---
+
+## Estado Anterior: Step 7 - Seguridad transversal
 
 ### Que se construyo hasta este punto
 
@@ -543,6 +584,7 @@ curl http://localhost:8000/api/v1/health
 | **Step 5** | Servicio NetBox + endpoint bootstrap | Completado |
 | **Step 6** | Endpoint de topologia (POST /api/v1/topology) | Completado |
 | **Step 7** | Seguridad transversal (rate limiting, error handlers) | Completado |
+| **Step 8** | UI Builder OT con React Flow | En progreso |
 
 ---
 
