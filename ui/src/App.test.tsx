@@ -8,7 +8,7 @@ describe('App', () => {
     render(<App />)
 
     expect(screen.getByText('GEMEROTIC UI')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Constructor visual OT/IT' }))
+    expect(screen.getByRole('heading', { name: 'Constructor OT/IT' }))
       .toBeInTheDocument()
   })
 })
