@@ -23,6 +23,14 @@ class TestNetBoxStackWorkflow:
         assert install_index < smoke_index
         assert "python -m pip install -e .[dev]" in netbox_stack
 
+    def test_netbox_token_provisioning_avoids_invalid_python_f_string(self):
+        """El parser de token no debe usar escapes dentro de f-strings."""
+        workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+        netbox_stack = workflow[workflow.index("  netbox-stack:") :]
+
+        assert 'print(f"nbt_' not in netbox_stack
+        assert 'print("nbt_" + payload["key"] + "." + payload["token"])' in netbox_stack
+
 
 class TestRuntimeRequirements:
     """Tests para dependencias runtime documentadas."""

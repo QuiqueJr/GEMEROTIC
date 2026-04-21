@@ -148,7 +148,15 @@ jobs:
             -X POST http://localhost:8080/api/users/tokens/provision/ \
             -H 'Content-Type: application/json' \
             -d '{"username":"gemerotic-admin","password":"netbox-admin-password"}')"
-          bearer_token="$(TOKEN_JSON="${token_json}" python -c 'import json, os; payload = json.loads(os.environ["TOKEN_JSON"]); print(f"nbt_{payload[\"key\"]}.{payload[\"token\"]}")')"
+          bearer_token="$(
+            TOKEN_JSON="${token_json}" python - <<'PY'
+          import json
+          import os
+
+          payload = json.loads(os.environ["TOKEN_JSON"])
+          print("nbt_" + payload["key"] + "." + payload["token"])
+          PY
+          )"
           echo "token=${bearer_token}" >> "${GITHUB_OUTPUT}"
 
       - name: Verify OT Security plugin API
