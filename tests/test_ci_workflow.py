@@ -1,0 +1,34 @@
+"""
+Tests de contrato minimo para GitHub Actions.
+"""
+
+from pathlib import Path
+
+
+class TestNetBoxStackWorkflow:
+    """Tests para evitar regresiones en el smoke real de NetBox."""
+
+    def test_netbox_stack_installs_python_dependencies_before_fastapi_smoke(self):
+        """El smoke de FastAPI debe ejecutarse con dependencias instaladas."""
+        workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+        netbox_stack = workflow[workflow.index("  netbox-stack:") :]
+
+        setup_index = netbox_stack.index("      - name: Setup Python")
+        install_index = netbox_stack.index("      - name: Install dependencies")
+        smoke_index = netbox_stack.index(
+            "      - name: Smoke shared rate limit through FastAPI"
+        )
+
+        assert setup_index < smoke_index
+        assert install_index < smoke_index
+        assert "python -m pip install -e .[dev]" in netbox_stack
+
+
+class TestRuntimeRequirements:
+    """Tests para dependencias runtime documentadas."""
+
+    def test_requirements_include_redis_runtime_dependency(self):
+        """El rate limiter necesita redis al instalar via requirements.txt."""
+        requirements = Path("requirements.txt").read_text(encoding="utf-8")
+
+        assert "redis>=5.2.0" in requirements
