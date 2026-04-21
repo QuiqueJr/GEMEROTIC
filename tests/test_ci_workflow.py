@@ -32,6 +32,24 @@ class TestNetBoxStackWorkflow:
         assert 'print("nbt_" + payload["key"] + "." + payload["token"])' in netbox_stack
 
 
+class TestFrontendWorkflow:
+    """Tests para mantener Bun como gestor del frontend."""
+
+    def test_frontend_job_uses_bun(self):
+        """El frontend debe instalar y ejecutar scripts con Bun."""
+        workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+        frontend = workflow[
+            workflow.index("  frontend:") : workflow.index("  netbox-compose:")
+        ]
+
+        assert "oven-sh/setup-bun@v2" in frontend
+        assert "bun ci" in frontend
+        assert "bun run lint" in frontend
+        assert "bun run test:run" in frontend
+        assert "bun run build" in frontend
+        assert "npm " not in frontend
+
+
 class TestRuntimeRequirements:
     """Tests para dependencias runtime documentadas."""
 

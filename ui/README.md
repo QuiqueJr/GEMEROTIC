@@ -10,15 +10,16 @@ Frontend del constructor visual OT/IT de GEMEROTIC.
 - React Flow (`@xyflow/react`)
 - Lucide React
 - Vitest
+- Bun
 
 ## Comandos
 
 ```bash
-npm install
-npm run dev
-npm run lint
-npm run test:run
-npm run build
+bun install
+bun run dev
+bun run lint
+bun run test:run
+bun run build
 ```
 
 La UI debe emitir payloads compatibles con `TopologyCreate` y persistirlos
@@ -39,7 +40,7 @@ La interfaz permite configurar la `Base URL` del API y la cabecera
 Flujo minimo para validar la UI contra el pipeline actual:
 
 1. Levantar NetBox y el backend siguiendo `START.md`.
-2. Ejecutar `npm run dev` dentro de `ui/`.
+2. Ejecutar `bun run dev` dentro de `ui/`.
 3. Pulsar `Health` y comprobar que NetBox aparece conectado.
 4. Pulsar `Bootstrap` para preparar NetBox.
 5. Ajustar la topologia visual y pulsar `Persistir en NetBox`.
@@ -49,7 +50,7 @@ Flujo minimo para validar la UI contra el pipeline actual:
 Antes de commitear cambios del frontend se deben ejecutar:
 
 ```bash
-npm run lint
-npm run test:run
-npm run build
+bun run lint
+bun run test:run
+bun run build
 ```
