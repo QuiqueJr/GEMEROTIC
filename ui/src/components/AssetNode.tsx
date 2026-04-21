@@ -21,7 +21,11 @@ export function AssetNode({ data, selected }: NodeProps<BuilderNode>) {
   const Icon = iconByAssetType[data.assetType]
 
   return (
-    <article className={`asset-node asset-node--${data.assetType}`} data-selected={selected}>
+    <article
+      className={`asset-node asset-node--${data.assetType}`}
+      data-criticality={data.criticality}
+      data-selected={selected}
+    >
       <Handle type="target" position={Position.Top} />
       <Handle type="target" position={Position.Left} />
       <div className="asset-node__icon">
@@ -29,11 +33,13 @@ export function AssetNode({ data, selected }: NodeProps<BuilderNode>) {
       </div>
       <div className="asset-node__body">
         <strong>{data.label}</strong>
-        <span>
-          {data.assetType.replace('_', ' ')} · Purdue {data.purdueLevel}
-        </span>
+        <span>{data.assetType.replace('_', ' ')} - Purdue {data.purdueLevel}</span>
+        <small>{data.zoneName}</small>
       </div>
-      <div className="asset-node__badge">{data.securityLevel}</div>
+      <div className="asset-node__badges">
+        <span>{data.securityLevel}</span>
+        <small>{data.criticality}</small>
+      </div>
       <Handle type="source" position={Position.Right} />
       <Handle type="source" position={Position.Bottom} />
     </article>

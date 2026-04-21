@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildTopologyPayload,
   createInitialBuilderState,
+  getNextAssetIndex,
   slugify,
 } from './topologyBuilder'
 
@@ -23,5 +24,13 @@ describe('topologyBuilder', () => {
 
   it('normaliza identificadores compatibles con el backend', () => {
     expect(slugify('PLC Linea A / Celda 01')).toBe('plc-linea-a-celda-01')
+  })
+
+  it('calcula el siguiente indice disponible por tipo de activo', () => {
+    const state = createInitialBuilderState()
+
+    expect(getNextAssetIndex(state.nodes, 'router')).toBe(1)
+    expect(getNextAssetIndex(state.nodes, 'plc')).toBe(1)
+    expect(getNextAssetIndex(state.nodes, 'firewall')).toBe(0)
   })
 })

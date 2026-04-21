@@ -24,6 +24,9 @@ env/
 *.swp
 *.swo
 
+# Herramientas IA locales
+.codex/
+
 # OS
 .DS_Store
 Thumbs.db

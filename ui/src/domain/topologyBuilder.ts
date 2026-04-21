@@ -119,6 +119,21 @@ export function createNodeFromAsset(
   }
 }
 
+export function getNextAssetIndex(
+  nodes: BuilderNode[],
+  assetType: AssetType,
+): number {
+  const prefix = assetType.replace('_', '-')
+  const usedIndexes = nodes
+    .map((node) => {
+      const match = node.id.match(new RegExp(`^${prefix}-(\\d+)$`))
+      return match ? Number(match[1]) : 0
+    })
+    .filter((index) => index > 0)
+
+  return Math.max(0, ...usedIndexes)
+}
+
 export function buildTopologyPayload(state: BuilderState): TopologyPayload {
   const topologyName = slugify(state.settings.name)
   const siteId = 'site-main'

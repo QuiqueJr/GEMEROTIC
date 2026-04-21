@@ -2,11 +2,14 @@ import {
   addEdge,
   Background,
   Controls,
+  MarkerType,
   MiniMap,
+  Panel,
   ReactFlow,
   useEdgesState,
   useNodesState,
   type Connection,
+  type DefaultEdgeOptions,
   type Edge,
   type NodeChange,
 } from '@xyflow/react'
@@ -18,9 +21,13 @@ import {
   Copy,
   Database,
   Factory,
+  GitBranch,
   KeyRound,
+  Layers3,
+  Network,
   Save,
   Settings,
+  ShieldCheck,
   Trash2,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
@@ -38,6 +45,7 @@ import {
   buildTopologyPayload,
   createInitialBuilderState,
   createNodeFromAsset,
+  getNextAssetIndex,
   updateNodeData,
 } from './domain/topologyBuilder'
 import type {
@@ -57,6 +65,40 @@ const criticalityOptions: Criticality[] = ['critical', 'high', 'medium', 'low']
 const securityLevelOptions: SecurityLevel[] = ['SL-0', 'SL-1', 'SL-2', 'SL-3', 'SL-4']
 const purdueOptions: PurdueLevel[] = [0, 1, 2, 3, 4, 5]
 type OperationStatus = 'idle' | 'running' | 'success' | 'error'
+
+const defaultEdgeOptions: DefaultEdgeOptions = {
+  animated: true,
+  markerEnd: {
+    type: MarkerType.ArrowClosed,
+    color: '#f97316',
+  },
+  style: {
+    stroke: '#f97316',
+    strokeWidth: 2.4,
+  },
+  type: 'smoothstep',
+}
+
+const connectionLineStyle = {
+  stroke: '#f97316',
+  strokeWidth: 2.4,
+}
+
+const roleLabels = {
+  network: 'Red',
+  compute: 'Computo',
+  ot: 'OT',
+  security: 'Seguridad',
+}
+
+const purdueLabels: Record<PurdueLevel, string> = {
+  0: 'Proceso',
+  1: 'Control',
+  2: 'Supervision',
+  3: 'DMZ industrial',
+  4: 'IT planta',
+  5: 'Enterprise',
+}
 
 function App() {
   const initialState = useMemo(() => createInitialBuilderState(), [])
@@ -80,6 +122,27 @@ function App() {
     [settings, nodes, edges],
   )
   const payloadText = useMemo(() => JSON.stringify(payload, null, 2), [payload])
+  const topologySummary = useMemo(
+    () => ({
+      assets: nodes.length,
+      links: edges.length,
+      zones: payload.security_zones.length,
+      conduits: payload.conduits.length,
+      criticalAssets: nodes.filter((node) => node.data.criticality === 'critical')
+        .length,
+      maxSecurityLevel: getMaxSecurityLevel(nodes),
+    }),
+    [edges.length, nodes, payload.conduits.length, payload.security_zones.length],
+  )
+  const purdueSummary = useMemo(
+    () =>
+      purdueOptions.map((level) => ({
+        level,
+        label: purdueLabels[level],
+        count: nodes.filter((node) => node.data.purdueLevel === level).length,
+      })),
+    [nodes],
+  )
 
   const handleConnect = (connection: Connection) => {
     setEdges((currentEdges) =>
@@ -87,7 +150,7 @@ function App() {
         {
           ...connection,
           id: `edge-${connection.source}-${connection.target}-${Date.now()}`,
-          animated: true,
+          ...defaultEdgeOptions,
         },
         currentEdges,
       ),
@@ -106,8 +169,7 @@ function App() {
 
   const addAsset = (assetType: AssetType) => {
     const asset = getAssetDefinition(assetType)
-    const assetCount = nodes.filter((node) => node.data.assetType === assetType).length
-    const node = createNodeFromAsset(asset, assetCount, {
+    const node = createNodeFromAsset(asset, getNextAssetIndex(nodes, assetType), {
       x: 160 + nodes.length * 36,
       y: 120 + nodes.length * 28,
     })
@@ -127,6 +189,31 @@ function App() {
       ),
     )
     setSelectedNodeId(null)
+  }
+
+  const duplicateSelectedNode = () => {
+    if (selectedNode === null) {
+      return
+    }
+
+    const asset = getAssetDefinition(selectedNode.data.assetType)
+    const node = createNodeFromAsset(
+      asset,
+      getNextAssetIndex(nodes, selectedNode.data.assetType),
+      {
+        x: selectedNode.position.x + 42,
+        y: selectedNode.position.y + 42,
+      },
+    )
+    const duplicatedNode: BuilderNode = {
+      ...node,
+      data: {
+        ...selectedNode.data,
+        label: `${selectedNode.data.label} copia`,
+      },
+    }
+    setNodes((currentNodes) => [...currentNodes, duplicatedNode])
+    setSelectedNodeId(duplicatedNode.id)
   }
 
   const updateSelectedNode = (patch: Partial<BuilderNode['data']>) => {
@@ -170,8 +257,8 @@ function App() {
       setOperationStatus(result.ok ? 'success' : 'error')
       setOperationMessage(
         result.ok
-          ? `Health OK · NetBox ${result.data.checks.netbox_connected ? 'OK' : 'offline'}`
-          : `Health fallo · HTTP ${result.status}`,
+          ? `Health OK - NetBox ${result.data.checks.netbox_connected ? 'OK' : 'offline'}`
+          : `Health fallo - HTTP ${result.status}`,
       )
     } catch (error) {
       setOperationStatus('error')
@@ -195,14 +282,31 @@ function App() {
     <main className="app-shell">
       <header className="topbar">
         <div className="brand-block">
-          <div className="brand-mark">GE</div>
+          <div className="brand-mark" aria-hidden="true">
+            GE
+          </div>
           <div>
             <p className="eyebrow">GEMEROTIC UI</p>
             <h1>Constructor OT/IT</h1>
+            <p className="brand-subtitle">UI - FastAPI - NetBox SSoT</p>
           </div>
         </div>
+        <div className="topbar__metrics" aria-label="Resumen de topologia">
+          <span>
+            <Network size={15} />
+            {topologySummary.assets} activos
+          </span>
+          <span>
+            <GitBranch size={15} />
+            {topologySummary.links} enlaces
+          </span>
+          <span>
+            <ShieldCheck size={15} />
+            {topologySummary.maxSecurityLevel}
+          </span>
+        </div>
         <div className="topbar__status">
-          <span data-status={operationStatus}>
+          <span aria-live="polite" data-status={operationStatus}>
             <Activity size={16} />
             {operationMessage}
           </span>
@@ -215,6 +319,12 @@ function App() {
 
       <section className="workbench">
         <aside className="asset-palette" aria-label="Paleta de activos">
+          <div className="pipeline-strip" aria-label="Pipeline activo">
+            <span>UI</span>
+            <span>API</span>
+            <span>SSoT</span>
+          </div>
+
           <div className="panel-title">
             <Box size={18} />
             <span>Activos</span>
@@ -227,9 +337,29 @@ function App() {
                 onClick={() => addAsset(asset.assetType)}
                 type="button"
               >
-                <span>{asset.shortLabel}</span>
-                {asset.label}
+                <span className="asset-button__code">{asset.shortLabel}</span>
+                <span className="asset-button__copy">
+                  <strong>{asset.label}</strong>
+                  <small>
+                    {roleLabels[asset.role]} - Purdue {asset.purdueLevel} -{' '}
+                    {asset.securityLevel}
+                  </small>
+                </span>
               </button>
+            ))}
+          </div>
+
+          <div className="panel-title panel-title--spaced">
+            <Layers3 size={18} />
+            <span>Purdue</span>
+          </div>
+          <div className="purdue-stack">
+            {purdueSummary.map((row) => (
+              <div className="purdue-row" key={row.level}>
+                <span className="purdue-row__level">L{row.level}</span>
+                <span className="purdue-row__label">{row.label}</span>
+                <strong>{row.count}</strong>
+              </div>
             ))}
           </div>
 
@@ -276,10 +406,27 @@ function App() {
             onEdgesChange={onEdgesChange}
             onConnect={handleConnect}
             onNodeClick={(_, node) => setSelectedNodeId(node.id)}
+            defaultEdgeOptions={defaultEdgeOptions}
+            connectionLineStyle={connectionLineStyle}
             fitView
             fitViewOptions={{ padding: 0.24 }}
           >
-            <Background color="#b9c7c2" gap={22} />
+            <Panel className="canvas-hud" position="top-left">
+              <span>Topologia activa</span>
+              <strong>{settings.name}</strong>
+              <small>
+                {topologySummary.zones} zonas - {topologySummary.conduits} conductos
+              </small>
+            </Panel>
+            <Panel className="zone-hud" position="top-right">
+              {payload.security_zones.map((zone) => (
+                <span key={zone.id}>
+                  {zone.name}
+                  <strong>{zone.device_ids.length}</strong>
+                </span>
+              ))}
+            </Panel>
+            <Background color="#cbd5d0" gap={24} />
             <Controls position="bottom-left" />
             <MiniMap
               pannable
@@ -300,6 +447,20 @@ function App() {
 
           {selectedNode ? (
             <div className="inspector__content">
+              <div className="node-summary">
+                <div>
+                  <span>Activo</span>
+                  <strong>{selectedNode.data.assetType.replace('_', ' ')}</strong>
+                </div>
+                <div>
+                  <span>Zona</span>
+                  <strong>{selectedNode.data.zoneName}</strong>
+                </div>
+                <div>
+                  <span>Criticidad</span>
+                  <strong>{selectedNode.data.criticality}</strong>
+                </div>
+              </div>
               <label className="field">
                 <span>Etiqueta</span>
                 <input
@@ -392,7 +553,11 @@ function App() {
                 </select>
               </label>
               <div className="action-row">
-                <button type="button" className="secondary-button">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={duplicateSelectedNode}
+                >
                   <Copy size={16} />
                   Duplicar
                 </button>
@@ -416,6 +581,11 @@ function App() {
           <div className="panel-title panel-title--spaced">
             <Cable size={18} />
             <span>Payload</span>
+          </div>
+          <div className="payload-metrics">
+            <span>{payload.devices.length} devices</span>
+            <span>{payload.cables.length} cables</span>
+            <span>{payload.vlans.length} VLANs</span>
           </div>
           <pre className="payload-preview">{payloadText}</pre>
           <div className="panel-title panel-title--spaced">
@@ -467,6 +637,17 @@ function extractMessage(data: unknown, fallback: string): string {
     return String((data as { message: unknown }).message)
   }
   return fallback
+}
+
+function getMaxSecurityLevel(nodes: BuilderNode[]): SecurityLevel {
+  const order = new Map<SecurityLevel, number>(
+    securityLevelOptions.map((level, index) => [level, index]),
+  )
+  return nodes.reduce<SecurityLevel>((currentLevel, node) => {
+    const currentRank = order.get(currentLevel) ?? 0
+    const nodeRank = order.get(node.data.securityLevel) ?? 0
+    return nodeRank > currentRank ? node.data.securityLevel : currentLevel
+  }, 'SL-0')
 }
 
 export default App
