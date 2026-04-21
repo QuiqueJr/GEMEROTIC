@@ -74,6 +74,21 @@ h1 {
   padding: 7px 10px;
 }
 
+.topbar__status span[data-status='success'] {
+  background: #123e35;
+  border-color: #2f766d;
+}
+
+.topbar__status span[data-status='error'] {
+  background: #4a1717;
+  border-color: #9f2a2a;
+}
+
+.topbar__status span[data-status='running'] {
+  background: #3d3217;
+  border-color: #9a6b1f;
+}
+
 .workbench {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr) 360px;
@@ -293,6 +308,12 @@ h1 {
   gap: 8px;
 }
 
+.api-actions {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr 1fr;
+}
+
 .primary-button,
 .secondary-button,
 .danger-button {
@@ -305,6 +326,11 @@ h1 {
   justify-content: center;
   min-height: 38px;
   padding: 8px 11px;
+}
+
+.primary-button:disabled {
+  cursor: wait;
+  opacity: 0.72;
 }
 
 .primary-button {

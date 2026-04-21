@@ -26,6 +26,12 @@ import {
 import { useMemo, useState } from 'react'
 
 import './App.css'
+import {
+  bootstrapNetBox,
+  createTopology,
+  getHealth,
+  type HealthResponse,
+} from './api/gemeroticApi'
 import { AssetNode } from './components/AssetNode'
 import { assetCatalog, getAssetDefinition } from './domain/assetCatalog'
 import {
@@ -50,6 +56,7 @@ const nodeTypes = {
 const criticalityOptions: Criticality[] = ['critical', 'high', 'medium', 'low']
 const securityLevelOptions: SecurityLevel[] = ['SL-0', 'SL-1', 'SL-2', 'SL-3', 'SL-4']
 const purdueOptions: PurdueLevel[] = [0, 1, 2, 3, 4, 5]
+type OperationStatus = 'idle' | 'running' | 'success' | 'error'
 
 function App() {
   const initialState = useMemo(() => createInitialBuilderState(), [])
@@ -61,6 +68,11 @@ function App() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(
     initialState.nodes[0]?.id ?? null,
   )
+  const [apiBaseUrl, setApiBaseUrl] = useState('http://localhost:8000')
+  const [apiKey, setApiKey] = useState('')
+  const [operationStatus, setOperationStatus] = useState<OperationStatus>('idle')
+  const [operationMessage, setOperationMessage] = useState('API sin verificar')
+  const [health, setHealth] = useState<HealthResponse | null>(null)
 
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null
   const payload = useMemo(
@@ -128,6 +140,57 @@ function App() {
     setSettings((currentSettings) => ({ ...currentSettings, ...patch }))
   }
 
+  const apiConfig = { baseUrl: apiBaseUrl, apiKey }
+
+  const runOperation = async (
+    operation: () => Promise<{ ok: boolean; status: number; data: unknown }>,
+    successMessage: string,
+  ) => {
+    setOperationStatus('running')
+    try {
+      const result = await operation()
+      if (!result.ok) {
+        setOperationStatus('error')
+        setOperationMessage(extractMessage(result.data, `HTTP ${result.status}`))
+        return
+      }
+      setOperationStatus('success')
+      setOperationMessage(successMessage)
+    } catch (error) {
+      setOperationStatus('error')
+      setOperationMessage(error instanceof Error ? error.message : 'Request failed')
+    }
+  }
+
+  const checkHealth = async () => {
+    setOperationStatus('running')
+    try {
+      const result = await getHealth(apiConfig)
+      setHealth(result.data)
+      setOperationStatus(result.ok ? 'success' : 'error')
+      setOperationMessage(
+        result.ok
+          ? `Health OK · NetBox ${result.data.checks.netbox_connected ? 'OK' : 'offline'}`
+          : `Health fallo · HTTP ${result.status}`,
+      )
+    } catch (error) {
+      setOperationStatus('error')
+      setOperationMessage(error instanceof Error ? error.message : 'Request failed')
+    }
+  }
+
+  const bootstrap = () =>
+    runOperation(
+      () => bootstrapNetBox(apiConfig),
+      'Bootstrap de NetBox completado',
+    )
+
+  const persistTopology = () =>
+    runOperation(
+      () => createTopology(apiConfig, payload),
+      'Topologia enviada a NetBox',
+    )
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -139,13 +202,13 @@ function App() {
           </div>
         </div>
         <div className="topbar__status">
-          <span>
+          <span data-status={operationStatus}>
             <Activity size={16} />
-            API local
+            {operationMessage}
           </span>
           <span>
             <Database size={16} />
-            NetBox SSoT
+            NetBox {health?.checks.netbox_connected ? 'online' : 'SSoT'}
           </span>
         </div>
       </header>
@@ -355,14 +418,55 @@ function App() {
             <span>Payload</span>
           </div>
           <pre className="payload-preview">{payloadText}</pre>
-          <button type="button" className="primary-button">
+          <div className="panel-title panel-title--spaced">
+            <KeyRound size={18} />
+            <span>API</span>
+          </div>
+          <label className="field">
+            <span>Base URL</span>
+            <input
+              value={apiBaseUrl}
+              onChange={(event) => setApiBaseUrl(event.target.value)}
+            />
+          </label>
+          <label className="field">
+            <span>X-API-Key</span>
+            <input
+              value={apiKey}
+              onChange={(event) => setApiKey(event.target.value)}
+              type="password"
+            />
+          </label>
+          <div className="api-actions">
+            <button type="button" className="secondary-button" onClick={checkHealth}>
+              <Activity size={16} />
+              Health
+            </button>
+            <button type="button" className="secondary-button" onClick={bootstrap}>
+              <Database size={16} />
+              Bootstrap
+            </button>
+          </div>
+          <button
+            type="button"
+            className="primary-button"
+            disabled={operationStatus === 'running'}
+            onClick={persistTopology}
+          >
             <Save size={16} />
-            Preparar envio
+            Persistir en NetBox
           </button>
         </aside>
       </section>
     </main>
   )
+}
+
+function extractMessage(data: unknown, fallback: string): string {
+  if (typeof data === 'object' && data !== null && 'message' in data) {
+    return String((data as { message: unknown }).message)
+  }
+  return fallback
 }
 
 export default App
