@@ -2,6 +2,7 @@ import type {
   AssetDefinition,
   AssetType,
   BuilderEdge,
+  BuilderEdgeData,
   BuilderNode,
   BuilderNodeData,
   BuilderState,
@@ -91,9 +92,30 @@ const initialNodes: BuilderNode[] = [
 ]
 
 const initialEdges: BuilderEdge[] = [
-  { id: 'edge-router-switch', source: 'router-01', target: 'switch-01' },
-  { id: 'edge-switch-plc', source: 'switch-01', target: 'plc-01' },
-  { id: 'edge-switch-hmi', source: 'switch-01', target: 'hmi-01' },
+  createBuilderEdge({
+    id: 'edge-router-switch',
+    source: 'router-01',
+    target: 'switch-01',
+    label: 'uplink-core',
+    sourcePortIndex: 0,
+    targetPortIndex: 0,
+  }),
+  createBuilderEdge({
+    id: 'edge-switch-plc',
+    source: 'switch-01',
+    target: 'plc-01',
+    label: 'plc-a',
+    sourcePortIndex: 1,
+    targetPortIndex: 0,
+  }),
+  createBuilderEdge({
+    id: 'edge-switch-hmi',
+    source: 'switch-01',
+    target: 'hmi-01',
+    label: 'hmi-a',
+    sourcePortIndex: 2,
+    targetPortIndex: 0,
+  }),
 ]
 
 export function createInitialBuilderState(): BuilderState {
@@ -135,6 +157,27 @@ export function createNodeFromAsset(
   }
 }
 
+export function createBuilderEdge(input: {
+  id: string
+  source: string
+  target: string
+  label?: string
+  sourcePortIndex?: number
+  targetPortIndex?: number
+}): BuilderEdge {
+  return {
+    id: input.id,
+    source: input.source,
+    target: input.target,
+    label: normalizeCableLabel(input.label, input.id),
+    data: {
+      label: normalizeCableLabel(input.label, input.id),
+      sourcePortIndex: normalizePortIndex(input.sourcePortIndex),
+      targetPortIndex: normalizePortIndex(input.targetPortIndex),
+    },
+  }
+}
+
 export function getNextAssetIndex(
   nodes: BuilderNode[],
   assetType: AssetType,
@@ -158,6 +201,7 @@ export function buildTopologyPayload(state: BuilderState): TopologyPayload {
   const portMap = assignPorts(state.nodes, state.edges)
   const edgeTerminations = assignCableTerminations(state.edges, portMap)
   const zones = buildSecurityZones(state.nodes)
+  const cableIds = new Set<string>()
 
   return {
     name: topologyName,
@@ -183,13 +227,19 @@ export function buildTopologyPayload(state: BuilderState): TopologyPayload {
       },
     ],
     devices: state.nodes.map((node) => buildDevicePayload(node, rackId, portMap)),
-    cables: edgeTerminations.map((termination, index) => ({
-      id: `cable-${String(index + 1).padStart(3, '0')}`,
-      terminations: [
-        { port_id: termination.sourcePortId },
-        { port_id: termination.targetPortId },
-      ],
-    })),
+    cables: edgeTerminations.map((termination, index) => {
+      const label = normalizeCableLabel(
+        termination.edge.data?.label,
+        `cable-${index + 1}`,
+      )
+      return {
+        id: createUniqueCableId(cableIds, label, index),
+        terminations: [
+          { port_id: termination.sourcePortId },
+          { port_id: termination.targetPortId },
+        ],
+      }
+    }),
     interfaces: buildInterfaces(portMap, state.nodes),
     vlans: buildVlans(Array.from(portMap.values()).flat(), state.nodes),
     security_zones: zones,
@@ -236,15 +286,23 @@ function assignPorts(
   edges: BuilderEdge[],
 ): Map<string, DevicePortPayload[]> {
   const portMap = new Map<string, DevicePortPayload[]>()
-  const edgeCounts = new Map<string, number>()
+  const requiredPorts = new Map<string, number>()
   for (const edge of edges) {
-    edgeCounts.set(edge.source, (edgeCounts.get(edge.source) ?? 0) + 1)
-    edgeCounts.set(edge.target, (edgeCounts.get(edge.target) ?? 0) + 1)
+    const sourcePortIndex = normalizePortIndex(edge.data?.sourcePortIndex)
+    const targetPortIndex = normalizePortIndex(edge.data?.targetPortIndex)
+    requiredPorts.set(
+      edge.source,
+      Math.max(requiredPorts.get(edge.source) ?? 1, sourcePortIndex + 1),
+    )
+    requiredPorts.set(
+      edge.target,
+      Math.max(requiredPorts.get(edge.target) ?? 1, targetPortIndex + 1),
+    )
   }
 
   for (const node of nodes) {
     const configuredCount = clampPortCount(node.data.portCount)
-    const requiredCount = edgeCounts.get(node.id) ?? 1
+    const requiredCount = requiredPorts.get(node.id) ?? 1
     const portCount = Math.max(configuredCount, requiredCount)
     const portPrefix = sanitizePortPrefix(node.data.portPrefix)
     portMap.set(
@@ -265,16 +323,12 @@ function assignPorts(
 function assignCableTerminations(
   edges: BuilderEdge[],
   portMap: Map<string, DevicePortPayload[]>,
-): Array<{ sourcePortId: string; targetPortId: string }> {
-  const cursor = new Map<string, number>()
-
+): Array<{ edge: BuilderEdge; sourcePortId: string; targetPortId: string }> {
   return edges.map((edge) => {
-    const sourceIndex = cursor.get(edge.source) ?? 0
-    const targetIndex = cursor.get(edge.target) ?? 0
-    cursor.set(edge.source, sourceIndex + 1)
-    cursor.set(edge.target, targetIndex + 1)
-
+    const sourceIndex = normalizePortIndex(edge.data?.sourcePortIndex)
+    const targetIndex = normalizePortIndex(edge.data?.targetPortIndex)
     return {
+      edge,
       sourcePortId: portMap.get(edge.source)?.[sourceIndex]?.id ?? '',
       targetPortId: portMap.get(edge.target)?.[targetIndex]?.id ?? '',
     }
@@ -441,6 +495,74 @@ export function updateNodeData(
   )
 }
 
+export function updateEdgeData(
+  edges: BuilderEdge[],
+  edgeId: string,
+  patch: Partial<BuilderEdgeData>,
+): BuilderEdge[] {
+  return edges.map((edge) =>
+    edge.id === edgeId
+      ? {
+          ...edge,
+          label: normalizeCableLabel(patch.label ?? edge.data?.label, edge.id),
+          data: {
+            label: normalizeCableLabel(patch.label ?? edge.data?.label, edge.id),
+            sourcePortIndex: normalizePortIndex(
+              patch.sourcePortIndex ?? edge.data?.sourcePortIndex,
+            ),
+            targetPortIndex: normalizePortIndex(
+              patch.targetPortIndex ?? edge.data?.targetPortIndex,
+            ),
+          },
+        }
+      : edge,
+  )
+}
+
+export function getPortName(node: BuilderNode, portIndex: number): string {
+  const prefix = sanitizePortPrefix(node.data.portPrefix)
+  return `${prefix}${normalizePortIndex(portIndex)}`
+}
+
+export function getUsedPortIndexes(
+  edges: BuilderEdge[],
+  nodeId: string,
+  excludedEdgeId?: string,
+): number[] {
+  const used = new Set<number>()
+
+  for (const edge of edges) {
+    if (edge.id === excludedEdgeId) {
+      continue
+    }
+    if (edge.source === nodeId) {
+      used.add(normalizePortIndex(edge.data?.sourcePortIndex))
+    }
+    if (edge.target === nodeId) {
+      used.add(normalizePortIndex(edge.data?.targetPortIndex))
+    }
+  }
+
+  return Array.from(used).sort((first, second) => first - second)
+}
+
+export function getSuggestedPortIndex(
+  node: BuilderNode,
+  edges: BuilderEdge[],
+  excludedEdgeId?: string,
+): number {
+  const used = new Set(getUsedPortIndexes(edges, node.id, excludedEdgeId))
+  const configuredCount = clampPortCount(node.data.portCount)
+
+  for (let index = 0; index < configuredCount; index += 1) {
+    if (!used.has(index)) {
+      return index
+    }
+  }
+
+  return configuredCount
+}
+
 export function slugify(value: string): string {
   const normalized = value
     .trim()
@@ -467,6 +589,33 @@ function sanitizePortPrefix(value: string): string {
     .replace(/[^a-zA-Z0-9/_-]/g, '')
     .slice(0, 16)
   return normalized || 'eth'
+}
+
+function createUniqueCableId(
+  taken: Set<string>,
+  label: string,
+  index: number,
+): string {
+  const baseId = slugify(label || `cable-${index + 1}`)
+  let candidate = baseId
+  let suffix = 2
+  while (taken.has(candidate)) {
+    candidate = `${baseId}-${suffix}`
+    suffix += 1
+  }
+  taken.add(candidate)
+  return candidate
+}
+
+function normalizeCableLabel(value: string | undefined, fallback: string): string {
+  return sanitizeLabel(value ?? '') || sanitizeLabel(fallback) || 'cable'
+}
+
+function normalizePortIndex(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value)) {
+    return 0
+  }
+  return Math.max(0, Math.trunc(value))
 }
 
 function sanitizeProtocol(value: string): string {

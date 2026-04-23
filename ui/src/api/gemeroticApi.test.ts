@@ -6,6 +6,7 @@ import {
   deployPipeline,
   generatePipelineArtifacts,
   getHealth,
+  getPipelineTools,
 } from './gemeroticApi'
 
 const config = {
@@ -101,6 +102,26 @@ describe('gemeroticApi', () => {
 
     expect(fetchMock.mock.calls[0][0]).toBe(
       'http://localhost:8000/api/v1/pipeline/deploy',
+    )
+    expect(headers.get('X-API-Key')).toBe('test-key')
+  })
+
+  it('consulta herramientas del pipeline con API key', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: 'success',
+          message: 'Pipeline tool status collected',
+          data: { tools: [] },
+        }),
+      ),
+    )
+
+    await getPipelineTools(config)
+    const headers = fetchMock.mock.calls[0][1]?.headers as Headers
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'http://localhost:8000/api/v1/pipeline/tools',
     )
     expect(headers.get('X-API-Key')).toBe('test-key')
   })

@@ -53,6 +53,18 @@ export type PipelineRunResponse = {
   commands: PipelineCommandResult[]
 }
 
+export type PipelineToolStatus = {
+  name: string
+  installed: boolean
+  path: string | null
+  version: string | null
+  error: string | null
+}
+
+export type PipelineToolReportResponse = {
+  tools: PipelineToolStatus[]
+}
+
 export async function getHealth(config: APIConfig): Promise<APIResult<HealthResponse>> {
   return requestJson<HealthResponse>(config, '/api/v1/health')
 }
@@ -88,6 +100,19 @@ export async function generatePipelineArtifacts(
       method: 'POST',
       apiKeyRequired: true,
       body: payload,
+    },
+  )
+}
+
+export async function getPipelineTools(
+  config: APIConfig,
+): Promise<APIResult<APIEnvelope<PipelineToolReportResponse>>> {
+  return requestJson<APIEnvelope<PipelineToolReportResponse>>(
+    config,
+    '/api/v1/pipeline/tools',
+    {
+      method: 'GET',
+      apiKeyRequired: true,
     },
   )
 }

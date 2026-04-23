@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildTopologyPayload,
+  createBuilderEdge,
   createInitialBuilderState,
   getNextAssetIndex,
+  getPortName,
+  getSuggestedPortIndex,
   slugify,
+  updateEdgeData,
 } from './topologyBuilder'
 
 describe('topologyBuilder', () => {
@@ -21,6 +25,7 @@ describe('topologyBuilder', () => {
     expect(payload.interfaces[0].mgmt_only).toBe(false)
     expect(payload.vlans[0].vlan_id).toBeGreaterThan(0)
     expect(payload.cables).toHaveLength(3)
+    expect(payload.cables[0].id).toBe('uplink-core')
     expect(payload.security_zones.length).toBeGreaterThan(1)
     expect(payload.conduits.length).toBeGreaterThan(0)
     expect(payload.conduits[0].allowed_protocols.length).toBeGreaterThan(0)
@@ -92,5 +97,43 @@ describe('topologyBuilder', () => {
     expect(payload.vlans.find((vlan) => vlan.vlan_id === 4094)?.name).toBe(
       'VLAN 4094',
     )
+  })
+
+  it('usa puertos explicitos del cable y expande puertos si hace falta', () => {
+    const state = createInitialBuilderState()
+    state.edges[0] = updateEdgeData(state.edges, 'edge-router-switch', {
+      sourcePortIndex: 3,
+      targetPortIndex: 5,
+      label: 'uplink-core-b',
+    })[0]
+
+    const payload = buildTopologyPayload(state)
+
+    expect(payload.cables[0].id).toBe('uplink-core-b')
+    expect(payload.cables[0].terminations[0].port_id).toBe('router-01:eth3')
+    expect(payload.cables[0].terminations[1].port_id).toBe('switch-01:eth5')
+    expect(payload.devices.find((device) => device.id === 'switch-01')?.ports).toHaveLength(8)
+  })
+
+  it('sugiere el siguiente puerto libre por nodo', () => {
+    const state = createInitialBuilderState()
+
+    expect(getSuggestedPortIndex(state.nodes[0], state.edges)).toBe(0)
+    expect(getPortName(state.nodes[0], 0)).toBe('eth0')
+  })
+
+  it('crea cables con etiquetas y puertos iniciales', () => {
+    const edge = createBuilderEdge({
+      id: 'edge-a',
+      source: 'router-01',
+      target: 'switch-01',
+      label: 'backbone-a',
+      sourcePortIndex: 2,
+      targetPortIndex: 4,
+    })
+
+    expect(edge.label).toBe('backbone-a')
+    expect(edge.data?.sourcePortIndex).toBe(2)
+    expect(edge.data?.targetPortIndex).toBe(4)
   })
 })

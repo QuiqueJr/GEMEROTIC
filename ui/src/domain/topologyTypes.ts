@@ -45,7 +45,13 @@ export type BuilderNodeData = {
 }
 
 export type BuilderNode = Node<BuilderNodeData, 'asset'>
-export type BuilderEdge = Edge
+export type BuilderEdgeData = {
+  label: string
+  sourcePortIndex: number
+  targetPortIndex: number
+}
+
+export type BuilderEdge = Edge<BuilderEdgeData>
 
 export type TopologySettings = {
   name: string
