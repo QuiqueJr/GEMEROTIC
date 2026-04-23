@@ -117,3 +117,18 @@ class TestNotFound:
         """El health vive bajo /api/v1/, no en la raíz."""
         response = client.get("/health")
         assert response.status_code == 404
+
+
+class TestRootRoutes:
+    """Verificar rutas auxiliares consultadas por navegador."""
+
+    def test_root_redirects_to_docs(self, client: TestClient):
+        """La raíz debe redirigir a la documentación y no retornar 404."""
+        response = client.get("/", follow_redirects=False)
+        assert response.status_code == 307
+        assert response.headers["location"] == "/docs"
+
+    def test_favicon_does_not_return_404(self, client: TestClient):
+        """El favicon vacío evita ruido 404 en navegadores."""
+        response = client.get("/favicon.ico")
+        assert response.status_code == 204
