@@ -47,19 +47,23 @@ TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
   - `timeout` del healthcheck ampliado a `30s`
   - logs automáticos de `postgres`, `netbox` y `netbox-worker` al finalizar el job
 - La UI del builder se refinó para uso operativo:
-  - biblioteca de equipos OT/IT agrupada por dominio
-  - iconografía propia para router, switch, firewall, PLC, HMI, RTU,
-    servidor SCADA, patch panel y AP
-  - nodos del canvas centrados en símbolo + etiqueta, con configuración por
-    doble clic
-  - herramienta de enlace tipo GNS3: selección de origen, destino, puertos y
-    nombre de cable
+  - workspace reorganizado al patrón de GNS3 documentado: toolbar superior,
+    devices toolbar a la izquierda, canvas central, topology/server summary a
+    la derecha y consola inferior
+  - biblioteca OT/IT por dominio con inserción por clic y por drag and drop
+  - iconografía de estilo appliance industrial para router, switch, firewall,
+    PLC, HMI, RTU, servidor SCADA, patch panel y AP
+  - nodos del canvas reducidos a símbolo + etiqueta para evitar ruido visual,
+    con configuración por doble clic
+  - herramienta de enlace tipo GNS3: selección de origen, destino, puertos,
+    nombre de cable y edición posterior por doble clic
   - edición de cables con nombre propio y puertos explícitos por extremo
   - atajos de productividad (`Supr`, `Ctrl/Cmd+Z`, `Ctrl/Cmd+Y`,
     `Ctrl/Cmd+Shift+Z`, `Escape`)
-  - inspector contextual para evitar sobrecarga visual y mostrar solo lo que
-    toca en cada momento
-  - vistas JSON/artefactos/ejecución colapsadas por defecto
+  - etiquetas de interfaz ocultas por defecto, alineadas con el comportamiento
+    base de GNS3
+  - configuraciones del proyecto, conectividad y navegador de datos movidos a
+    modales para no saturar el canvas
   - comprobación visual del entorno de despliegue desde la propia UI
 - Para equipos que requieran software específico de explotación o control, la
   ruta correcta no es configurar paquetes ad hoc por nodo, sino introducir una
