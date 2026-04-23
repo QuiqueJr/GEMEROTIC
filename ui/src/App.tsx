@@ -18,16 +18,17 @@ import {
   Activity,
   Box,
   Cable,
+  CheckCircle2,
   Copy,
   Database,
   Factory,
   GitBranch,
   KeyRound,
   Layers3,
+  LockKeyhole,
   Network,
   Save,
   Settings,
-  ShieldCheck,
   Trash2,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
@@ -46,6 +47,7 @@ import {
   createInitialBuilderState,
   createNodeFromAsset,
   getNextAssetIndex,
+  slugify,
   updateNodeData,
 } from './domain/topologyBuilder'
 import type {
@@ -55,6 +57,7 @@ import type {
   PurdueLevel,
   SecurityLevel,
   TopologySettings,
+  TopologyView,
 } from './domain/topologyTypes'
 
 const nodeTypes = {
@@ -66,22 +69,39 @@ const securityLevelOptions: SecurityLevel[] = ['SL-0', 'SL-1', 'SL-2', 'SL-3', '
 const purdueOptions: PurdueLevel[] = [0, 1, 2, 3, 4, 5]
 type OperationStatus = 'idle' | 'running' | 'success' | 'error'
 
+const viewOptions: Array<{
+  id: TopologyView
+  label: string
+  description: string
+}> = [
+  {
+    id: 'physical',
+    label: 'Fisica',
+    description: 'Sites, salas, racks, puertos y cables',
+  },
+  {
+    id: 'logical',
+    label: 'Logica',
+    description: 'Interfaces, VLANs y direccionamiento',
+  },
+  {
+    id: 'security',
+    label: 'Seguridad',
+    description: 'Zonas IEC 62443, Purdue y conductos',
+  },
+]
+
 const defaultEdgeOptions: DefaultEdgeOptions = {
-  animated: true,
+  animated: false,
   markerEnd: {
     type: MarkerType.ArrowClosed,
-    color: '#f97316',
+    color: '#4b5563',
   },
   style: {
-    stroke: '#f97316',
-    strokeWidth: 2.4,
+    stroke: '#4b5563',
+    strokeWidth: 2,
   },
   type: 'smoothstep',
-}
-
-const connectionLineStyle = {
-  stroke: '#f97316',
-  strokeWidth: 2.4,
 }
 
 const roleLabels = {
@@ -110,6 +130,7 @@ function App() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(
     initialState.nodes[0]?.id ?? null,
   )
+  const [activeView, setActiveView] = useState<TopologyView>('physical')
   const [apiBaseUrl, setApiBaseUrl] = useState('http://localhost:8000')
   const [apiKey, setApiKey] = useState('')
   const [operationStatus, setOperationStatus] = useState<OperationStatus>('idle')
@@ -122,17 +143,49 @@ function App() {
     [settings, nodes, edges],
   )
   const payloadText = useMemo(() => JSON.stringify(payload, null, 2), [payload])
+  const displayedNodes = useMemo(
+    () =>
+      nodes.map((node) => ({
+        ...node,
+        data: {
+          ...node.data,
+          activeView,
+        },
+      })),
+    [activeView, nodes],
+  )
+  const displayedEdges = useMemo(
+    () =>
+      edges.map((edge) => ({
+        ...edge,
+        animated: activeView === 'logical',
+        label: getEdgeLabel(activeView),
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color: getEdgeColor(activeView),
+        },
+        style: {
+          stroke: getEdgeColor(activeView),
+          strokeDasharray: getEdgeDash(activeView),
+          strokeWidth: activeView === 'security' ? 2.6 : 2,
+        },
+        type: 'smoothstep',
+      })),
+    [activeView, edges],
+  )
   const topologySummary = useMemo(
     () => ({
       assets: nodes.length,
       links: edges.length,
+      ports: payload.interfaces.length,
+      vlans: payload.vlans.length,
       zones: payload.security_zones.length,
       conduits: payload.conduits.length,
       criticalAssets: nodes.filter((node) => node.data.criticality === 'critical')
         .length,
       maxSecurityLevel: getMaxSecurityLevel(nodes),
     }),
-    [edges.length, nodes, payload.conduits.length, payload.security_zones.length],
+    [edges.length, nodes, payload],
   )
   const purdueSummary = useMemo(
     () =>
@@ -216,6 +269,23 @@ function App() {
     setSelectedNodeId(duplicatedNode.id)
   }
 
+  const changeSelectedAssetType = (assetType: AssetType) => {
+    const asset = getAssetDefinition(assetType)
+    updateSelectedNode({
+      assetType: asset.assetType,
+      criticality: asset.criticality,
+      portCount: asset.portCount,
+      portPrefix: asset.portPrefix,
+      zoneId: asset.defaultZoneId,
+      zoneName: asset.defaultZoneName,
+      purdueLevel: asset.purdueLevel,
+      securityLevel: asset.securityLevel,
+      vlanId: asset.vlanId,
+      vlanName: asset.vlanName,
+      allowedProtocols: asset.defaultProtocols,
+    })
+  }
+
   const updateSelectedNode = (patch: Partial<BuilderNode['data']>) => {
     if (selectedNodeId === null) {
       return
@@ -279,32 +349,31 @@ function App() {
     )
 
   return (
-    <main className="app-shell">
+    <main className="app-shell" data-view={activeView}>
       <header className="topbar">
         <div className="brand-block">
           <div className="brand-mark" aria-hidden="true">
             GE
           </div>
           <div>
-            <p className="eyebrow">GEMEROTIC UI</p>
-            <h1>Constructor OT/IT</h1>
-            <p className="brand-subtitle">UI - FastAPI - NetBox SSoT</p>
+            <p className="eyebrow">GEMEROTIC</p>
+            <h1>Digital Twin OT/IT</h1>
+            <p className="brand-subtitle">React Flow - FastAPI - NetBox SSoT</p>
           </div>
         </div>
-        <div className="topbar__metrics" aria-label="Resumen de topologia">
-          <span>
-            <Network size={15} />
-            {topologySummary.assets} activos
-          </span>
-          <span>
-            <GitBranch size={15} />
-            {topologySummary.links} enlaces
-          </span>
-          <span>
-            <ShieldCheck size={15} />
-            {topologySummary.maxSecurityLevel}
-          </span>
-        </div>
+        <nav className="view-switcher" aria-label="Vista de topologia">
+          {viewOptions.map((view) => (
+            <button
+              aria-pressed={activeView === view.id}
+              key={view.id}
+              onClick={() => setActiveView(view.id)}
+              type="button"
+            >
+              <span>{view.label}</span>
+              <small>{view.description}</small>
+            </button>
+          ))}
+        </nav>
         <div className="topbar__status">
           <span aria-live="polite" data-status={operationStatus}>
             <Activity size={16} />
@@ -322,7 +391,7 @@ function App() {
           <div className="pipeline-strip" aria-label="Pipeline activo">
             <span>UI</span>
             <span>API</span>
-            <span>SSoT</span>
+            <span>NetBox</span>
           </div>
 
           <div className="panel-title">
@@ -341,8 +410,8 @@ function App() {
                 <span className="asset-button__copy">
                   <strong>{asset.label}</strong>
                   <small>
-                    {roleLabels[asset.role]} - Purdue {asset.purdueLevel} -{' '}
-                    {asset.securityLevel}
+                    {roleLabels[asset.role]} - L{asset.purdueLevel} - VLAN{' '}
+                    {asset.vlanId}
                   </small>
                 </span>
               </button>
@@ -351,7 +420,7 @@ function App() {
 
           <div className="panel-title panel-title--spaced">
             <Layers3 size={18} />
-            <span>Purdue</span>
+            <span>Modelo Purdue</span>
           </div>
           <div className="purdue-stack">
             {purdueSummary.map((row) => (
@@ -365,7 +434,7 @@ function App() {
 
           <div className="panel-title panel-title--spaced">
             <Factory size={18} />
-            <span>Topologia</span>
+            <span>Topologia fisica</span>
           </div>
           <label className="field">
             <span>Nombre</span>
@@ -399,24 +468,25 @@ function App() {
 
         <section className="canvas-panel" aria-label="Canvas de topologia">
           <ReactFlow
-            nodes={nodes}
-            edges={edges}
+            nodes={displayedNodes}
+            edges={displayedEdges}
             nodeTypes={nodeTypes}
             onNodesChange={handleNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={handleConnect}
             onNodeClick={(_, node) => setSelectedNodeId(node.id)}
             defaultEdgeOptions={defaultEdgeOptions}
-            connectionLineStyle={connectionLineStyle}
+            connectionLineStyle={{
+              stroke: getEdgeColor(activeView),
+              strokeWidth: 2,
+            }}
             fitView
             fitViewOptions={{ padding: 0.24 }}
           >
             <Panel className="canvas-hud" position="top-left">
-              <span>Topologia activa</span>
+              <span>Vista {getViewLabel(activeView)}</span>
               <strong>{settings.name}</strong>
-              <small>
-                {topologySummary.zones} zonas - {topologySummary.conduits} conductos
-              </small>
+              <small>{getViewSummary(activeView, topologySummary)}</small>
             </Panel>
             <Panel className="zone-hud" position="top-right">
               {payload.security_zones.map((zone) => (
@@ -426,15 +496,12 @@ function App() {
                 </span>
               ))}
             </Panel>
-            <Background color="#cbd5d0" gap={24} />
+            <Background color="#d0d5d8" gap={24} />
             <Controls position="bottom-left" />
             <MiniMap
               pannable
               zoomable
-              nodeColor={(node) => {
-                const asset = node as BuilderNode
-                return asset.data.assetType === 'plc' ? '#d97706' : '#2f766d'
-              }}
+              nodeColor={(node) => getNodeColor(node as BuilderNode)}
             />
           </ReactFlow>
         </section>
@@ -453,105 +520,301 @@ function App() {
                   <strong>{selectedNode.data.assetType.replace('_', ' ')}</strong>
                 </div>
                 <div>
+                  <span>VLAN</span>
+                  <strong>{selectedNode.data.vlanId}</strong>
+                </div>
+                <div>
                   <span>Zona</span>
                   <strong>{selectedNode.data.zoneName}</strong>
                 </div>
-                <div>
-                  <span>Criticidad</span>
-                  <strong>{selectedNode.data.criticality}</strong>
+              </div>
+
+              <section className="config-section" data-layer="physical">
+                <div className="section-heading">
+                  <Network size={16} />
+                  <span>Layer 1 - Fisica</span>
                 </div>
-              </div>
-              <label className="field">
-                <span>Etiqueta</span>
-                <input
-                  value={selectedNode.data.label}
-                  onChange={(event) =>
-                    updateSelectedNode({ label: event.target.value })
-                  }
-                />
-              </label>
-              <label className="field">
-                <span>Tipo</span>
-                <select
-                  value={selectedNode.data.assetType}
-                  onChange={(event) =>
-                    updateSelectedNode({
-                      assetType: event.target.value as AssetType,
-                    })
-                  }
-                >
-                  {assetCatalog.map((asset) => (
-                    <option key={asset.assetType} value={asset.assetType}>
-                      {asset.assetType}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>Zona IEC 62443</span>
-                <input
-                  value={selectedNode.data.zoneName}
-                  onChange={(event) =>
-                    updateSelectedNode({
-                      zoneName: event.target.value,
-                      zoneId: event.target.value.toLowerCase().replace(/\s+/g, '-'),
-                    })
-                  }
-                />
-              </label>
-              <div className="field-grid">
                 <label className="field">
-                  <span>Purdue</span>
+                  <span>Etiqueta</span>
+                  <input
+                    value={selectedNode.data.label}
+                    onChange={(event) =>
+                      updateSelectedNode({ label: event.target.value })
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span>Tipo de activo</span>
                   <select
-                    value={selectedNode.data.purdueLevel}
+                    value={selectedNode.data.assetType}
+                    onChange={(event) =>
+                      changeSelectedAssetType(event.target.value as AssetType)
+                    }
+                  >
+                    {assetCatalog.map((asset) => (
+                      <option key={asset.assetType} value={asset.assetType}>
+                        {asset.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="field-grid">
+                  <label className="field">
+                    <span>Fabricante</span>
+                    <input
+                      value={selectedNode.data.manufacturer ?? ''}
+                      onChange={(event) =>
+                        updateSelectedNode({ manufacturer: event.target.value })
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Modelo</span>
+                    <input
+                      value={selectedNode.data.model ?? ''}
+                      onChange={(event) =>
+                        updateSelectedNode({ model: event.target.value })
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="field-grid">
+                  <label className="field">
+                    <span>Firmware</span>
+                    <input
+                      value={selectedNode.data.firmwareVersion ?? ''}
+                      onChange={(event) =>
+                        updateSelectedNode({ firmwareVersion: event.target.value })
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Serie</span>
+                    <input
+                      value={selectedNode.data.serialNumber ?? ''}
+                      onChange={(event) =>
+                        updateSelectedNode({ serialNumber: event.target.value })
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="field-grid">
+                  <label className="field">
+                    <span>RU rack</span>
+                    <input
+                      min="1"
+                      max="60"
+                      type="number"
+                      value={selectedNode.data.rackPosition ?? ''}
+                      onChange={(event) =>
+                        updateSelectedNode({
+                          rackPosition: parseOptionalBoundedNumber(
+                            event.target.value,
+                            1,
+                            60,
+                          ),
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Puertos</span>
+                    <input
+                      min="1"
+                      max="96"
+                      type="number"
+                      value={selectedNode.data.portCount}
+                      onChange={(event) =>
+                        updateSelectedNode({
+                          portCount: parseBoundedNumber(event.target.value, 1, 1, 96),
+                        })
+                      }
+                    />
+                  </label>
+                </div>
+                <label className="field">
+                  <span>Prefijo de puerto</span>
+                  <input
+                    value={selectedNode.data.portPrefix}
+                    onChange={(event) =>
+                      updateSelectedNode({ portPrefix: event.target.value })
+                    }
+                  />
+                </label>
+              </section>
+
+              <section className="config-section" data-layer="logical">
+                <div className="section-heading">
+                  <GitBranch size={16} />
+                  <span>Layer 2 - Logica</span>
+                </div>
+                <div className="field-grid">
+                  <label className="field">
+                    <span>VLAN ID</span>
+                    <input
+                      min="1"
+                      max="4094"
+                      type="number"
+                      value={selectedNode.data.vlanId}
+                      onChange={(event) =>
+                        updateSelectedNode({
+                          vlanId: parseBoundedNumber(
+                            event.target.value,
+                            1,
+                            1,
+                            4094,
+                          ),
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Nombre VLAN</span>
+                    <input
+                      value={selectedNode.data.vlanName}
+                      onChange={(event) =>
+                        updateSelectedNode({ vlanName: event.target.value })
+                      }
+                    />
+                  </label>
+                </div>
+                <label className="field">
+                  <span>IPv4 principal</span>
+                  <input
+                    placeholder="192.168.10.10/24"
+                    value={selectedNode.data.ipv4Address ?? ''}
+                    onChange={(event) =>
+                      updateSelectedNode({ ipv4Address: event.target.value })
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span>IPv6 principal</span>
+                  <input
+                    placeholder="2001:db8::10/64"
+                    value={selectedNode.data.ipv6Address ?? ''}
+                    onChange={(event) =>
+                      updateSelectedNode({ ipv6Address: event.target.value })
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span>MAC principal</span>
+                  <input
+                    placeholder="00:1A:2B:3C:4D:5E"
+                    value={selectedNode.data.macAddress ?? ''}
+                    onChange={(event) =>
+                      updateSelectedNode({ macAddress: event.target.value })
+                    }
+                  />
+                </label>
+                <div className="toggle-row">
+                  <label>
+                    <input
+                      checked={selectedNode.data.enabled}
+                      onChange={(event) =>
+                        updateSelectedNode({ enabled: event.target.checked })
+                      }
+                      type="checkbox"
+                    />
+                    Interfaz habilitada
+                  </label>
+                  <label>
+                    <input
+                      checked={selectedNode.data.mgmtOnly}
+                      onChange={(event) =>
+                        updateSelectedNode({ mgmtOnly: event.target.checked })
+                      }
+                      type="checkbox"
+                    />
+                    Solo gestion
+                  </label>
+                </div>
+              </section>
+
+              <section className="config-section" data-layer="security">
+                <div className="section-heading">
+                  <LockKeyhole size={16} />
+                  <span>Layer 3 - Seguridad OT</span>
+                </div>
+                <label className="field">
+                  <span>Zona IEC 62443</span>
+                  <input
+                    value={selectedNode.data.zoneName}
                     onChange={(event) =>
                       updateSelectedNode({
-                        purdueLevel: Number(event.target.value) as PurdueLevel,
+                        zoneName: event.target.value,
+                        zoneId: slugify(event.target.value),
+                      })
+                    }
+                  />
+                </label>
+                <div className="field-grid">
+                  <label className="field">
+                    <span>Purdue</span>
+                    <select
+                      value={selectedNode.data.purdueLevel}
+                      onChange={(event) =>
+                        updateSelectedNode({
+                          purdueLevel: Number(event.target.value) as PurdueLevel,
+                        })
+                      }
+                    >
+                      {purdueOptions.map((level) => (
+                        <option key={level} value={level}>
+                          L{level} - {purdueLabels[level]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Security Level</span>
+                    <select
+                      value={selectedNode.data.securityLevel}
+                      onChange={(event) =>
+                        updateSelectedNode({
+                          securityLevel: event.target.value as SecurityLevel,
+                        })
+                      }
+                    >
+                      {securityLevelOptions.map((level) => (
+                        <option key={level} value={level}>
+                          {level}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <label className="field">
+                  <span>Criticidad</span>
+                  <select
+                    value={selectedNode.data.criticality}
+                    onChange={(event) =>
+                      updateSelectedNode({
+                        criticality: event.target.value as Criticality,
                       })
                     }
                   >
-                    {purdueOptions.map((level) => (
-                      <option key={level} value={level}>
-                        {level}
+                    {criticalityOptions.map((criticality) => (
+                      <option key={criticality} value={criticality}>
+                        {criticality}
                       </option>
                     ))}
                   </select>
                 </label>
                 <label className="field">
-                  <span>SL</span>
-                  <select
-                    value={selectedNode.data.securityLevel}
+                  <span>Protocolos permitidos</span>
+                  <input
+                    value={selectedNode.data.allowedProtocols.join(', ')}
                     onChange={(event) =>
                       updateSelectedNode({
-                        securityLevel: event.target.value as SecurityLevel,
+                        allowedProtocols: parseProtocols(event.target.value),
                       })
                     }
-                  >
-                    {securityLevelOptions.map((level) => (
-                      <option key={level} value={level}>
-                        {level}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </label>
-              </div>
-              <label className="field">
-                <span>Criticidad</span>
-                <select
-                  value={selectedNode.data.criticality}
-                  onChange={(event) =>
-                    updateSelectedNode({
-                      criticality: event.target.value as Criticality,
-                    })
-                  }
-                >
-                  {criticalityOptions.map((criticality) => (
-                    <option key={criticality} value={criticality}>
-                      {criticality}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              </section>
+
               <div className="action-row">
                 <button
                   type="button"
@@ -580,17 +843,19 @@ function App() {
 
           <div className="panel-title panel-title--spaced">
             <Cable size={18} />
-            <span>Payload</span>
+            <span>Payload TopologyCreate</span>
           </div>
           <div className="payload-metrics">
             <span>{payload.devices.length} devices</span>
-            <span>{payload.cables.length} cables</span>
+            <span>{payload.interfaces.length} interfaces</span>
             <span>{payload.vlans.length} VLANs</span>
+            <span>{payload.conduits.length} conductos</span>
           </div>
           <pre className="payload-preview">{payloadText}</pre>
+
           <div className="panel-title panel-title--spaced">
             <KeyRound size={18} />
-            <span>API</span>
+            <span>Pipeline</span>
           </div>
           <label className="field">
             <span>Base URL</span>
@@ -613,7 +878,7 @@ function App() {
               Health
             </button>
             <button type="button" className="secondary-button" onClick={bootstrap}>
-              <Database size={16} />
+              <CheckCircle2 size={16} />
               Bootstrap
             </button>
           </div>
@@ -648,6 +913,109 @@ function getMaxSecurityLevel(nodes: BuilderNode[]): SecurityLevel {
     const nodeRank = order.get(node.data.securityLevel) ?? 0
     return nodeRank > currentRank ? node.data.securityLevel : currentLevel
   }, 'SL-0')
+}
+
+function getEdgeColor(view: TopologyView): string {
+  if (view === 'logical') {
+    return '#0f766e'
+  }
+  if (view === 'security') {
+    return '#b91c1c'
+  }
+  return '#4b5563'
+}
+
+function getEdgeDash(view: TopologyView): string | undefined {
+  if (view === 'logical') {
+    return '7 5'
+  }
+  if (view === 'security') {
+    return '2 5'
+  }
+  return undefined
+}
+
+function getEdgeLabel(view: TopologyView): string {
+  if (view === 'logical') {
+    return 'VLAN'
+  }
+  if (view === 'security') {
+    return 'conduit'
+  }
+  return 'cable'
+}
+
+function getViewLabel(view: TopologyView): string {
+  return viewOptions.find((option) => option.id === view)?.label ?? 'Fisica'
+}
+
+function getViewSummary(
+  view: TopologyView,
+  summary: {
+    links: number
+    ports: number
+    vlans: number
+    zones: number
+    conduits: number
+    criticalAssets: number
+    maxSecurityLevel: SecurityLevel
+  },
+): string {
+  if (view === 'logical') {
+    return `${summary.ports} interfaces - ${summary.vlans} VLANs`
+  }
+  if (view === 'security') {
+    return `${summary.zones} zonas - ${summary.conduits} conductos - ${summary.maxSecurityLevel}`
+  }
+  return `${summary.links} cables - ${summary.criticalAssets} activos criticos`
+}
+
+function getNodeColor(node: BuilderNode): string {
+  if (node.data.activeView === 'logical') {
+    return '#0f766e'
+  }
+  if (node.data.activeView === 'security') {
+    return node.data.criticality === 'critical' ? '#b91c1c' : '#92400e'
+  }
+  return '#4b5563'
+}
+
+function parseOptionalBoundedNumber(
+  value: string,
+  min: number,
+  max: number,
+): number | undefined {
+  if (value.trim() === '') {
+    return undefined
+  }
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) {
+    return undefined
+  }
+  return Math.min(Math.max(Math.trunc(parsed), min), max)
+}
+
+function parseBoundedNumber(
+  value: string,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  if (value.trim() === '') {
+    return fallback
+  }
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) {
+    return fallback
+  }
+  return Math.min(Math.max(Math.trunc(parsed), min), max)
+}
+
+function parseProtocols(value: string): string[] {
+  return value
+    .split(',')
+    .map((protocol) => protocol.trim())
+    .filter(Boolean)
 }
 
 export default App

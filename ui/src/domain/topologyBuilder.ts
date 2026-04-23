@@ -21,10 +21,12 @@ type DevicePayload = {
   name: string
   asset_type: AssetType
   rack_id: string
+  rack_position?: number
   criticality: Criticality
   manufacturer?: string
   model?: string
   firmware_version?: string
+  serial_number?: string
   ports: DevicePortPayload[]
 }
 
@@ -41,12 +43,18 @@ type TopologyPayload = {
   }>
   interfaces: Array<{
     port_id: string
+    mac_address?: string
+    ipv4_address?: string
+    ipv6_address?: string
+    mgmt_only: boolean
     enabled: boolean
+    description?: string
   }>
   vlans: Array<{
     id: string
     vlan_id: number
     name: string
+    description?: string
     assigned_interfaces: string[]
   }>
   security_zones: Array<{
@@ -63,6 +71,7 @@ type TopologyPayload = {
     target_zone_id: string
     security_level: SecurityLevel
     allowed_protocols: string[]
+    description?: string
   }>
 }
 
@@ -111,10 +120,17 @@ export function createNodeFromAsset(
       label: asset.label,
       assetType: asset.assetType,
       criticality: asset.criticality,
+      portCount: asset.portCount,
+      portPrefix: asset.portPrefix,
       zoneId: asset.defaultZoneId,
       zoneName: asset.defaultZoneName,
       purdueLevel: asset.purdueLevel,
       securityLevel: asset.securityLevel,
+      vlanId: asset.vlanId,
+      vlanName: asset.vlanName,
+      mgmtOnly: false,
+      enabled: true,
+      allowedProtocols: asset.defaultProtocols,
     },
   }
 }
@@ -146,18 +162,23 @@ export function buildTopologyPayload(state: BuilderState): TopologyPayload {
   return {
     name: topologyName,
     description: normalizeOptionalText(state.settings.description),
-    sites: [{ id: siteId, name: sanitizeLabel(state.settings.siteName) }],
+    sites: [
+      {
+        id: siteId,
+        name: normalizeLabel(state.settings.siteName, 'Planta Principal'),
+      },
+    ],
     rooms: [
       {
         id: roomId,
-        name: sanitizeLabel(state.settings.roomName),
+        name: normalizeLabel(state.settings.roomName, 'Cuarto Servidores'),
         site_id: siteId,
       },
     ],
     racks: [
       {
         id: rackId,
-        name: sanitizeLabel(state.settings.rackName),
+        name: normalizeLabel(state.settings.rackName, 'Rack Red 01'),
         room_id: roomId,
       },
     ],
@@ -169,12 +190,7 @@ export function buildTopologyPayload(state: BuilderState): TopologyPayload {
         { port_id: termination.targetPortId },
       ],
     })),
-    interfaces: Array.from(portMap.values())
-      .flat()
-      .map((port) => ({
-        port_id: port.id,
-        enabled: true,
-      })),
+    interfaces: buildInterfaces(portMap, state.nodes),
     vlans: buildVlans(Array.from(portMap.values()).flat(), state.nodes),
     security_zones: zones,
     conduits: buildConduits(state.edges, state.nodes),
@@ -188,7 +204,7 @@ function buildDevicePayload(
 ): DevicePayload {
   const payload: DevicePayload = {
     id: slugify(node.id),
-    name: sanitizeLabel(node.data.label),
+    name: normalizeLabel(node.data.label, node.id),
     asset_type: node.data.assetType,
     rack_id: rackId,
     criticality: node.data.criticality,
@@ -204,6 +220,13 @@ function buildDevicePayload(
   if (node.data.firmwareVersion) {
     payload.firmware_version = node.data.firmwareVersion
   }
+  if (node.data.serialNumber) {
+    payload.serial_number = sanitizeLabel(node.data.serialNumber)
+  }
+  const rackPosition = normalizeRackPosition(node.data.rackPosition)
+  if (rackPosition !== undefined) {
+    payload.rack_position = rackPosition
+  }
 
   return payload
 }
@@ -213,36 +236,30 @@ function assignPorts(
   edges: BuilderEdge[],
 ): Map<string, DevicePortPayload[]> {
   const portMap = new Map<string, DevicePortPayload[]>()
-  for (const node of nodes) {
-    portMap.set(node.id, [])
-  }
-
+  const edgeCounts = new Map<string, number>()
   for (const edge of edges) {
-    addPort(portMap, edge.source)
-    addPort(portMap, edge.target)
+    edgeCounts.set(edge.source, (edgeCounts.get(edge.source) ?? 0) + 1)
+    edgeCounts.set(edge.target, (edgeCounts.get(edge.target) ?? 0) + 1)
   }
 
   for (const node of nodes) {
-    const ports = portMap.get(node.id)
-    if (ports !== undefined && ports.length === 0) {
-      addPort(portMap, node.id)
-    }
+    const configuredCount = clampPortCount(node.data.portCount)
+    const requiredCount = edgeCounts.get(node.id) ?? 1
+    const portCount = Math.max(configuredCount, requiredCount)
+    const portPrefix = sanitizePortPrefix(node.data.portPrefix)
+    portMap.set(
+      node.id,
+      Array.from({ length: portCount }, (_, index) => {
+        const name = `${portPrefix}${index}`
+        return {
+          id: `${slugify(node.id)}:${name}`,
+          name,
+        }
+      }),
+    )
   }
 
   return portMap
-}
-
-function addPort(portMap: Map<string, DevicePortPayload[]>, nodeId: string): void {
-  const ports = portMap.get(nodeId)
-  if (ports === undefined) {
-    return
-  }
-
-  const name = `eth${ports.length}`
-  ports.push({
-    id: `${slugify(nodeId)}:${name}`,
-    name,
-  })
 }
 
 function assignCableTerminations(
@@ -264,25 +281,62 @@ function assignCableTerminations(
   })
 }
 
+function buildInterfaces(
+  portMap: Map<string, DevicePortPayload[]>,
+  nodes: BuilderNode[],
+): TopologyPayload['interfaces'] {
+  return nodes.flatMap((node) => {
+    const ports = portMap.get(node.id) ?? []
+    return ports.map((port, index) => {
+      const payload: TopologyPayload['interfaces'][number] = {
+        port_id: port.id,
+        mgmt_only: node.data.mgmtOnly,
+        enabled: node.data.enabled,
+        description: sanitizeLabel(
+          `${node.data.label} ${port.name} VLAN ${normalizeVlanId(node.data.vlanId)}`,
+        ),
+      }
+
+      if (index === 0) {
+        if (node.data.macAddress) {
+          payload.mac_address = node.data.macAddress
+        }
+        if (node.data.ipv4Address) {
+          payload.ipv4_address = node.data.ipv4Address
+        }
+        if (node.data.ipv6Address) {
+          payload.ipv6_address = node.data.ipv6Address
+        }
+      }
+
+      return payload
+    })
+  })
+}
+
 function buildVlans(
   ports: DevicePortPayload[],
   nodes: BuilderNode[],
 ): TopologyPayload['vlans'] {
-  const portsByZone = new Map<string, string[]>()
-  const zoneNames = new Map<string, string>()
+  const portsByVlan = new Map<number, string[]>()
+  const vlanNames = new Map<number, string>()
+  const vlanZones = new Map<number, string>()
 
   for (const node of nodes) {
-    zoneNames.set(node.data.zoneId, node.data.zoneName)
+    const vlanId = normalizeVlanId(node.data.vlanId)
     const nodePorts = ports.filter((port) => port.id.startsWith(`${node.id}:`))
-    const assigned = portsByZone.get(node.data.zoneId) ?? []
+    const assigned = portsByVlan.get(vlanId) ?? []
     assigned.push(...nodePorts.map((port) => port.id))
-    portsByZone.set(node.data.zoneId, assigned)
+    portsByVlan.set(vlanId, assigned)
+    vlanNames.set(vlanId, node.data.vlanName)
+    vlanZones.set(vlanId, node.data.zoneName)
   }
 
-  return Array.from(portsByZone.entries()).map(([zoneId, assigned], index) => ({
-    id: `vlan-${100 + index * 10}-${slugify(zoneId)}`,
-    vlan_id: 100 + index * 10,
-    name: sanitizeLabel(`VLAN ${zoneNames.get(zoneId) ?? zoneId}`),
+  return Array.from(portsByVlan.entries()).map(([vlanId, assigned]) => ({
+    id: `vlan-${vlanId}-${slugify(vlanNames.get(vlanId) ?? `vlan-${vlanId}`)}`,
+    vlan_id: vlanId,
+    name: normalizeLabel(vlanNames.get(vlanId) ?? '', `VLAN ${vlanId}`),
+    description: sanitizeLabel(`Zona ${vlanZones.get(vlanId) ?? 'sin zona'}`),
     assigned_interfaces: assigned,
   }))
 }
@@ -296,7 +350,7 @@ function buildSecurityZones(nodes: BuilderNode[]): TopologyPayload['security_zon
       zoneMap.get(zoneId) ??
       {
         id: zoneId,
-        name: sanitizeLabel(node.data.zoneName),
+        name: normalizeLabel(node.data.zoneName, zoneId),
         purdue_level: node.data.purdueLevel,
         security_level: node.data.securityLevel,
         device_ids: [],
@@ -334,14 +388,23 @@ function buildConduits(
 
     conduits.set(conduitId, {
       id: conduitId,
-      name: sanitizeLabel(`${source.data.zoneName} to ${target.data.zoneName}`),
+      name: normalizeLabel(
+        `${source.data.zoneName} to ${target.data.zoneName}`,
+        conduitId,
+      ),
       source_zone_id: sourceZone,
       target_zone_id: targetZone,
       security_level: strongerSecurityLevel(
         source.data.securityLevel,
         target.data.securityLevel,
       ),
-      allowed_protocols: ['HTTPS', 'OPC-UA'],
+      allowed_protocols: mergeProtocols(
+        source.data.allowedProtocols,
+        target.data.allowedProtocols,
+      ),
+      description: sanitizeLabel(
+        `Conducto generado por enlace ${source.data.label} - ${target.data.label}`,
+      ),
     })
   }
 
@@ -351,6 +414,13 @@ function buildConduits(
 function strongerSecurityLevel(first: SecurityLevel, second: SecurityLevel) {
   const order: SecurityLevel[] = ['SL-0', 'SL-1', 'SL-2', 'SL-3', 'SL-4']
   return order[Math.max(order.indexOf(first), order.indexOf(second))]
+}
+
+function mergeProtocols(first: string[], second: string[]): string[] {
+  const protocols = [...first, ...second]
+    .map((protocol) => sanitizeProtocol(protocol))
+    .filter(Boolean)
+  return Array.from(new Set(protocols))
 }
 
 export function updateNodeData(
@@ -389,6 +459,47 @@ function sanitizeLabel(value: string): string {
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 128)
+}
+
+function sanitizePortPrefix(value: string): string {
+  const normalized = value
+    .trim()
+    .replace(/[^a-zA-Z0-9/_-]/g, '')
+    .slice(0, 16)
+  return normalized || 'eth'
+}
+
+function sanitizeProtocol(value: string): string {
+  return value
+    .trim()
+    .replace(/[^a-zA-Z0-9/_. -]/g, '')
+    .replace(/\s+/g, ' ')
+    .slice(0, 48)
+}
+
+function clampPortCount(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 1
+  }
+  return Math.min(Math.max(Math.trunc(value), 1), 96)
+}
+
+function normalizeVlanId(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 1
+  }
+  return Math.min(Math.max(Math.trunc(value), 1), 4094)
+}
+
+function normalizeRackPosition(value: number | undefined): number | undefined {
+  if (value === undefined || !Number.isFinite(value)) {
+    return undefined
+  }
+  return Math.min(Math.max(Math.trunc(value), 1), 60)
+}
+
+function normalizeLabel(value: string, fallback: string): string {
+  return sanitizeLabel(value) || sanitizeLabel(fallback) || 'item'
 }
 
 function normalizeOptionalText(value: string): string | undefined {

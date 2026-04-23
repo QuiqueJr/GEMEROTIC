@@ -25,6 +25,7 @@ export function AssetNode({ data, selected }: NodeProps<BuilderNode>) {
       className={`asset-node asset-node--${data.assetType}`}
       data-criticality={data.criticality}
       data-selected={selected}
+      data-view={data.activeView ?? 'physical'}
     >
       <Handle type="target" position={Position.Top} />
       <Handle type="target" position={Position.Left} />
@@ -33,15 +34,45 @@ export function AssetNode({ data, selected }: NodeProps<BuilderNode>) {
       </div>
       <div className="asset-node__body">
         <strong>{data.label}</strong>
-        <span>{data.assetType.replace('_', ' ')} - Purdue {data.purdueLevel}</span>
-        <small>{data.zoneName}</small>
+        <span>{getNodePrimaryLine(data)}</span>
+        <small>{getNodeSecondaryLine(data)}</small>
       </div>
       <div className="asset-node__badges">
-        <span>{data.securityLevel}</span>
+        <span>{getNodeBadge(data)}</span>
         <small>{data.criticality}</small>
       </div>
       <Handle type="source" position={Position.Right} />
       <Handle type="source" position={Position.Bottom} />
     </article>
   )
+}
+
+function getNodePrimaryLine(data: BuilderNode['data']): string {
+  if (data.activeView === 'logical') {
+    return `VLAN ${data.vlanId} - ${data.portCount} puertos`
+  }
+  if (data.activeView === 'security') {
+    return `${data.securityLevel} - Purdue L${data.purdueLevel}`
+  }
+  return `${data.assetType.replace('_', ' ')} - ${data.portPrefix}0`
+}
+
+function getNodeSecondaryLine(data: BuilderNode['data']): string {
+  if (data.activeView === 'logical') {
+    return data.ipv4Address || data.ipv6Address || data.vlanName
+  }
+  if (data.activeView === 'security') {
+    return data.allowedProtocols.join(', ') || data.zoneName
+  }
+  return data.model || data.zoneName
+}
+
+function getNodeBadge(data: BuilderNode['data']): string {
+  if (data.activeView === 'logical') {
+    return data.enabled ? 'UP' : 'DOWN'
+  }
+  if (data.activeView === 'security') {
+    return data.securityLevel
+  }
+  return `L${data.purdueLevel}`
 }

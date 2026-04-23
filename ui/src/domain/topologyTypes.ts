@@ -16,11 +16,15 @@ export type AssetType =
 export type Criticality = 'critical' | 'high' | 'medium' | 'low'
 export type SecurityLevel = 'SL-0' | 'SL-1' | 'SL-2' | 'SL-3' | 'SL-4'
 export type PurdueLevel = 0 | 1 | 2 | 3 | 4 | 5
+export type TopologyView = 'physical' | 'logical' | 'security'
 
 export type BuilderNodeData = {
   label: string
   assetType: AssetType
   criticality: Criticality
+  rackPosition?: number
+  portCount: number
+  portPrefix: string
   zoneId: string
   zoneName: string
   purdueLevel: PurdueLevel
@@ -28,6 +32,16 @@ export type BuilderNodeData = {
   manufacturer?: string
   model?: string
   firmwareVersion?: string
+  serialNumber?: string
+  vlanId: number
+  vlanName: string
+  ipv4Address?: string
+  ipv6Address?: string
+  macAddress?: string
+  mgmtOnly: boolean
+  enabled: boolean
+  allowedProtocols: string[]
+  activeView?: TopologyView
 }
 
 export type BuilderNode = Node<BuilderNodeData, 'asset'>
@@ -57,4 +71,9 @@ export type AssetDefinition = {
   purdueLevel: PurdueLevel
   securityLevel: SecurityLevel
   criticality: Criticality
+  portCount: number
+  portPrefix: string
+  vlanId: number
+  vlanName: string
+  defaultProtocols: string[]
 }
