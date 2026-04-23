@@ -11,13 +11,17 @@ export function EquipmentGlyph({
   className,
   size = 44,
 }: EquipmentGlyphProps) {
+  const classes = ['equipment-glyph', `equipment-glyph--${assetType}`, className]
+    .filter(Boolean)
+    .join(' ')
+
   return (
     <svg
       aria-hidden="true"
-      className={className}
+      className={classes}
       fill="none"
       height={size}
-      viewBox="0 0 64 64"
+      viewBox="0 0 88 72"
       width={size}
     >
       {renderGlyph(assetType)}
@@ -28,231 +32,349 @@ export function EquipmentGlyph({
 function renderGlyph(assetType: AssetType) {
   switch (assetType) {
     case 'router':
-      return (
-        <>
-          <rect
-            height="28"
-            rx="6"
-            stroke="currentColor"
-            strokeWidth="2.4"
-            width="40"
-            x="12"
-            y="18"
-          />
-          <path d="M22 27h20M22 37h20" stroke="currentColor" strokeLinecap="round" strokeWidth="2.4" />
-          <path d="M18 32h-5m33 0h5" stroke="currentColor" strokeLinecap="round" strokeWidth="2.4" />
-          <path d="m18 24 4 3-4 3m28-6-4 3 4 3" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.4" />
-        </>
-      )
+      return <RackAppliance kind="router" />
     case 'switch':
-      return (
-        <>
-          <rect
-            height="22"
-            rx="5"
-            stroke="currentColor"
-            strokeWidth="2.4"
-            width="44"
-            x="10"
-            y="21"
-          />
-          {[16, 23, 30, 37, 44].map((x) => (
-            <rect
-              height="4.5"
-              key={`switch-port-${x}`}
-              rx="1"
-              stroke="currentColor"
-              strokeWidth="2"
-              width="4.5"
-              x={x}
-              y="30"
-            />
-          ))}
-          <circle cx="49" cy="27" fill="currentColor" r="1.8" />
-        </>
-      )
+      return <RackAppliance kind="switch" />
     case 'firewall':
-      return (
-        <>
-          <rect
-            height="26"
-            rx="6"
-            stroke="currentColor"
-            strokeWidth="2.4"
-            width="42"
-            x="11"
-            y="19"
-          />
-          <path d="M22 29h20M22 36h20" stroke="currentColor" strokeLinecap="round" strokeWidth="2.4" />
-          <path
-            d="M32 10c4.7 3.4 8.6 4.9 12 5.5v8.5c0 7.1-4.1 12.2-12 16-7.9-3.8-12-8.9-12-16v-8.5c3.4-.6 7.3-2.1 12-5.5Z"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.4"
-          />
-        </>
-      )
-    case 'host':
-      return (
-        <>
-          <rect
-            height="24"
-            rx="4"
-            stroke="currentColor"
-            strokeWidth="2.4"
-            width="34"
-            x="15"
-            y="14"
-          />
-          <path d="M24 48h16M28 38v10m8-10v10" stroke="currentColor" strokeLinecap="round" strokeWidth="2.4" />
-          <circle cx="46" cy="34" fill="currentColor" r="1.7" />
-        </>
-      )
+      return <RackAppliance kind="firewall" />
     case 'server':
-      return (
-        <>
-          <rect
-            height="36"
-            rx="5"
-            stroke="currentColor"
-            strokeWidth="2.4"
-            width="28"
-            x="18"
-            y="14"
-          />
-          <path d="M24 23h16M24 32h16M24 41h16" stroke="currentColor" strokeLinecap="round" strokeWidth="2.4" />
-          <circle cx="25.5" cy="23" fill="currentColor" r="1.5" />
-          <circle cx="25.5" cy="32" fill="currentColor" r="1.5" />
-          <circle cx="25.5" cy="41" fill="currentColor" r="1.5" />
-        </>
-      )
+      return <TowerDevice kind="server" />
     case 'scada_server':
-      return (
-        <>
-          <rect
-            height="18"
-            rx="4"
-            stroke="currentColor"
-            strokeWidth="2.4"
-            width="30"
-            x="17"
-            y="14"
-          />
-          <path d="M22 48h20M26 32v16m12-16v16" stroke="currentColor" strokeLinecap="round" strokeWidth="2.4" />
-          <path d="m22 27 5-5 5 4 8-7" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.4" />
-        </>
-      )
+      return <TowerDevice kind="scada" />
+    case 'host':
+      return <WorkstationDevice />
     case 'plc':
-      return (
+      return <ControllerDevice kind="plc" />
+    case 'hmi':
+      return <ControllerDevice kind="hmi" />
+    case 'rtu':
+      return <ControllerDevice kind="rtu" />
+    case 'patch_panel':
+      return <PatchPanelDevice />
+    case 'wireless_ap':
+      return <WirelessDevice />
+    default:
+      return <RackAppliance kind="switch" />
+  }
+}
+
+function RackAppliance({ kind }: { kind: 'router' | 'switch' | 'firewall' }) {
+  const hasPorts = kind !== 'router'
+
+  return (
+    <>
+      <ellipse cx="44" cy="61" fill="rgba(0,0,0,0.14)" rx="24" ry="5" />
+      <path
+        d="M18 20h40l8 7H26z"
+        fill="var(--glyph-top)"
+        stroke="var(--glyph-stroke)"
+        strokeLinejoin="round"
+        strokeWidth="1.5"
+      />
+      <path
+        d="M18 20v24h48V27l-8-7z"
+        fill="var(--glyph-front)"
+        stroke="var(--glyph-stroke)"
+        strokeLinejoin="round"
+        strokeWidth="1.7"
+      />
+      <path
+        d="M66 27v17l4-4V24z"
+        fill="var(--glyph-side)"
+        stroke="var(--glyph-stroke)"
+        strokeLinejoin="round"
+        strokeWidth="1.4"
+      />
+      <rect
+        fill="var(--glyph-accent)"
+        height="5"
+        rx="2.5"
+        width="10"
+        x="24"
+        y="24"
+      />
+      {kind === 'router' ? (
         <>
-          <rect
-            height="32"
-            rx="5"
-            stroke="currentColor"
-            strokeWidth="2.4"
-            width="30"
-            x="17"
-            y="16"
+          <path
+            d="M31 34h14"
+            stroke="var(--glyph-detail)"
+            strokeLinecap="round"
+            strokeWidth="2"
           />
-          <path d="M23 24h18M23 31h18" stroke="currentColor" strokeLinecap="round" strokeWidth="2.4" />
-          {[22, 28, 34, 40].map((x) => (
-            <path
-              d={`M${x} 48v6`}
-              key={`plc-terminal-${x}`}
-              stroke="currentColor"
-              strokeLinecap="round"
-              strokeWidth="2.4"
+          <path
+            d="m27 34 5-4m-5 4 5 4M49 30l-5 4 5 4"
+            stroke="var(--glyph-detail)"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2"
+          />
+          <circle cx="56" cy="36" fill="var(--glyph-led)" r="2.2" />
+        </>
+      ) : null}
+      {hasPorts ? (
+        <>
+          {[28, 35, 42, 49].map((x) => (
+            <rect
+              fill="var(--glyph-detail)"
+              height="5"
+              key={`${kind}-${x}`}
+              rx="1"
+              width="5.5"
+              x={x}
+              y="34"
             />
           ))}
-          <circle cx="25" cy="39" fill="currentColor" r="1.8" />
-          <circle cx="31" cy="39" fill="currentColor" r="1.8" />
+          <circle cx="24" cy="36.5" fill="var(--glyph-led)" r="2" />
         </>
-      )
-    case 'hmi':
-      return (
+      ) : null}
+      {kind === 'firewall' ? (
+        <path
+          d="M44 17c4 3 7 4.5 10.5 5.2v6.9c0 6.1-3.6 10.4-10.5 13.7-6.9-3.3-10.5-7.6-10.5-13.7v-6.9c3.5-.7 6.5-2.2 10.5-5.2Z"
+          fill="rgba(255,255,255,0.24)"
+          stroke="var(--glyph-detail)"
+          strokeWidth="1.8"
+        />
+      ) : null}
+    </>
+  )
+}
+
+function TowerDevice({ kind }: { kind: 'server' | 'scada' }) {
+  return (
+    <>
+      <ellipse cx="42" cy="62" fill="rgba(0,0,0,0.12)" rx="18" ry="4.2" />
+      <path
+        d="M30 14h18l6 6H36z"
+        fill="var(--glyph-top)"
+        stroke="var(--glyph-stroke)"
+        strokeLinejoin="round"
+        strokeWidth="1.5"
+      />
+      <path
+        d="M30 14v36h24V20l-6-6z"
+        fill="var(--glyph-front)"
+        stroke="var(--glyph-stroke)"
+        strokeLinejoin="round"
+        strokeWidth="1.7"
+      />
+      <path
+        d="M54 20v30l4-4V18z"
+        fill="var(--glyph-side)"
+        stroke="var(--glyph-stroke)"
+        strokeLinejoin="round"
+        strokeWidth="1.4"
+      />
+      {[24, 32, 40].map((y) => (
+        <rect
+          fill="var(--glyph-detail)"
+          height="4"
+          key={`${kind}-${y}`}
+          opacity="0.9"
+          rx="1.2"
+          width="14"
+          x="36"
+          y={y}
+        />
+      ))}
+      <circle cx="35" cy="26" fill="var(--glyph-led)" r="1.7" />
+      <circle cx="35" cy="34" fill="var(--glyph-led)" r="1.7" />
+      <circle cx="35" cy="42" fill="var(--glyph-led)" r="1.7" />
+      {kind === 'scada' ? (
+        <rect
+          fill="rgba(255,255,255,0.2)"
+          height="10"
+          rx="2"
+          stroke="var(--glyph-detail)"
+          strokeWidth="1.4"
+          width="18"
+          x="18"
+          y="25"
+        />
+      ) : null}
+      {kind === 'scada' ? (
+        <path
+          d="m21 32 4-3 4 2 4-5"
+          stroke="var(--glyph-detail)"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="1.8"
+        />
+      ) : null}
+    </>
+  )
+}
+
+function WorkstationDevice() {
+  return (
+    <>
+      <ellipse cx="44" cy="60" fill="rgba(0,0,0,0.12)" rx="22" ry="4.5" />
+      <path
+        d="M24 18h30l6 6H30z"
+        fill="var(--glyph-top)"
+        stroke="var(--glyph-stroke)"
+        strokeLinejoin="round"
+        strokeWidth="1.5"
+      />
+      <path
+        d="M24 18v22h36V24l-6-6z"
+        fill="var(--glyph-front)"
+        stroke="var(--glyph-stroke)"
+        strokeLinejoin="round"
+        strokeWidth="1.7"
+      />
+      <path
+        d="M60 24v16l4-4V22z"
+        fill="var(--glyph-side)"
+        stroke="var(--glyph-stroke)"
+        strokeLinejoin="round"
+        strokeWidth="1.4"
+      />
+      <rect fill="var(--glyph-accent)" height="11" rx="1.8" width="24" x="30" y="24.5" />
+      <path
+        d="M42 40v8m-8 0h16"
+        stroke="var(--glyph-stroke)"
+        strokeLinecap="round"
+        strokeWidth="1.8"
+      />
+      <rect fill="var(--glyph-detail)" height="3.8" rx="1.4" width="18" x="33" y="48" />
+    </>
+  )
+}
+
+function ControllerDevice({ kind }: { kind: 'plc' | 'hmi' | 'rtu' }) {
+  return (
+    <>
+      <ellipse cx="44" cy="61" fill="rgba(0,0,0,0.12)" rx="21" ry="4.5" />
+      <path
+        d="M24 18h28l6 6H30z"
+        fill="var(--glyph-top)"
+        stroke="var(--glyph-stroke)"
+        strokeLinejoin="round"
+        strokeWidth="1.5"
+      />
+      <path
+        d="M24 18v28h34V24l-6-6z"
+        fill="var(--glyph-front)"
+        stroke="var(--glyph-stroke)"
+        strokeLinejoin="round"
+        strokeWidth="1.7"
+      />
+      <path
+        d="M58 24v22l4-4V22z"
+        fill="var(--glyph-side)"
+        stroke="var(--glyph-stroke)"
+        strokeLinejoin="round"
+        strokeWidth="1.4"
+      />
+      {kind === 'plc' ? (
+        <>
+          <rect fill="var(--glyph-accent)" height="10" rx="2" width="18" x="31" y="25" />
+          {[30, 36, 42, 48, 54].map((x) => (
+            <rect
+              fill="var(--glyph-detail)"
+              height="5"
+              key={`plc-port-${x}`}
+              rx="1"
+              width="3.2"
+              x={x}
+              y="46"
+            />
+          ))}
+        </>
+      ) : null}
+      {kind === 'hmi' ? (
         <>
           <rect
-            height="28"
-            rx="5"
-            stroke="currentColor"
-            strokeWidth="2.4"
-            width="36"
-            x="14"
-            y="14"
-          />
-          <rect
-            height="18"
-            rx="2.5"
-            stroke="currentColor"
-            strokeWidth="2"
-            width="24"
-            x="20"
-            y="19"
-          />
-          <path d="M25 48h14M28 42v6m8-6v6" stroke="currentColor" strokeLinecap="round" strokeWidth="2.4" />
-        </>
-      )
-    case 'rtu':
-      return (
-        <>
-          <rect
-            height="30"
-            rx="5"
-            stroke="currentColor"
-            strokeWidth="2.4"
-            width="28"
-            x="18"
-            y="18"
-          />
-          <path d="M24 25h16M24 33h16" stroke="currentColor" strokeLinecap="round" strokeWidth="2.4" />
-          <path d="M32 10v8m0-8 5 5m-5-5-5 5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.4" />
-          <circle cx="26" cy="40" fill="currentColor" r="1.6" />
-          <circle cx="32" cy="40" fill="currentColor" r="1.6" />
-        </>
-      )
-    case 'patch_panel':
-      return (
-        <>
-          <rect
-            height="18"
-            rx="4"
-            stroke="currentColor"
-            strokeWidth="2.4"
-            width="46"
-            x="9"
+            fill="var(--glyph-accent)"
+            height="14"
+            rx="2.4"
+            stroke="var(--glyph-detail)"
+            strokeWidth="1.4"
+            width="22"
+            x="30"
             y="23"
           />
-          {[16, 24, 32, 40, 48].map((x) => (
-            <circle cx={x} cy="32" fill="currentColor" key={`patch-port-${x}`} r="1.8" />
-          ))}
-        </>
-      )
-    case 'wireless_ap':
-      return (
-        <>
-          <circle cx="32" cy="30" r="8" stroke="currentColor" strokeWidth="2.4" />
           <path
-            d="M21 24c6-6 16-6 22 0M16 19c9-9 23-9 32 0M27 47h10"
-            stroke="currentColor"
+            d="M40 46h6m-3-9v9"
+            stroke="var(--glyph-stroke)"
             strokeLinecap="round"
-            strokeWidth="2.4"
+            strokeWidth="1.7"
           />
         </>
-      )
-    default:
-      return (
+      ) : null}
+      {kind === 'rtu' ? (
         <>
-          <rect
-            height="30"
-            rx="6"
-            stroke="currentColor"
-            strokeWidth="2.4"
-            width="34"
-            x="15"
-            y="17"
+          <path
+            d="M42 13v8m0-8 4 4m-4-4-4 4"
+            stroke="var(--glyph-detail)"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="1.8"
           />
-          <path d="M22 26h20M22 34h20" stroke="currentColor" strokeLinecap="round" strokeWidth="2.4" />
+          <rect fill="var(--glyph-accent)" height="10" rx="2" width="18" x="31" y="26" />
+          <circle cx="35" cy="40.5" fill="var(--glyph-led)" r="1.8" />
+          <circle cx="41" cy="40.5" fill="var(--glyph-led)" r="1.8" />
+          <circle cx="47" cy="40.5" fill="var(--glyph-led)" r="1.8" />
         </>
-      )
-  }
+      ) : null}
+    </>
+  )
+}
+
+function PatchPanelDevice() {
+  return (
+    <>
+      <ellipse cx="44" cy="58" fill="rgba(0,0,0,0.1)" rx="23" ry="4" />
+      <path
+        d="M18 28h42l7 6H25z"
+        fill="var(--glyph-top)"
+        stroke="var(--glyph-stroke)"
+        strokeLinejoin="round"
+        strokeWidth="1.5"
+      />
+      <path
+        d="M18 28v12h49V34l-7-6z"
+        fill="var(--glyph-front)"
+        stroke="var(--glyph-stroke)"
+        strokeLinejoin="round"
+        strokeWidth="1.7"
+      />
+      {[26, 33, 40, 47, 54].map((x) => (
+        <circle cx={x} cy="35" fill="var(--glyph-detail)" key={`patch-${x}`} r="2.1" />
+      ))}
+    </>
+  )
+}
+
+function WirelessDevice() {
+  return (
+    <>
+      <ellipse cx="44" cy="61" fill="rgba(0,0,0,0.1)" rx="18" ry="4" />
+      <ellipse
+        cx="44"
+        cy="39"
+        fill="var(--glyph-front)"
+        rx="18"
+        ry="10"
+        stroke="var(--glyph-stroke)"
+        strokeWidth="1.7"
+      />
+      <ellipse
+        cx="44"
+        cy="35"
+        fill="var(--glyph-top)"
+        rx="16"
+        ry="8"
+        stroke="var(--glyph-stroke)"
+        strokeWidth="1.4"
+      />
+      <circle cx="44" cy="36" fill="var(--glyph-led)" r="2.1" />
+      <path
+        d="M32 24c7-7 17-7 24 0M27 18c10-10 24-10 34 0"
+        stroke="var(--glyph-detail)"
+        strokeLinecap="round"
+        strokeWidth="1.8"
+      />
+    </>
+  )
 }
