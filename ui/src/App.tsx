@@ -37,10 +37,12 @@ import './App.css'
 import {
   bootstrapNetBox,
   createTopology,
+  deployPipeline,
   generatePipelineArtifacts,
   getHealth,
   type HealthResponse,
   type PipelineArtifactsResponse,
+  type PipelineRunResponse,
 } from './api/gemeroticApi'
 import { AssetNode } from './components/AssetNode'
 import { assetCatalog, getAssetDefinition } from './domain/assetCatalog'
@@ -140,6 +142,7 @@ function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [pipelineArtifacts, setPipelineArtifacts] =
     useState<PipelineArtifactsResponse | null>(null)
+  const [pipelineRun, setPipelineRun] = useState<PipelineRunResponse | null>(null)
 
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null
   const payload = useMemo(
@@ -153,6 +156,10 @@ function App() {
         ? ''
         : JSON.stringify(pipelineArtifacts, null, 2),
     [pipelineArtifacts],
+  )
+  const pipelineRunText = useMemo(
+    () => (pipelineRun === null ? '' : JSON.stringify(pipelineRun, null, 2)),
+    [pipelineRun],
   )
   const displayedNodes = useMemo(
     () =>
@@ -369,10 +376,33 @@ function App() {
         return
       }
       setPipelineArtifacts(result.data.data)
+      setPipelineRun(null)
       setOperationStatus('success')
       setOperationMessage(
         `${result.data.data.artifacts.length} artefactos de pipeline generados`,
       )
+    } catch (error) {
+      setOperationStatus('error')
+      setOperationMessage(error instanceof Error ? error.message : 'Request failed')
+    }
+  }
+
+  const deployPipelineRun = async () => {
+    setOperationStatus('running')
+    try {
+      const result = await deployPipeline(apiConfig, payload)
+      if (!result.ok || result.data.data === undefined) {
+        setOperationStatus('error')
+        setOperationMessage(extractMessage(result.data, `HTTP ${result.status}`))
+        return
+      }
+      setPipelineRun(result.data.data)
+      setPipelineArtifacts({
+        topology_name: result.data.data.topology_name,
+        artifacts: result.data.data.artifacts,
+      })
+      setOperationStatus('success')
+      setOperationMessage('Pipeline desplegado correctamente')
     } catch (error) {
       setOperationStatus('error')
       setOperationMessage(error instanceof Error ? error.message : 'Request failed')
@@ -920,6 +950,14 @@ function App() {
               <GitBranch size={16} />
               Artefactos
             </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={deployPipelineRun}
+            >
+              <Network size={16} />
+              Deploy
+            </button>
           </div>
           <button
             type="button"
@@ -965,6 +1003,20 @@ function App() {
                 </span>
               </div>
               <pre className="payload-preview">{artifactText}</pre>
+            </>
+          ) : null}
+
+          {pipelineRun ? (
+            <>
+              <div className="panel-title panel-title--spaced">
+                <Network size={18} />
+                <span>Ejecucion</span>
+              </div>
+              <div className="payload-metrics">
+                <span>{pipelineRun.commands.length} comandos</span>
+                <span>{pipelineRun.bundle_dir}</span>
+              </div>
+              <pre className="payload-preview">{pipelineRunText}</pre>
             </>
           ) : null}
         </aside>

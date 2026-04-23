@@ -255,6 +255,29 @@ curl -X POST http://localhost:8000/api/v1/pipeline/artifacts `
   --data-binary "@topology.json"
 ```
 
+El boton `Deploy` ejecuta el despliegue local controlado. Antes de usarlo,
+verifica herramientas:
+
+```powershell
+curl http://localhost:8000/api/v1/pipeline/tools `
+  -H "X-API-Key: <API_KEY_GENERADA>"
+```
+
+Para que `Deploy` funcione deben existir en el `PATH`:
+
+- `docker`
+- `containerlab`
+- `ansible-playbook`
+
+El endpoint escribira artefactos bajo `var/pipeline/<topology_name>` y ejecutara:
+
+```powershell
+containerlab deploy --topo containerlab/topology.clab.yml
+ansible-playbook -i ansible/inventory.yml ansible/site.yml
+```
+
+Si falta una herramienta, el API devuelve `503` y no escribe el bundle.
+
 ---
 
 ## 10. Mapa rapido de puertos

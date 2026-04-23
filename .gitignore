@@ -41,4 +41,7 @@ docker-compose.override.yml
 docker/netbox/.env
 docker/netbox/env/*.local.env
 
+# Artefactos locales generados por el pipeline
+var/
+
 Constructor.pdf

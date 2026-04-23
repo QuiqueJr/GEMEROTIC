@@ -57,7 +57,9 @@ Flujo minimo para validar la UI contra el pipeline actual:
 4. Pulsar `Bootstrap` para preparar NetBox.
 5. Ajustar la topologia visual y pulsar `Artefactos` para revisar el bundle
    Containerlab/Ansible/OPA/Batfish.
-6. Pulsar `Persistir en NetBox`.
+6. Pulsar `Deploy` para ejecutar Containerlab y Ansible si las herramientas
+   estan instaladas.
+7. Pulsar `Persistir en NetBox`.
 
 ## Validacion local
 

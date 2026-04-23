@@ -12,14 +12,43 @@ UI (React Flow) -> Core API (FastAPI) -> SSoT (NetBox) -> Generador de Configura
 -> Observabilidad (LibreNMS/Oxidized) -> Auditoria de Cumplimiento (OPA)
 ```
 
-> **Nota:** El proyecto se construye fase por fase. Desde Step 9, el pipeline
-> empieza a generar artefactos reproducibles desde la fuente canonica
-> `TopologyCreate`. La ejecucion real de herramientas externas se habilitara en
-> pasos posteriores con validacion y controles de seguridad propios.
+> **Nota:** El proyecto se construye fase por fase. Desde Step 10, el pipeline
+> puede escribir un bundle local controlado y ejecutar Containerlab + Ansible
+> mediante comandos allowlistados, sin shell y protegidos por `X-API-Key`.
 
 ---
 
-## Estado Actual: Step 9 - Generador de Artefactos del Pipeline
+## Estado Actual: Step 10 - Ejecucion Controlada de Containerlab y Ansible
+
+### Objetivo de este paso
+
+Tomar los artefactos generados en Step 9 y ejecutar el despliegue local de forma
+controlada:
+
+```
+TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
+```
+
+### Alcance inicial permitido
+
+- Escribir bundles bajo `var/pipeline/<topology_name>`.
+- Comprobar herramientas locales con `GET /api/v1/pipeline/tools`.
+- Ejecutar `POST /api/v1/pipeline/deploy` protegido por `X-API-Key`.
+- Usar comandos allowlistados con `shell=False`:
+  - `containerlab deploy --topo containerlab/topology.clab.yml`
+  - `ansible-playbook -i ansible/inventory.yml ansible/site.yml`
+- Fallar de forma segura si falta `docker`, `containerlab` o
+  `ansible-playbook`.
+
+### Fuera de alcance de Step 10
+
+- No ejecutar Batfish hasta seleccionar perfiles de NOS y templates vendor.
+- No integrar LibreNMS/Oxidized hasta que el lab tenga conectividad gestionable.
+- No permitir comandos arbitrarios enviados por el usuario.
+
+---
+
+## Estado Anterior: Step 9 - Generador de Artefactos del Pipeline
 
 ### Objetivo de este paso
 
@@ -613,8 +642,8 @@ curl http://localhost:8000/api/v1/health
 | **Step 6** | Endpoint de topologia (POST /api/v1/topology) | Completado |
 | **Step 7** | Seguridad transversal (rate limiting, error handlers) | Completado |
 | **Step 8** | UI Builder OT con React Flow | Completado |
-| **Step 9** | Generador Jinja2 de artefactos del pipeline | En progreso |
-| **Step 10** | Ejecucion controlada de Containerlab y Ansible | Pendiente |
+| **Step 9** | Generador Jinja2 de artefactos del pipeline | Completado |
+| **Step 10** | Ejecucion controlada de Containerlab y Ansible | En progreso |
 | **Step 11** | Validacion Batfish con perfiles NOS | Pendiente |
 | **Step 12** | Observabilidad LibreNMS/Oxidized | Pendiente |
 | **Step 13** | Auditoria de cumplimiento OPA | Pendiente |

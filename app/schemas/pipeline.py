@@ -52,3 +52,38 @@ class PipelineArtifacts(BaseModel):
         ..., min_length=1,
         description="Archivos generados para el pipeline",
     )
+
+
+class PipelineToolStatus(BaseModel):
+    """Estado local de una herramienta externa del pipeline."""
+
+    name: str = Field(..., min_length=1, max_length=64)
+    installed: bool = Field(...)
+    path: str | None = Field(default=None, max_length=512)
+    version: str | None = Field(default=None, max_length=512)
+    error: str | None = Field(default=None, max_length=1024)
+
+
+class PipelineToolReport(BaseModel):
+    """Reporte de disponibilidad de herramientas externas."""
+
+    tools: list[PipelineToolStatus] = Field(..., min_length=1)
+
+
+class PipelineCommandResult(BaseModel):
+    """Resultado resumido de un comando controlado del pipeline."""
+
+    name: str = Field(..., min_length=1, max_length=64)
+    command: list[str] = Field(..., min_length=1)
+    exit_code: int = Field(...)
+    stdout_tail: str = Field(default="", max_length=4000)
+    stderr_tail: str = Field(default="", max_length=4000)
+
+
+class PipelineRunResult(BaseModel):
+    """Resultado de una ejecucion controlada del pipeline."""
+
+    topology_name: str = Field(..., min_length=1, max_length=64)
+    bundle_dir: str = Field(..., min_length=1, max_length=512)
+    artifacts: list[PipelineArtifact] = Field(..., min_length=1)
+    commands: list[PipelineCommandResult] = Field(default_factory=list)

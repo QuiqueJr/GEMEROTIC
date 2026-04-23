@@ -38,6 +38,21 @@ export type PipelineArtifactsResponse = {
   artifacts: PipelineArtifact[]
 }
 
+export type PipelineCommandResult = {
+  name: string
+  command: string[]
+  exit_code: number
+  stdout_tail: string
+  stderr_tail: string
+}
+
+export type PipelineRunResponse = {
+  topology_name: string
+  bundle_dir: string
+  artifacts: PipelineArtifact[]
+  commands: PipelineCommandResult[]
+}
+
 export async function getHealth(config: APIConfig): Promise<APIResult<HealthResponse>> {
   return requestJson<HealthResponse>(config, '/api/v1/health')
 }
@@ -69,6 +84,21 @@ export async function generatePipelineArtifacts(
   return requestJson<APIEnvelope<PipelineArtifactsResponse>>(
     config,
     '/api/v1/pipeline/artifacts',
+    {
+      method: 'POST',
+      apiKeyRequired: true,
+      body: payload,
+    },
+  )
+}
+
+export async function deployPipeline(
+  config: APIConfig,
+  payload: unknown,
+): Promise<APIResult<APIEnvelope<PipelineRunResponse>>> {
+  return requestJson<APIEnvelope<PipelineRunResponse>>(
+    config,
+    '/api/v1/pipeline/deploy',
     {
       method: 'POST',
       apiKeyRequired: true,
