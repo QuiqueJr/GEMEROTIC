@@ -1,0 +1,26 @@
+# Batfish - {{ topology_name }}
+
+Este bundle no inventa configuraciones vendor. La topologia actual se despliega
+como nodos Linux de Containerlab y la configuracion logica se aplica con
+Ansible sobre contenedores.
+
+Para habilitar validacion Batfish completa hace falta seleccionar perfiles de
+NOS por tipo de activo (`containerlab.kind`, imagen y template de configuracion
+vendor). Hasta entonces, este directorio actua como marcador de snapshot y
+mantiene trazabilidad entre NetBox, Containerlab y futuras configuraciones.
+
+## Resumen
+
+- Nodos: {{ nodes | length }}
+- Enlaces: {{ links | length }}
+- VLANs: {{ vlans | length }}
+- Zonas IEC 62443: {{ zones | length }}
+- Conductos: {{ conduits | length }}
+
+## Siguiente decision requerida
+
+Seleccionar una estrategia de imagen/configuracion:
+
+1. Linux generico para demo OT visual y conectividad basica.
+2. NOS virtual por fabricante para validacion Batfish real.
+3. Perfil mixto: Linux para PLC/HMI/RTU y NOS virtual para routers/switches/firewalls.

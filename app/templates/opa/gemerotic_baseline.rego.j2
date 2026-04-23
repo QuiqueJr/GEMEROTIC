@@ -1,0 +1,29 @@
+package gemerotic.baseline
+
+import rego.v1
+
+default allow := false
+
+allow if {
+	count(deny) == 0
+}
+
+deny contains msg if {
+	node := input.nodes[_]
+	node.criticality == "critical"
+	node.zone_id == null
+	msg := sprintf("Critical asset %s has no IEC 62443 zone", [node.id])
+}
+
+deny contains msg if {
+	conduit := input.conduits[_]
+	count(conduit.allowed_protocols) == 0
+	msg := sprintf("Conduit %s has no allowed protocols", [conduit.id])
+}
+
+deny contains msg if {
+	zone := input.zones[_]
+	zone.purdue_level <= 2
+	zone.security_level == "SL-0"
+	msg := sprintf("OT zone %s cannot use SL-0", [zone.id])
+}

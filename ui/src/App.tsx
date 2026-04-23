@@ -37,8 +37,10 @@ import './App.css'
 import {
   bootstrapNetBox,
   createTopology,
+  generatePipelineArtifacts,
   getHealth,
   type HealthResponse,
+  type PipelineArtifactsResponse,
 } from './api/gemeroticApi'
 import { AssetNode } from './components/AssetNode'
 import { assetCatalog, getAssetDefinition } from './domain/assetCatalog'
@@ -136,6 +138,8 @@ function App() {
   const [operationStatus, setOperationStatus] = useState<OperationStatus>('idle')
   const [operationMessage, setOperationMessage] = useState('API sin verificar')
   const [health, setHealth] = useState<HealthResponse | null>(null)
+  const [pipelineArtifacts, setPipelineArtifacts] =
+    useState<PipelineArtifactsResponse | null>(null)
 
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null
   const payload = useMemo(
@@ -143,6 +147,13 @@ function App() {
     [settings, nodes, edges],
   )
   const payloadText = useMemo(() => JSON.stringify(payload, null, 2), [payload])
+  const artifactText = useMemo(
+    () =>
+      pipelineArtifacts === null
+        ? ''
+        : JSON.stringify(pipelineArtifacts, null, 2),
+    [pipelineArtifacts],
+  )
   const displayedNodes = useMemo(
     () =>
       nodes.map((node) => ({
@@ -347,6 +358,26 @@ function App() {
       () => createTopology(apiConfig, payload),
       'Topologia enviada a NetBox',
     )
+
+  const generateArtifacts = async () => {
+    setOperationStatus('running')
+    try {
+      const result = await generatePipelineArtifacts(apiConfig, payload)
+      if (!result.ok || result.data.data === undefined) {
+        setOperationStatus('error')
+        setOperationMessage(extractMessage(result.data, `HTTP ${result.status}`))
+        return
+      }
+      setPipelineArtifacts(result.data.data)
+      setOperationStatus('success')
+      setOperationMessage(
+        `${result.data.data.artifacts.length} artefactos de pipeline generados`,
+      )
+    } catch (error) {
+      setOperationStatus('error')
+      setOperationMessage(error instanceof Error ? error.message : 'Request failed')
+    }
+  }
 
   return (
     <main className="app-shell" data-view={activeView}>
@@ -881,6 +912,14 @@ function App() {
               <CheckCircle2 size={16} />
               Bootstrap
             </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={generateArtifacts}
+            >
+              <GitBranch size={16} />
+              Artefactos
+            </button>
           </div>
           <button
             type="button"
@@ -891,6 +930,43 @@ function App() {
             <Save size={16} />
             Persistir en NetBox
           </button>
+
+          {pipelineArtifacts ? (
+            <>
+              <div className="panel-title panel-title--spaced">
+                <GitBranch size={18} />
+                <span>Artefactos</span>
+              </div>
+              <div className="payload-metrics">
+                <span>{pipelineArtifacts.artifacts.length} archivos</span>
+                <span>
+                  {
+                    pipelineArtifacts.artifacts.filter(
+                      (artifact) => artifact.stage === 'containerlab',
+                    ).length
+                  }{' '}
+                  containerlab
+                </span>
+                <span>
+                  {
+                    pipelineArtifacts.artifacts.filter(
+                      (artifact) => artifact.stage === 'ansible',
+                    ).length
+                  }{' '}
+                  ansible
+                </span>
+                <span>
+                  {
+                    pipelineArtifacts.artifacts.filter(
+                      (artifact) => artifact.stage === 'opa',
+                    ).length
+                  }{' '}
+                  opa
+                </span>
+              </div>
+              <pre className="payload-preview">{artifactText}</pre>
+            </>
+          ) : null}
         </aside>
       </section>
     </main>

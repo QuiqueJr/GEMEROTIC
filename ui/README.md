@@ -55,7 +55,9 @@ Flujo minimo para validar la UI contra el pipeline actual:
 2. Ejecutar `bun run dev -- --host 127.0.0.1 --port 5173` dentro de `ui/`.
 3. Pulsar `Health` y comprobar que NetBox aparece conectado.
 4. Pulsar `Bootstrap` para preparar NetBox.
-5. Ajustar la topologia visual y pulsar `Persistir en NetBox`.
+5. Ajustar la topologia visual y pulsar `Artefactos` para revisar el bundle
+   Containerlab/Ansible/OPA/Batfish.
+6. Pulsar `Persistir en NetBox`.
 
 ## Validacion local
 

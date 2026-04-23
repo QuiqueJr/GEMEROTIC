@@ -12,31 +12,66 @@ UI (React Flow) -> Core API (FastAPI) -> SSoT (NetBox) -> Generador de Configura
 -> Observabilidad (LibreNMS/Oxidized) -> Auditoria de Cumplimiento (OPA)
 ```
 
-> **Nota:** El proyecto se construye fase por fase. Desde Step 8, el frontend
-> entra en alcance como constructor visual de topologias. La fuente canonica de
-> persistencia sigue siendo el API y NetBox; la UI solo debe producir payloads
-> `TopologyCreate` validos y enviarlos al backend.
+> **Nota:** El proyecto se construye fase por fase. Desde Step 9, el pipeline
+> empieza a generar artefactos reproducibles desde la fuente canonica
+> `TopologyCreate`. La ejecucion real de herramientas externas se habilitara en
+> pasos posteriores con validacion y controles de seguridad propios.
 
 ---
 
-## Estado Actual: Step 8 - UI Builder OT con React Flow
+## Estado Actual: Step 9 - Generador de Artefactos del Pipeline
 
 ### Objetivo de este paso
 
-Construir una primera interfaz profesional tipo GNS3 / Packet Tracer para
-disenar topologias OT/IT de forma visual, manteniendo la arquitectura objetivo:
+Renderizar artefactos declarativos desde el payload validado `TopologyCreate`
+para preparar el salto desde NetBox hacia despliegue, automatizacion,
+validacion y compliance:
+
+```
+UI -> FastAPI -> NetBox -> Jinja2 -> artefactos Containerlab / Ansible / OPA
+```
+
+### Alcance inicial permitido
+
+- Agregar Jinja2 como motor de render reproducible.
+- Generar un bundle desde `TopologyCreate` con:
+  - `containerlab/topology.clab.yml`
+  - `ansible/inventory.yml`
+  - `ansible/site.yml`
+  - `opa/input.json`
+  - `opa/policies/gemerotic_baseline.rego`
+  - `batfish/README.md`
+  - `manifest.json`
+- Exponer `POST /api/v1/pipeline/artifacts` protegido por `X-API-Key`.
+- Conectar la UI al endpoint para que el operador pueda revisar artefactos
+  antes de cualquier ejecucion.
+- Mantener tests unitarios y de endpoint para el generador.
+
+### Fuera de alcance de Step 9
+
+- No ejecutar Docker, Containerlab, Ansible, Batfish ni OPA desde el API.
+- No inventar configuraciones vendor para Batfish sin seleccionar perfiles de
+  NOS, imagenes y plantillas por tipo de activo.
+- No escribir artefactos persistentes en disco desde la UI o el API.
+
+---
+
+## Estado Anterior: Step 8 - UI Builder OT con React Flow
+
+### Que se construyo en este paso
+
+Se construyo una primera interfaz profesional tipo GNS3 / Packet Tracer para
+disenar topologias OT/IT de forma visual, manteniendo la arquitectura:
 
 ```
 UI (React Flow) -> Core API (FastAPI) -> SSoT (NetBox)
 ```
 
-La UI debe respetar el modelo de 3 capas:
+La UI respeta el modelo de 3 capas:
 
 - **Layer 1:** sitios, salas, racks, dispositivos, puertos y cables.
 - **Layer 2:** interfaces logicas y VLANs.
 - **Layer 3:** zonas IEC 62443, niveles Purdue, Security Levels y conductos.
-
-### Alcance inicial permitido
 
 - Crear un frontend React con React Flow para editar nodos y enlaces.
 - Mantener un mapeo explicito desde el estado visual al schema
@@ -47,13 +82,6 @@ La UI debe respetar el modelo de 3 capas:
   - `POST /api/v1/topology`
 - Enviar `X-API-Key` desde configuracion local del navegador.
 - Agregar tests de frontend y CI para build/lint/test del UI.
-
-### Fuera de alcance de Step 8
-
-- No implementar Containerlab, Ansible, Batfish, LibreNMS, Oxidized ni OPA.
-- No cambiar los schemas Pydantic salvo que el builder demuestre una necesidad
-  directa y compatible.
-- No persistir estado de UI fuera del navegador, NetBox o el API existente.
 
 ---
 
@@ -584,7 +612,12 @@ curl http://localhost:8000/api/v1/health
 | **Step 5** | Servicio NetBox + endpoint bootstrap | Completado |
 | **Step 6** | Endpoint de topologia (POST /api/v1/topology) | Completado |
 | **Step 7** | Seguridad transversal (rate limiting, error handlers) | Completado |
-| **Step 8** | UI Builder OT con React Flow | En progreso |
+| **Step 8** | UI Builder OT con React Flow | Completado |
+| **Step 9** | Generador Jinja2 de artefactos del pipeline | En progreso |
+| **Step 10** | Ejecucion controlada de Containerlab y Ansible | Pendiente |
+| **Step 11** | Validacion Batfish con perfiles NOS | Pendiente |
+| **Step 12** | Observabilidad LibreNMS/Oxidized | Pendiente |
+| **Step 13** | Auditoria de cumplimiento OPA | Pendiente |
 
 ---
 

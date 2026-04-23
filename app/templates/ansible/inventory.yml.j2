@@ -1,0 +1,36 @@
+all:
+  hosts:
+    localhost:
+      ansible_connection: local
+  vars:
+    gemerotic_topology: {{ topology_name | json_string }}
+    gemerotic_containerlab_prefix: {{ ("clab-" ~ topology_name ~ "-") | json_string }}
+    gemerotic_nodes:
+{% for node in nodes %}
+      - id: {{ node.id | json_string }}
+        container_name: {{ ("clab-" ~ topology_name ~ "-" ~ node.id) | json_string }}
+        asset_type: {{ node.asset_type | json_string }}
+        criticality: {{ node.criticality | json_string }}
+        zone_id: {{ (node.zone_id or "") | json_string }}
+        purdue_level: {{ (node.purdue_level if node.purdue_level is not none else "") | json_string }}
+        security_level: {{ (node.security_level or "") | json_string }}
+        interfaces:
+{% for interface in node.interfaces %}
+          - port_id: {{ interface.port_id | json_string }}
+            lab_interface: {{ interface.lab_interface | json_string }}
+            enabled: {{ interface.enabled | tojson }}
+            mgmt_only: {{ interface.mgmt_only | tojson }}
+            ipv4_address: {{ interface.ipv4_address | tojson }}
+            ipv6_address: {{ interface.ipv6_address | tojson }}
+{% if interface.vlans %}
+            vlans:
+{% for vlan in interface.vlans %}
+              - id: {{ vlan.id | json_string }}
+                vlan_id: {{ vlan.vlan_id }}
+                name: {{ vlan.name | json_string }}
+{% endfor %}
+{% else %}
+            vlans: []
+{% endif %}
+{% endfor %}
+{% endfor %}

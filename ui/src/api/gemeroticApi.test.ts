@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { bootstrapNetBox, createTopology, getHealth } from './gemeroticApi'
+import {
+  bootstrapNetBox,
+  createTopology,
+  generatePipelineArtifacts,
+  getHealth,
+} from './gemeroticApi'
 
 const config = {
   baseUrl: 'http://localhost:8000',
@@ -57,5 +62,25 @@ describe('gemeroticApi', () => {
     await createTopology(config, { name: 'mvp-lab-01' })
 
     expect(fetchMock.mock.calls[0][1]?.body).toBe('{"name":"mvp-lab-01"}')
+  })
+
+  it('genera artefactos del pipeline con API key', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: 'success',
+          message: 'Pipeline artifacts generated successfully',
+          data: { topology_name: 'mvp-lab-01', artifacts: [] },
+        }),
+      ),
+    )
+
+    await generatePipelineArtifacts(config, { name: 'mvp-lab-01' })
+    const headers = fetchMock.mock.calls[0][1]?.headers as Headers
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'http://localhost:8000/api/v1/pipeline/artifacts',
+    )
+    expect(headers.get('X-API-Key')).toBe('test-key')
   })
 })

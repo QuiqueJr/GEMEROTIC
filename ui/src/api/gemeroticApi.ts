@@ -19,11 +19,23 @@ export type HealthResponse = {
   }
 }
 
-export type APIEnvelope = {
+export type APIEnvelope<T = unknown> = {
   status: 'success' | 'error'
   message: string
   detail?: unknown
-  data?: unknown
+  data?: T
+}
+
+export type PipelineArtifact = {
+  path: string
+  stage: 'containerlab' | 'ansible' | 'batfish' | 'opa' | 'metadata'
+  content_type: string
+  content: string
+}
+
+export type PipelineArtifactsResponse = {
+  topology_name: string
+  artifacts: PipelineArtifact[]
 }
 
 export async function getHealth(config: APIConfig): Promise<APIResult<HealthResponse>> {
@@ -48,6 +60,21 @@ export async function createTopology(
     apiKeyRequired: true,
     body: payload,
   })
+}
+
+export async function generatePipelineArtifacts(
+  config: APIConfig,
+  payload: unknown,
+): Promise<APIResult<APIEnvelope<PipelineArtifactsResponse>>> {
+  return requestJson<APIEnvelope<PipelineArtifactsResponse>>(
+    config,
+    '/api/v1/pipeline/artifacts',
+    {
+      method: 'POST',
+      apiKeyRequired: true,
+      body: payload,
+    },
+  )
 }
 
 async function requestJson<T>(

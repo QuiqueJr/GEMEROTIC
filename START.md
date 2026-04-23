@@ -235,6 +235,26 @@ La vista `Fisica` configura activos, rack, puertos y cableado. La vista
 `Logica` configura VLANs, direcciones e interfaces. La vista `Seguridad`
 configura zonas IEC 62443, Purdue, Security Level y conductos.
 
+El boton `Artefactos` genera el bundle declarativo del pipeline desde el mismo
+payload:
+
+- `containerlab/topology.clab.yml`
+- `ansible/inventory.yml`
+- `ansible/site.yml`
+- `opa/input.json`
+- `opa/policies/gemerotic_baseline.rego`
+- `batfish/README.md`
+- `manifest.json`
+
+Equivale a llamar:
+
+```powershell
+curl -X POST http://localhost:8000/api/v1/pipeline/artifacts `
+  -H "X-API-Key: <API_KEY_GENERADA>" `
+  -H "Content-Type: application/json" `
+  --data-binary "@topology.json"
+```
+
 ---
 
 ## 10. Mapa rapido de puertos

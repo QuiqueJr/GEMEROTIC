@@ -1,0 +1,24 @@
+{{ {
+  "schema": "gemerotic.pipeline.artifacts.v1",
+  "topology_name": topology_name,
+  "stages": {
+    "containerlab": {
+      "entrypoint": "containerlab/topology.clab.yml",
+      "command": "containerlab deploy --topo containerlab/topology.clab.yml"
+    },
+    "ansible": {
+      "inventory": "ansible/inventory.yml",
+      "playbook": "ansible/site.yml",
+      "command": "ansible-playbook -i ansible/inventory.yml ansible/site.yml"
+    },
+    "opa": {
+      "input": "opa/input.json",
+      "policy": "opa/policies/gemerotic_baseline.rego",
+      "command": "opa eval --format pretty --data opa/policies --input opa/input.json data.gemerotic.baseline"
+    },
+    "batfish": {
+      "readme": "batfish/README.md",
+      "status": "requires vendor NOS profile before execution"
+    }
+  }
+} | to_pretty_json }}
