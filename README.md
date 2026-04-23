@@ -12,11 +12,149 @@ UI (React Flow) -> Core API (FastAPI) -> SSoT (NetBox) -> Generador de Configura
 -> Observabilidad (LibreNMS/Oxidized) -> Auditoria de Cumplimiento (OPA)
 ```
 
-> **Nota:** El proyecto se construye fase por fase. El frontend esta fuera de alcance por ahora. Toda interaccion con el API se realiza mediante payloads JSON directos.
+> **Nota:** El proyecto se construye fase por fase. Desde Step 10, el pipeline
+> puede escribir un bundle local controlado y ejecutar Containerlab + Ansible
+> mediante comandos allowlistados, sin shell y protegidos por `X-API-Key`.
 
 ---
 
-## Estado Actual: Step 7 - Seguridad transversal
+## Estado Actual: Step 10 - Ejecucion Controlada de Containerlab y Ansible
+
+### Objetivo de este paso
+
+Tomar los artefactos generados en Step 9 y ejecutar el despliegue local de forma
+controlada:
+
+```
+TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
+```
+
+### Alcance inicial permitido
+
+- Escribir bundles bajo `var/pipeline/<topology_name>`.
+- Comprobar herramientas locales con `GET /api/v1/pipeline/tools`.
+- Ejecutar `POST /api/v1/pipeline/deploy` protegido por `X-API-Key`.
+- Usar comandos allowlistados con `shell=False`:
+  - `containerlab deploy --topo containerlab/topology.clab.yml`
+  - `ansible-playbook -i ansible/inventory.yml ansible/site.yml`
+- Fallar de forma segura si falta `docker`, `containerlab` o
+  `ansible-playbook`.
+
+### Avance actual dentro de Step 10
+
+- El smoke de NetBox en CI queda alineado con PostgreSQL 18:
+  - volumen en `/var/lib/postgresql`
+  - `timeout` del healthcheck ampliado a `30s`
+  - logs automáticos de `postgres`, `netbox` y `netbox-worker` al finalizar el job
+- La UI del builder se refinó para uso operativo:
+  - workspace reorganizado al patrón de GNS3 documentado: toolbar superior,
+    devices toolbar a la izquierda, canvas central, topology/server summary a
+    la derecha y consola inferior
+  - biblioteca OT/IT por dominio con inserción por clic y por drag and drop
+  - iconografía de estilo appliance industrial para router, switch, firewall,
+    PLC, HMI, RTU, servidor SCADA, patch panel y AP
+  - nodos del canvas reducidos a símbolo + etiqueta para evitar ruido visual,
+    con configuración por doble clic
+  - herramienta de enlace tipo GNS3: selección de origen, destino, puertos,
+    nombre de cable y edición posterior por doble clic
+  - edición de cables con nombre propio y puertos explícitos por extremo
+  - atajos de productividad (`Supr`, `Ctrl/Cmd+Z`, `Ctrl/Cmd+Y`,
+    `Ctrl/Cmd+Shift+Z`, `Escape`)
+  - etiquetas de interfaz ocultas por defecto, alineadas con el comportamiento
+    base de GNS3
+  - configuraciones del proyecto, conectividad y navegador de datos movidos a
+    modales para no saturar el canvas
+  - comprobación visual del entorno de despliegue desde la propia UI
+- Para equipos que requieran software específico de explotación o control, la
+  ruta correcta no es configurar paquetes ad hoc por nodo, sino introducir una
+  futura capa de **runtime profiles**:
+  - `asset_type` -> `runtime profile`
+  - `runtime profile` -> imagen, rol Ansible, puertos de gestión, servicios
+    esperados
+  - `instancia` -> overrides locales
+  Esta taxonomía OT concreta queda pendiente de decisión humana antes de
+  implementarla de extremo a extremo.
+- La raíz del backend (`/`) redirige a `/docs` y `favicon.ico` deja de
+  generar ruido `404` en desarrollo local
+
+### Fuera de alcance de Step 10
+
+- No ejecutar Batfish hasta seleccionar perfiles de NOS y templates vendor.
+- No integrar LibreNMS/Oxidized hasta que el lab tenga conectividad gestionable.
+- No permitir comandos arbitrarios enviados por el usuario.
+
+---
+
+## Estado Anterior: Step 9 - Generador de Artefactos del Pipeline
+
+### Objetivo de este paso
+
+Renderizar artefactos declarativos desde el payload validado `TopologyCreate`
+para preparar el salto desde NetBox hacia despliegue, automatizacion,
+validacion y compliance:
+
+```
+UI -> FastAPI -> NetBox -> Jinja2 -> artefactos Containerlab / Ansible / OPA
+```
+
+### Alcance inicial permitido
+
+- Agregar Jinja2 como motor de render reproducible.
+- Generar un bundle desde `TopologyCreate` con:
+  - `containerlab/topology.clab.yml`
+  - `ansible/inventory.yml`
+  - `ansible/site.yml`
+  - `opa/input.json`
+  - `opa/policies/gemerotic_baseline.rego`
+  - `batfish/README.md`
+  - `manifest.json`
+- Exponer `POST /api/v1/pipeline/artifacts` protegido por `X-API-Key`.
+- Conectar la UI al endpoint para que el operador pueda revisar artefactos
+  antes de cualquier ejecucion.
+- Mantener tests unitarios y de endpoint para el generador.
+
+### Fuera de alcance de Step 9
+
+- No ejecutar Docker, Containerlab, Ansible, Batfish ni OPA desde el API.
+- No inventar configuraciones vendor para Batfish sin seleccionar perfiles de
+  NOS, imagenes y plantillas por tipo de activo.
+- No escribir artefactos persistentes en disco desde la UI o el API.
+
+---
+
+## Estado Anterior: Step 8 - UI Builder OT con React Flow
+
+### Que se construyo en este paso
+
+Se construyo una primera interfaz profesional tipo GNS3 / Packet Tracer para
+disenar topologias OT/IT de forma visual, manteniendo la arquitectura:
+
+```
+UI (React Flow) -> Core API (FastAPI) -> SSoT (NetBox)
+```
+
+La UI respeta el modelo de 3 capas:
+
+- **Layer 1:** sitios, salas, racks, dispositivos, puertos y cables.
+- **Layer 2:** interfaces logicas y VLANs.
+- **Layer 3:** zonas IEC 62443, niveles Purdue, Security Levels y conductos.
+
+- Crear un frontend React con React Flow para editar nodos y enlaces.
+- Mantener un mapeo explicito desde el estado visual al schema
+  `TopologyCreate`.
+- Conectar la UI a:
+  - `GET /api/v1/health`
+  - `GET /api/v1/pipeline/tools`
+  - `POST /api/v1/netbox/bootstrap`
+  - `POST /api/v1/topology`
+  - `POST /api/v1/pipeline/artifacts`
+  - `POST /api/v1/pipeline/deploy`
+- Enviar `X-API-Key` desde configuracion local del navegador.
+- Agregar tests de frontend y CI para build/lint/test del UI.
+
+---
+
+## Estado Anterior: Step 7 - Seguridad transversal
 
 ### Que se construyo hasta este punto
 
@@ -543,6 +681,12 @@ curl http://localhost:8000/api/v1/health
 | **Step 5** | Servicio NetBox + endpoint bootstrap | Completado |
 | **Step 6** | Endpoint de topologia (POST /api/v1/topology) | Completado |
 | **Step 7** | Seguridad transversal (rate limiting, error handlers) | Completado |
+| **Step 8** | UI Builder OT con React Flow | Completado |
+| **Step 9** | Generador Jinja2 de artefactos del pipeline | Completado |
+| **Step 10** | Ejecucion controlada de Containerlab y Ansible | En progreso |
+| **Step 11** | Validacion Batfish con perfiles NOS | Pendiente |
+| **Step 12** | Observabilidad LibreNMS/Oxidized | Pendiente |
+| **Step 13** | Auditoria de cumplimiento OPA | Pendiente |
 
 ---
 

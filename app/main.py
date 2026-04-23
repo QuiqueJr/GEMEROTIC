@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse, Response
 
 from app.api.v1.router import v1_router
 from app.config import settings
@@ -66,6 +67,17 @@ def create_app(rate_limiter: RateLimitBackend | None = None) -> FastAPI:
     )
     # Registrar routers del API versionado
     application.include_router(v1_router, prefix="/api/v1")
+
+    @application.get("/", include_in_schema=False)
+    async def root() -> RedirectResponse:
+        """Redirigir la raíz a la documentación interactiva."""
+        return RedirectResponse(url="/docs", status_code=307)
+
+    @application.get("/favicon.ico", include_in_schema=False)
+    async def favicon() -> Response:
+        """Evitar 404 del navegador cuando solicita favicon por defecto."""
+        return Response(status_code=204)
+
     register_exception_handlers(application)
 
     return application

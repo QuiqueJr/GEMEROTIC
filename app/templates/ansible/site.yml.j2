@@ -1,0 +1,49 @@
+---
+- name: Aplicar configuración lógica GEMEROTIC sobre Containerlab
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Verificar acceso al CLI de Docker
+      ansible.builtin.command:
+        argv:
+          - docker
+          - version
+      changed_when: false
+
+    - name: Ajustar estado administrativo de interfaces
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - "{% raw %}{{ item.0.container_name }}{% endraw %}"
+          - sh
+          - -lc
+          - "{% raw %}ip link set {{ item.1.lab_interface }} {{ 'up' if item.1.enabled else 'down' }}{% endraw %}"
+      loop: "{% raw %}{{ gemerotic_nodes | subelements('interfaces') }}{% endraw %}"
+      changed_when: true
+
+    - name: Aplicar direcciones IPv4
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - "{% raw %}{{ item.0.container_name }}{% endraw %}"
+          - sh
+          - -lc
+          - "{% raw %}ip addr replace {{ item.1.ipv4_address }} dev {{ item.1.lab_interface }}{% endraw %}"
+      loop: "{% raw %}{{ gemerotic_nodes | subelements('interfaces') }}{% endraw %}"
+      when: "{% raw %}item.1.ipv4_address is not none{% endraw %}"
+      changed_when: true
+
+    - name: Aplicar direcciones IPv6
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - "{% raw %}{{ item.0.container_name }}{% endraw %}"
+          - sh
+          - -lc
+          - "{% raw %}ip -6 addr replace {{ item.1.ipv6_address }} dev {{ item.1.lab_interface }}{% endraw %}"
+      loop: "{% raw %}{{ gemerotic_nodes | subelements('interfaces') }}{% endraw %}"
+      when: "{% raw %}item.1.ipv6_address is not none{% endraw %}"
+      changed_when: true

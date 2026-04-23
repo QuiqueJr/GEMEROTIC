@@ -1,0 +1,30 @@
+name: {{ topology_name | json_string }}
+mgmt:
+  network: {{ mgmt_network | json_string }}
+topology:
+  nodes:
+{% for node in nodes %}
+    {{ node.id }}:
+      kind: {{ node.containerlab.kind | json_string }}
+      image: {{ node.containerlab.image | json_string }}
+      cmd: {{ node.containerlab.cmd | json_string }}
+      env:
+        GEMEROTIC_TOPOLOGY: {{ topology_name | json_string }}
+        GEMEROTIC_DEVICE_ID: {{ node.id | json_string }}
+        GEMEROTIC_ASSET_TYPE: {{ node.asset_type | json_string }}
+        GEMEROTIC_CRITICALITY: {{ node.criticality | json_string }}
+        GEMEROTIC_ZONE_ID: {{ (node.zone_id or "") | json_string }}
+        GEMEROTIC_PURDUE_LEVEL: {{ (node.purdue_level if node.purdue_level is not none else "") | json_string }}
+        GEMEROTIC_SECURITY_LEVEL: {{ (node.security_level or "") | json_string }}
+{% endfor %}
+{% if links %}
+  links:
+{% for link in links %}
+    - endpoints:
+{% for endpoint in link.endpoints %}
+        - {{ endpoint.endpoint | json_string }}
+{% endfor %}
+{% endfor %}
+{% else %}
+  links: []
+{% endif %}
