@@ -16,7 +16,7 @@ Frontend del constructor visual OT/IT de GEMEROTIC.
 
 ```bash
 bun install
-bun run dev
+bun run dev -- --host 127.0.0.1 --port 5173
 bun run lint
 bun run test:run
 bun run build
@@ -37,10 +37,22 @@ La interfaz permite configurar la `Base URL` del API y la cabecera
 `X-API-Key` desde el panel lateral. Esa clave debe coincidir con la variable
 `API_KEY` usada al arrancar FastAPI. La clave no se versiona en git.
 
+## Vistas del builder
+
+- `Fisica`: configura sitio, sala, rack, activos, puertos, RU y cableado.
+- `Logica`: configura VLANs, direcciones IPv4/IPv6, MAC, estado de interfaz y
+  gestion.
+- `Seguridad`: configura zonas IEC 62443, niveles Purdue, Security Level,
+  criticidad y protocolos permitidos en conductos.
+
+El panel `Payload TopologyCreate` muestra el JSON exacto que se enviara al
+backend. Esa vista debe mantenerse como contrato visible entre React Flow,
+FastAPI y NetBox.
+
 Flujo minimo para validar la UI contra el pipeline actual:
 
 1. Levantar NetBox y el backend siguiendo `START.md`.
-2. Ejecutar `bun run dev` dentro de `ui/`.
+2. Ejecutar `bun run dev -- --host 127.0.0.1 --port 5173` dentro de `ui/`.
 3. Pulsar `Health` y comprobar que NetBox aparece conectado.
 4. Pulsar `Bootstrap` para preparar NetBox.
 5. Ajustar la topologia visual y pulsar `Persistir en NetBox`.

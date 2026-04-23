@@ -203,7 +203,41 @@ curl -X POST http://localhost:8000/api/v1/netbox/bootstrap `
 
 ---
 
-## 9. Mapa rapido de puertos
+## 9. Probar la UI con Bun
+
+El frontend se ejecuta con Bun, no con npm. Desde otra terminal:
+
+```powershell
+cd ui
+bun install
+bun run dev -- --host 127.0.0.1 --port 5173
+```
+
+Abrir la UI en:
+
+```text
+http://127.0.0.1:5173
+```
+
+En el panel derecho de la UI:
+
+- `Base URL`: `http://localhost:8000`
+- `X-API-Key`: el mismo valor de `API_KEY` usado por FastAPI
+
+Flujo esperado:
+
+1. Pulsar `Health` para confirmar API, NetBox y Valkey.
+2. Pulsar `Bootstrap` para crear roles y custom fields base en NetBox.
+3. Configurar la topologia en las vistas `Fisica`, `Logica` y `Seguridad`.
+4. Pulsar `Persistir en NetBox` para enviar el payload `TopologyCreate`.
+
+La vista `Fisica` configura activos, rack, puertos y cableado. La vista
+`Logica` configura VLANs, direcciones e interfaces. La vista `Seguridad`
+configura zonas IEC 62443, Purdue, Security Level y conductos.
+
+---
+
+## 10. Mapa rapido de puertos
 
 | Servicio | URL local |
 |---|---|
@@ -211,10 +245,11 @@ curl -X POST http://localhost:8000/api/v1/netbox/bootstrap `
 | Swagger/OpenAPI | `http://localhost:8000/docs` |
 | NetBox | `http://localhost:8080` |
 | Valkey rate limit | `localhost:6380` |
+| UI GEMEROTIC | `http://127.0.0.1:5173` |
 
 ---
 
-## 10. Checklist de problemas comunes
+## 11. Checklist de problemas comunes
 
 - Si `NETBOX_TOKEN` esta vacio, `health.checks.netbox_connected` sera `false`.
 - Si `RATE_LIMIT_REDIS_URL` no usa el password correcto,
@@ -222,6 +257,8 @@ curl -X POST http://localhost:8000/api/v1/netbox/bootstrap `
 - Si falta `API_KEY`, los endpoints mutantes devuelven `503`.
 - Si el header `X-API-Key` no coincide con `API_KEY`, los endpoints mutantes
   devuelven `401`.
+- Si la UI no puede llamar al API, revisa que `CORS_ALLOWED_ORIGINS` incluya
+  `http://127.0.0.1:5173`.
 - Si cambias `RATE_LIMIT_REDIS_PASSWORD`, actualiza tambien
   `RATE_LIMIT_REDIS_URL` en `.env`.
 - Si regeneras `docker/netbox/env/*.local.env`, reinicia el stack Docker para que
