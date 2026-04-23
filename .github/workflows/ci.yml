@@ -211,6 +211,11 @@ jobs:
         working-directory: docker/netbox
         run: docker compose ps
 
+      - name: Show NetBox stack logs
+        if: always()
+        working-directory: docker/netbox
+        run: docker compose logs postgres netbox netbox-worker
+
       - name: Stop NetBox stack
         if: always()
         working-directory: docker/netbox

@@ -65,11 +65,11 @@ services:
         - pg_isready -q -t 2 -d $$POSTGRES_DB -U $$POSTGRES_USER
       start_period: 20s
       interval: 10s
-      timeout: 5s
+      timeout: 30s
       retries: 5
     restart: unless-stopped
     volumes:
-      - netbox-postgres:/var/lib/postgresql/data:rw
+      - netbox-postgres:/var/lib/postgresql:rw
 
   redis:
     image: docker.io/valkey/valkey:9.0-alpine
