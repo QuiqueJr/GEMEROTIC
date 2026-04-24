@@ -1274,7 +1274,6 @@ button {
 .asset-node__symbol {
   align-items: center;
   display: grid;
-  filter: drop-shadow(0 10px 16px rgba(12, 18, 24, 0.18));
   justify-items: center;
   min-height: 94px;
 }
@@ -1312,11 +1311,12 @@ button {
 }
 
 .equipment-glyph {
-  --glyph-top: #d9e2ea;
-  --glyph-front: #bac7d3;
-  --glyph-side: #97a7b6;
-  --glyph-accent: #6c879f;
-  --glyph-detail: #f5f8fa;
+  --glyph-top: #d8e0e7;
+  --glyph-front: #bcc8d3;
+  --glyph-side: #bcc8d3;
+  --glyph-accent: #5d7892;
+  --glyph-detail: #eff4f7;
+  --glyph-detail-dark: #53616f;
   --glyph-stroke: #394550;
   --glyph-led: #ffd34d;
   --glyph-screen: #89b5d0;
@@ -1325,84 +1325,84 @@ button {
 }
 
 .equipment-glyph--router {
-  --glyph-top: #dfe7f1;
-  --glyph-front: #bfd0e0;
-  --glyph-side: #96abc0;
-  --glyph-accent: #4d7eaa;
+  --glyph-top: #dbe5ee;
+  --glyph-front: #c6d4df;
+  --glyph-accent: #547da7;
+  --glyph-detail-dark: #506271;
 }
 
 .equipment-glyph--switch {
-  --glyph-top: #dde6ee;
-  --glyph-front: #c6d4e0;
-  --glyph-side: #9baebf;
-  --glyph-accent: #6583a0;
+  --glyph-top: #dde4ea;
+  --glyph-front: #c7d2db;
+  --glyph-accent: #6b8297;
+  --glyph-detail-dark: #4e5d6c;
 }
 
 .equipment-glyph--firewall {
-  --glyph-top: #ecd8d5;
-  --glyph-front: #d29289;
-  --glyph-side: #b5685e;
+  --glyph-top: #efd7d3;
+  --glyph-front: #d7a098;
   --glyph-accent: #c44b42;
+  --glyph-detail-dark: #6a5350;
   --glyph-screen: #c07c74;
 }
 
 .equipment-glyph--server {
-  --glyph-top: #dde2ea;
-  --glyph-front: #c0c9d4;
-  --glyph-side: #919dab;
-  --glyph-accent: #566879;
+  --glyph-top: #e0e4ea;
+  --glyph-front: #c5cdd6;
+  --glyph-accent: #63717e;
+  --glyph-detail-dark: #505c67;
 }
 
 .equipment-glyph--scada_server {
-  --glyph-top: #dfe9e8;
-  --glyph-front: #bad3d1;
-  --glyph-side: #8ca9a6;
+  --glyph-top: #dfe9e7;
+  --glyph-front: #bfd6d3;
   --glyph-accent: #4f827c;
+  --glyph-detail-dark: #4c6763;
   --glyph-screen: #5a8d88;
 }
 
 .equipment-glyph--host {
-  --glyph-top: #e1e8ef;
-  --glyph-front: #c7d2dc;
-  --glyph-side: #98a7b5;
+  --glyph-top: #e1e7ed;
+  --glyph-front: #c9d2db;
   --glyph-accent: #5d7c9a;
+  --glyph-detail-dark: #4d5e70;
   --glyph-screen: #7ca7c8;
 }
 
 .equipment-glyph--plc {
-  --glyph-top: #ece7d7;
-  --glyph-front: #d7cfb3;
-  --glyph-side: #a99e7d;
+  --glyph-top: #ebe4d2;
+  --glyph-front: #d9cfb0;
   --glyph-accent: #8a7b3f;
+  --glyph-detail-dark: #5f5740;
 }
 
 .equipment-glyph--hmi {
-  --glyph-top: #dce8eb;
-  --glyph-front: #b7d2d8;
-  --glyph-side: #88aab0;
+  --glyph-top: #dce7ea;
+  --glyph-front: #bfd3d8;
   --glyph-accent: #3f7280;
+  --glyph-detail-dark: #4a646d;
   --glyph-screen: #4f8da0;
 }
 
 .equipment-glyph--rtu {
-  --glyph-top: #dfe8dd;
-  --glyph-front: #c2d1bc;
-  --glyph-side: #93a48a;
+  --glyph-top: #dfe7dd;
+  --glyph-front: #c7d5c0;
   --glyph-accent: #5b7858;
+  --glyph-detail-dark: #526653;
 }
 
 .equipment-glyph--patch_panel {
-  --glyph-top: #e3e7e9;
-  --glyph-front: #c9d0d6;
-  --glyph-side: #9ea9b1;
+  --glyph-top: #e4e8ea;
+  --glyph-front: #ced4d9;
   --glyph-accent: #66747f;
+  --glyph-detail-dark: #53606a;
 }
 
 .equipment-glyph--wireless_ap {
   --glyph-top: #e8edf1;
-  --glyph-front: #ccd8e3;
-  --glyph-side: #9cb0c5;
+  --glyph-front: #d4dde6;
   --glyph-accent: #5d87a8;
+  --glyph-detail-dark: #4c647b;
 }
 
 @media (max-width: 1240px) {
