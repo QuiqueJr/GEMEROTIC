@@ -49,6 +49,12 @@ export type BuilderEdgeData = {
   label: string
   sourcePortIndex: number
   targetPortIndex: number
+  sourcePortName?: string
+  targetPortName?: string
+  siblingOffset?: number
+  showPortLabels?: boolean
+  displayLabel?: string
+  activeView?: TopologyView
 }
 
 export type BuilderEdge = Edge<BuilderEdgeData>

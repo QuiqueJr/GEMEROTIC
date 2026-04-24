@@ -47,7 +47,9 @@ import {
   type PipelineToolReportResponse,
 } from './api/gemeroticApi'
 import { AssetNode } from './components/AssetNode'
+import { CableEdge } from './components/CableEdge'
 import { EquipmentGlyph } from './components/EquipmentGlyph'
+import { getEdgeHandleIds, getSiblingOffsets } from './domain/edgeLayout'
 import { assetCatalog, getAssetDefinition } from './domain/assetCatalog'
 import {
   buildTopologyPayload,
@@ -56,7 +58,6 @@ import {
   createNodeFromAsset,
   getNextAssetIndex,
   getPortName,
-  getSuggestedPortIndex,
   getUsedPortIndexes,
   slugify,
   updateEdgeData,
@@ -78,6 +79,10 @@ const nodeTypes = {
   asset: AssetNode,
 }
 
+const edgeTypes = {
+  cable: CableEdge,
+}
+
 const criticalityOptions: Criticality[] = ['critical', 'high', 'medium', 'low']
 const securityLevelOptions: SecurityLevel[] = ['SL-0', 'SL-1', 'SL-2', 'SL-3', 'SL-4']
 const purdueOptions: PurdueLevel[] = [0, 1, 2, 3, 4, 5]
@@ -90,6 +95,15 @@ type ConsoleEntry = {
   id: string
   tone: OperationStatus
   text: string
+}
+type LinkEndpoint = {
+  nodeId: string
+  portIndex: number
+}
+type PortPickerState = {
+  phase: 'source' | 'target'
+  nodeId: string
+  sourceEndpoint?: LinkEndpoint
 }
 type CableDraft = {
   id?: string
@@ -127,7 +141,7 @@ const defaultEdgeOptions: DefaultEdgeOptions = {
     stroke: '#5f6972',
     strokeWidth: 2,
   },
-  type: 'smoothstep',
+  type: 'cable',
 }
 
 const purdueLabels: Record<PurdueLevel, string> = {
@@ -152,7 +166,8 @@ function App() {
   const [editorTab, setEditorTab] = useState<EditorTab>('equipment')
   const [activeView, setActiveView] = useState<TopologyView>('physical')
   const [interactionMode, setInteractionMode] = useState<InteractionMode>('select')
-  const [pendingLinkSourceId, setPendingLinkSourceId] = useState<string | null>(null)
+  const [pendingLinkSource, setPendingLinkSource] = useState<LinkEndpoint | null>(null)
+  const [portPicker, setPortPicker] = useState<PortPickerState | null>(null)
   const [showInterfaceLabels, setShowInterfaceLabels] = useState(false)
   const [selectedDeviceGroup, setSelectedDeviceGroup] = useState<string>('all')
   const [dataTab, setDataTab] = useState<DataTab>('topology')
@@ -184,6 +199,8 @@ function App() {
   const selectedEdge = edges.find((edge) => edge.id === selectedEdgeId) ?? null
   const editorNode = nodes.find((node) => node.id === editorNodeId) ?? null
   const nodeById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes])
+  const pendingLinkSourceNode =
+    pendingLinkSource === null ? null : nodeById.get(pendingLinkSource.nodeId) ?? null
   const visibleAssets = useMemo(() => {
     if (selectedDeviceGroup === 'all') {
       return assetCatalog
@@ -225,24 +242,53 @@ function App() {
       })),
     [activeView, nodes, selectedNodeId],
   )
+  const siblingOffsets = useMemo(() => getSiblingOffsets(edges), [edges])
   const displayedEdges = useMemo(
     () =>
-      edges.map((edge) => ({
-        ...edge,
-        label: getEdgeDisplayLabel(edge, nodeById, showInterfaceLabels, activeView),
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          color: edge.id === selectedEdgeId ? '#b87416' : getEdgeColor(activeView),
-        },
-        style: {
-          stroke: edge.id === selectedEdgeId ? '#b87416' : getEdgeColor(activeView),
-          strokeDasharray: getEdgeDash(activeView),
-          strokeWidth: edge.id === selectedEdgeId ? 3 : activeView === 'security' ? 2.6 : 2,
-        },
-        animated: activeView === 'logical',
-        type: 'smoothstep',
-      })),
-    [activeView, edges, nodeById, selectedEdgeId, showInterfaceLabels],
+      edges.map((edge) => {
+        const sourceNode = nodeById.get(edge.source)
+        const targetNode = nodeById.get(edge.target)
+        const displayLabel = getEdgeDisplayLabel(edge, nodeById, showInterfaceLabels, activeView)
+        const handlePair =
+          sourceNode && targetNode
+            ? getEdgeHandleIds(sourceNode, targetNode)
+            : { sourceHandle: 'right', targetHandle: 'left' }
+
+        return {
+          ...edge,
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: edge.id === selectedEdgeId ? '#b87416' : getEdgeColor(activeView),
+          },
+          sourceHandle: handlePair.sourceHandle,
+          targetHandle: handlePair.targetHandle,
+          style: {
+            stroke: edge.id === selectedEdgeId ? '#b87416' : getEdgeColor(activeView),
+            strokeDasharray: getEdgeDash(activeView),
+            strokeWidth: edge.id === selectedEdgeId ? 3.2 : activeView === 'security' ? 2.8 : 2.2,
+          },
+          animated: activeView === 'logical',
+          type: 'cable',
+          data: {
+            label: edge.data?.label ?? edge.label?.toString() ?? edge.id,
+            sourcePortIndex: edge.data?.sourcePortIndex ?? 0,
+            targetPortIndex: edge.data?.targetPortIndex ?? 0,
+            activeView,
+            displayLabel,
+            showPortLabels: showInterfaceLabels,
+            siblingOffset: siblingOffsets.get(edge.id) ?? 0,
+            sourcePortName:
+              sourceNode === undefined
+                ? ''
+                : getPortName(sourceNode, edge.data?.sourcePortIndex ?? 0),
+            targetPortName:
+              targetNode === undefined
+                ? ''
+                : getPortName(targetNode, edge.data?.targetPortIndex ?? 0),
+          },
+        }
+      }),
+    [activeView, edges, nodeById, selectedEdgeId, showInterfaceLabels, siblingOffsets],
   )
   const allToolsInstalled =
     toolReport !== null &&
@@ -277,7 +323,8 @@ function App() {
     setSelectedNodeId(null)
     setSelectedEdgeId(null)
     setEditorNodeId(null)
-    setPendingLinkSourceId(null)
+    setPendingLinkSource(null)
+    setPortPicker(null)
     setLinkDraft(null)
     setInteractionMode('select')
   }
@@ -307,7 +354,8 @@ function App() {
   }
 
   function cancelTransientUi() {
-    setPendingLinkSourceId(null)
+    setPendingLinkSource(null)
+    setPortPicker(null)
     setLinkDraft(null)
     setInteractionMode('select')
     appendConsole('Accion cancelada', 'idle')
@@ -328,6 +376,14 @@ function App() {
     setSelectedNodeId(null)
     setSelectedEdgeId(null)
     setEditorNodeId(null)
+    setPendingLinkSource((current) =>
+      current?.nodeId === selectedNodeId ? null : current,
+    )
+    setPortPicker((current) =>
+      current?.nodeId === selectedNodeId || current?.sourceEndpoint?.nodeId === selectedNodeId
+        ? null
+        : current,
+    )
     appendConsole(`Equipo eliminado: ${removedLabel}`, 'success')
   }
 
@@ -506,14 +562,124 @@ function App() {
   const startLinkMode = () => {
     setInteractionMode((currentMode) => {
       const nextMode = currentMode === 'link' ? 'select' : 'link'
-      setPendingLinkSourceId(null)
+      setPendingLinkSource(null)
+      setPortPicker(null)
+      setLinkDraft(null)
       appendConsole(
         nextMode === 'link'
-          ? 'Add Link activado: selecciona origen y destino'
+          ? 'Add Link activado: selecciona un equipo y despues un puerto de origen'
           : 'Modo seleccion activado',
         'success',
       )
       return nextMode
+    })
+  }
+
+  const beginPortSelection = (
+    node: BuilderNode,
+    phase: 'source' | 'target',
+    sourceEndpoint?: LinkEndpoint,
+  ) => {
+    const availableOptions = getAvailablePortOptions(
+      node,
+      edges,
+      undefined,
+      phase === 'target' ? sourceEndpoint?.nodeId : undefined,
+    )
+
+    if (availableOptions.length === 0) {
+      appendConsole(`No hay puertos libres en ${node.data.label}`, 'error')
+      setOperationStatus('error')
+      setOperationMessage('No hay puertos libres disponibles')
+      return
+    }
+
+    if (availableOptions.length === 1) {
+      applyPortSelection(node, availableOptions[0].index, phase, sourceEndpoint)
+      return
+    }
+
+    setPortPicker({
+      phase,
+      nodeId: node.id,
+      sourceEndpoint,
+    })
+  }
+
+  const createCableFromEndpoints = (sourceEndpoint: LinkEndpoint, targetEndpoint: LinkEndpoint) => {
+    const sourceNode = nodeById.get(sourceEndpoint.nodeId)
+    const targetNode = nodeById.get(targetEndpoint.nodeId)
+    if (!sourceNode || !targetNode) {
+      return
+    }
+
+    const draft: CableDraft = {
+      sourceId: sourceEndpoint.nodeId,
+      targetId: targetEndpoint.nodeId,
+      label: buildCableLabel(
+        sourceNode,
+        sourceEndpoint.portIndex,
+        targetNode,
+        targetEndpoint.portIndex,
+      ),
+      sourcePortIndex: sourceEndpoint.portIndex,
+      targetPortIndex: targetEndpoint.portIndex,
+    }
+
+    if (!validateCableDraft(draft, nodes, edges)) {
+      setOperationStatus('error')
+      setOperationMessage('Revisa puertos ocupados o enlaces duplicados')
+      appendConsole('Error al crear cable: puertos ocupados o enlace duplicado', 'error')
+      setPendingLinkSource(sourceEndpoint)
+      setPortPicker(null)
+      return
+    }
+
+    pushHistorySnapshot()
+    const edgeId = `edge-${draft.sourceId}-${draft.targetId}-${Date.now()}`
+    const edge = createBuilderEdge({
+      id: edgeId,
+      source: draft.sourceId,
+      target: draft.targetId,
+      label: draft.label,
+      sourcePortIndex: draft.sourcePortIndex,
+      targetPortIndex: draft.targetPortIndex,
+    })
+    setEdges((currentEdges) => [...currentEdges, edge])
+    setSelectedEdgeId(edgeId)
+    setSelectedNodeId(null)
+    setEditorNodeId(null)
+    setPendingLinkSource(null)
+    setPortPicker(null)
+    setLinkDraft(null)
+    setOperationStatus('success')
+    setOperationMessage(`Cable creado: ${draft.label}`)
+    appendConsole(`Cable creado: ${draft.label}`, 'success')
+  }
+
+  const applyPortSelection = (
+    node: BuilderNode,
+    portIndex: number,
+    phase: 'source' | 'target',
+    sourceEndpoint?: LinkEndpoint,
+  ) => {
+    if (phase === 'source') {
+      setPendingLinkSource({ nodeId: node.id, portIndex })
+      setPortPicker(null)
+      setSelectedNodeId(node.id)
+      setSelectedEdgeId(null)
+      appendConsole(`Origen: ${node.data.label}:${getPortName(node, portIndex)}`, 'success')
+      appendConsole('Selecciona el equipo destino para completar el enlace', 'idle')
+      return
+    }
+
+    if (sourceEndpoint === undefined) {
+      return
+    }
+
+    createCableFromEndpoints(sourceEndpoint, {
+      nodeId: node.id,
+      portIndex,
     })
   }
 
@@ -524,25 +690,24 @@ function App() {
       return
     }
 
-    if (pendingLinkSourceId === null) {
-      setPendingLinkSourceId(node.id)
-      setSelectedNodeId(node.id)
-      appendConsole(`Origen de cable: ${node.data.label}`, 'success')
+    setSelectedEdgeId(null)
+    if (pendingLinkSource === null) {
+      beginPortSelection(node, 'source')
       return
     }
 
-    if (pendingLinkSourceId === node.id) {
-      setPendingLinkSourceId(null)
-      appendConsole('Origen de cable cancelado', 'idle')
+    if (pendingLinkSource.nodeId === node.id) {
+      beginPortSelection(node, 'source')
       return
     }
 
-    openCableDraft(pendingLinkSourceId, node.id)
+    beginPortSelection(node, 'target', pendingLinkSource)
   }
 
   const handleNodeDoubleClick = (_: unknown, node: BuilderNode) => {
     setInteractionMode('select')
-    setPendingLinkSourceId(null)
+    setPendingLinkSource(null)
+    setPortPicker(null)
     setSelectedNodeId(node.id)
     setSelectedEdgeId(null)
     setEditorNodeId(node.id)
@@ -550,29 +715,10 @@ function App() {
     appendConsole(`Editor abierto: ${node.data.label}`, 'success')
   }
 
-  const openCableDraft = (sourceId: string, targetId: string) => {
-    const sourceNode = nodeById.get(sourceId)
-    const targetNode = nodeById.get(targetId)
-    if (!sourceNode || !targetNode) {
-      return
-    }
-    setPendingLinkSourceId(null)
-    setLinkDraft({
-      sourceId,
-      targetId,
-      label: buildCableLabel(sourceNode, targetNode, edges.length + 1),
-      sourcePortIndex: getSuggestedPortIndex(sourceNode, edges),
-      targetPortIndex: getSuggestedPortIndex(targetNode, edges),
-    })
-    setSelectedNodeId(null)
-    setSelectedEdgeId(null)
-    setEditorNodeId(null)
-    appendConsole('Configurando nuevo cable', 'success')
-  }
-
   const openCableEditor = (edge: BuilderEdge) => {
     setInteractionMode('select')
-    setPendingLinkSourceId(null)
+    setPendingLinkSource(null)
+    setPortPicker(null)
     setSelectedNodeId(null)
     setSelectedEdgeId(edge.id)
     setLinkDraft({
@@ -1039,7 +1185,7 @@ function App() {
                   onClick={() => addAsset(asset.assetType)}
                   type="button"
                 >
-                  <EquipmentGlyph assetType={asset.assetType} size={28} />
+                  <EquipmentGlyph assetType={asset.assetType} size={34} />
                   <div>
                     <strong>{asset.label}</strong>
                     <small>
@@ -1063,6 +1209,7 @@ function App() {
               defaultEdgeOptions={defaultEdgeOptions}
               edges={displayedEdges}
               edgesReconnectable={false}
+              edgeTypes={edgeTypes}
               fitView
               fitViewOptions={{ padding: 0.18 }}
               nodes={displayedNodes}
@@ -1103,8 +1250,8 @@ function App() {
               {interactionMode === 'link' ? 'Add Link' : 'Seleccion'}
             </span>
             <strong>
-              {pendingLinkSourceId
-                ? `Origen seleccionado: ${nodeById.get(pendingLinkSourceId)?.data.label ?? pendingLinkSourceId}`
+              {pendingLinkSource
+                ? `Origen seleccionado: ${pendingLinkSourceNode?.data.label ?? pendingLinkSource.nodeId}:${pendingLinkSourceNode ? getPortName(pendingLinkSourceNode, pendingLinkSource.portIndex) : pendingLinkSource.portIndex}`
                 : selectedEdge
                   ? `Cable: ${selectedEdge.data?.label ?? selectedEdge.id}`
                   : selectedNode
@@ -1145,7 +1292,7 @@ function App() {
                     type="button"
                   >
                     <StatusDot tone={node.data.criticality === 'critical' ? 'error' : 'success'} />
-                    <EquipmentGlyph assetType={node.data.assetType} size={22} />
+                    <EquipmentGlyph assetType={node.data.assetType} size={26} />
                     <div>
                       <strong>{node.data.label}</strong>
                       <small>
@@ -1287,6 +1434,23 @@ function App() {
           onTabChange={setEditorTab}
           onUpdateNode={updateEditorNode}
           onChangeAssetType={changeSelectedAssetType}
+        />
+      ) : null}
+
+      {portPicker ? (
+        <PortPickerModal
+          edges={edges}
+          node={nodeById.get(portPicker.nodeId) ?? null}
+          onClose={() => setPortPicker(null)}
+          onSelect={(portIndex) => {
+            const node = nodeById.get(portPicker.nodeId)
+            if (!node) {
+              return
+            }
+            applyPortSelection(node, portIndex, portPicker.phase, portPicker.sourceEndpoint)
+          }}
+          phase={portPicker.phase}
+          sourceEndpoint={portPicker.sourceEndpoint}
         />
       ) : null}
 
@@ -1633,7 +1797,7 @@ function NodeEditorModal({
       <div className="modal-shell">
         <div className="modal-header">
           <div className="modal-header__brand">
-            <EquipmentGlyph assetType={editorNode.data.assetType} size={34} />
+            <EquipmentGlyph assetType={editorNode.data.assetType} size={40} />
             <div>
               <strong>{editorNode.data.label}</strong>
               <span>{editorNode.data.assetType.replace('_', ' ')}</span>
@@ -1925,6 +2089,77 @@ function NodeEditorModal({
   )
 }
 
+function PortPickerModal({
+  edges,
+  node,
+  onClose,
+  onSelect,
+  phase,
+  sourceEndpoint,
+}: {
+  edges: BuilderEdge[]
+  node: BuilderNode | null
+  onClose: () => void
+  onSelect: (portIndex: number) => void
+  phase: 'source' | 'target'
+  sourceEndpoint?: LinkEndpoint
+}) {
+  if (node === null) {
+    return null
+  }
+
+  const options = getAvailablePortOptions(
+    node,
+    edges,
+    undefined,
+    phase === 'target' ? sourceEndpoint?.nodeId : undefined,
+  )
+
+  return (
+    <div
+      className="modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label={
+        phase === 'source' ? 'Seleccion de puerto de origen' : 'Seleccion de puerto de destino'
+      }
+    >
+      <div className="modal-shell modal-shell--port-picker">
+        <div className="modal-header">
+          <div className="modal-header__brand">
+            <Cable size={18} />
+            <div>
+              <strong>
+                {phase === 'source' ? 'Selecciona puerto de origen' : 'Selecciona puerto de destino'}
+              </strong>
+              <span>{node.data.label}</span>
+            </div>
+          </div>
+          <button className="icon-button" onClick={onClose} type="button">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="modal-body">
+          <div className="port-picker">
+            {options.map((option) => (
+              <button
+                key={`${node.id}-${option.index}`}
+                className="port-picker__option"
+                onClick={() => onSelect(option.index)}
+                type="button"
+              >
+                <strong>{option.name}</strong>
+                <span>{phase === 'source' ? 'origen' : 'destino'}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function CableEditorModal({
   draft,
   edges,
@@ -2104,6 +2339,23 @@ function buildPortOptions(
   }))
 }
 
+function getAvailablePortOptions(
+  node: BuilderNode,
+  edges: BuilderEdge[],
+  excludedEdgeId: string | undefined,
+  disallowedNodeId?: string,
+) {
+  return buildPortOptions(node, edges, excludedEdgeId, 0).filter((option) => {
+    if (option.disabled) {
+      return false
+    }
+    if (disallowedNodeId === node.id) {
+      return false
+    }
+    return true
+  })
+}
+
 function validateCableDraft(
   draft: CableDraft,
   nodes: BuilderNode[],
@@ -2147,10 +2399,11 @@ function validateCableDraft(
 
 function buildCableLabel(
   sourceNode: BuilderNode,
+  sourcePortIndex: number,
   targetNode: BuilderNode,
-  sequence: number,
+  targetPortIndex: number,
 ): string {
-  return `${sourceNode.data.label}-${targetNode.data.label}-${sequence}`
+  return `${sourceNode.data.label} ${getPortName(sourceNode, sourcePortIndex)} -> ${targetNode.data.label} ${getPortName(targetNode, targetPortIndex)}`
 }
 
 function describeEdgePorts(edge: BuilderEdge, nodeById: Map<string, BuilderNode>): string {
