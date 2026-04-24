@@ -65,6 +65,19 @@ TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
   - configuraciones del proyecto, conectividad y navegador de datos movidos a
     modales para no saturar el canvas
   - comprobación visual del entorno de despliegue desde la propia UI
+- Se incorporó una capa inicial de cumplimiento OT asistida:
+  - `POST /api/v1/compliance/report` evalúa la topología contra una baseline
+    GEMEROTIC trazable a `NIS2 + IEC 62443 + ISO/IEC 27001`
+  - el informe devuelve controles `pass/fail/warn/not_assessed`, cobertura,
+    postura global y evidencia estructurada por hallazgo
+  - `POST /api/v1/compliance/chat` activa un asistente local que responde en
+    lenguaje natural usando los findings del informe y el contexto de la
+    topología
+  - la UI añade botón de evaluación, pestaña de compliance en el navegador de
+    datos y modal de chat para revisar zonas, conduits, niveles Purdue y
+    activos críticos
+  - el asistente actual es **local y determinista**: ayuda a diseñar y
+    explicar, pero no sustituye una certificación legal ni una auditoría formal
 - Para equipos que requieran software específico de explotación o control, la
   ruta correcta no es configurar paquetes ad hoc por nodo, sino introducir una
   futura capa de **runtime profiles**:
@@ -149,6 +162,8 @@ La UI respeta el modelo de 3 capas:
   - `POST /api/v1/topology`
   - `POST /api/v1/pipeline/artifacts`
   - `POST /api/v1/pipeline/deploy`
+  - `POST /api/v1/compliance/report`
+  - `POST /api/v1/compliance/chat`
 - Enviar `X-API-Key` desde configuracion local del navegador.
 - Agregar tests de frontend y CI para build/lint/test del UI.
 
