@@ -325,9 +325,9 @@ button {
   border-radius: 10px;
   display: grid;
   gap: 10px;
-  grid-template-columns: 42px minmax(0, 1fr);
-  min-height: 56px;
-  padding: 8px 10px;
+  grid-template-columns: 50px minmax(0, 1fr);
+  min-height: 62px;
+  padding: 8px 12px;
   text-align: left;
 }
 
@@ -813,6 +813,10 @@ button {
   width: min(840px, calc(100vw - 48px));
 }
 
+.modal-shell--port-picker {
+  width: min(460px, calc(100vw - 48px));
+}
+
 .modal-header {
   align-items: center;
   background: #ffffff;
@@ -974,6 +978,76 @@ button {
   text-align: center;
 }
 
+.port-picker {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.port-picker__option {
+  background: #ffffff;
+  border: 1px solid var(--chrome-line);
+  border-radius: 10px;
+  color: var(--ink);
+  display: grid;
+  gap: 4px;
+  min-height: 72px;
+  padding: 12px;
+  text-align: left;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    background 140ms ease;
+}
+
+.port-picker__option:hover,
+.port-picker__option:focus-visible {
+  background: #eef4fb;
+  border-color: #86a6c7;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  outline: none;
+}
+
+.port-picker__option strong {
+  font-size: 13px;
+}
+
+.port-picker__option span {
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.cable-edge__label,
+.cable-edge__port-label {
+  background: rgba(248, 250, 251, 0.96);
+  border: 1px solid rgba(120, 133, 145, 0.62);
+  border-radius: 999px;
+  color: #3d4a55;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 10px;
+  left: 0;
+  padding: 3px 8px;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+}
+
+.cable-edge__label {
+  box-shadow: 0 4px 12px rgba(15, 19, 23, 0.08);
+  font-weight: 700;
+}
+
+.cable-edge__port-label {
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 8px;
+  font-size: 9px;
+  padding: 2px 6px;
+}
+
 .empty-state strong {
   color: var(--ink);
   font-size: 14px;
@@ -1008,10 +1082,11 @@ button {
 
 .asset-node {
   align-items: center;
+  cursor: pointer;
   display: grid;
   gap: 6px;
   justify-items: center;
-  min-width: 118px;
+  min-width: 126px;
   padding: 4px 6px 8px;
 }
 
@@ -1023,9 +1098,9 @@ button {
 .asset-node__symbol {
   align-items: center;
   display: grid;
-  filter: drop-shadow(0 7px 12px rgba(12, 18, 24, 0.18));
+  filter: drop-shadow(0 10px 16px rgba(12, 18, 24, 0.18));
   justify-items: center;
-  min-height: 82px;
+  min-height: 94px;
 }
 
 .asset-node__label {
@@ -1068,6 +1143,8 @@ button {
   --glyph-detail: #f5f8fa;
   --glyph-stroke: #394550;
   --glyph-led: #ffd34d;
+  --glyph-screen: #89b5d0;
+  display: block;
   overflow: visible;
 }
 
@@ -1086,10 +1163,11 @@ button {
 }
 
 .equipment-glyph--firewall {
-  --glyph-top: #f0dfdb;
-  --glyph-front: #d79b90;
-  --glyph-side: #bc7268;
-  --glyph-accent: #c54c45;
+  --glyph-top: #ecd8d5;
+  --glyph-front: #d29289;
+  --glyph-side: #b5685e;
+  --glyph-accent: #c44b42;
+  --glyph-screen: #c07c74;
 }
 
 .equipment-glyph--server {
@@ -1104,6 +1182,7 @@ button {
   --glyph-front: #bad3d1;
   --glyph-side: #8ca9a6;
   --glyph-accent: #4f827c;
+  --glyph-screen: #5a8d88;
 }
 
 .equipment-glyph--host {
@@ -1111,6 +1190,7 @@ button {
   --glyph-front: #c7d2dc;
   --glyph-side: #98a7b5;
   --glyph-accent: #5d7c9a;
+  --glyph-screen: #7ca7c8;
 }
 
 .equipment-glyph--plc {
@@ -1125,6 +1205,7 @@ button {
   --glyph-front: #b7d2d8;
   --glyph-side: #88aab0;
   --glyph-accent: #3f7280;
+  --glyph-screen: #4f8da0;
 }
 
 .equipment-glyph--rtu {
