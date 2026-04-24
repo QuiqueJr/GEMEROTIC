@@ -23,9 +23,13 @@ import {
   Layers3,
   Link2,
   Network,
+  MessageSquare,
   Redo2,
   Save,
   Settings,
+  ShieldCheck,
+  ShieldQuestion,
+  SendHorizonal,
   TerminalSquare,
   Trash2,
   Undo2,
@@ -36,9 +40,14 @@ import { useEffect, useMemo, useState, type DragEvent as ReactDragEvent } from '
 import './App.css'
 import {
   bootstrapNetBox,
+  chatWithComplianceAssistant,
   createTopology,
   deployPipeline,
+  generateComplianceReport,
   generatePipelineArtifacts,
+  type ComplianceChatMessage,
+  type ComplianceChatResponse,
+  type ComplianceReportResponse,
   getHealth,
   getPipelineTools,
   type HealthResponse,
@@ -90,7 +99,7 @@ const purdueOptions: PurdueLevel[] = [0, 1, 2, 3, 4, 5]
 type OperationStatus = 'idle' | 'running' | 'success' | 'error'
 type EditorTab = 'equipment' | 'logical' | 'security'
 type InteractionMode = 'select' | 'link'
-type DataTab = 'topology' | 'artifacts' | 'run'
+type DataTab = 'topology' | 'artifacts' | 'run' | 'compliance'
 type ConsoleEntry = {
   id: string
   tone: OperationStatus
@@ -194,6 +203,12 @@ function App() {
   const [pipelineArtifacts, setPipelineArtifacts] =
     useState<PipelineArtifactsResponse | null>(null)
   const [pipelineRun, setPipelineRun] = useState<PipelineRunResponse | null>(null)
+  const [complianceReport, setComplianceReport] =
+    useState<ComplianceReportResponse | null>(null)
+  const [showComplianceAssistant, setShowComplianceAssistant] = useState(false)
+  const [chatMessages, setChatMessages] = useState<ComplianceChatMessage[]>([])
+  const [chatDraft, setChatDraft] = useState('')
+  const [chatBusy, setChatBusy] = useState(false)
 
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null
   const selectedEdge = edges.find((edge) => edge.id === selectedEdgeId) ?? null
@@ -220,6 +235,10 @@ function App() {
   const pipelineRunText = useMemo(
     () => (pipelineRun === null ? '' : JSON.stringify(pipelineRun, null, 2)),
     [pipelineRun],
+  )
+  const complianceText = useMemo(
+    () => (complianceReport === null ? '' : JSON.stringify(complianceReport, null, 2)),
+    [complianceReport],
   )
   const topologySummary = useMemo(
     () => ({
@@ -935,6 +954,110 @@ function App() {
     }
   }
 
+  const evaluateCompliance = async () => {
+    setOperationStatus('running')
+    try {
+      const result = await generateComplianceReport(apiConfig, payload)
+      if (!result.ok || result.data.data === undefined) {
+        const message = extractMessage(result.data, `HTTP ${result.status}`)
+        setOperationStatus('error')
+        setOperationMessage(message)
+        appendConsole(message, 'error')
+        return
+      }
+
+      setComplianceReport(result.data.data)
+      setDataTab('compliance')
+      setShowDataBrowser(true)
+      setOperationStatus('success')
+      setOperationMessage(
+        `Compliance ${result.data.data.summary.overall_posture} · ${result.data.data.summary.failed_controls} fail · ${result.data.data.summary.warned_controls} warn`,
+      )
+      appendConsole(
+        `Compliance ${result.data.data.summary.overall_posture} · cobertura ${result.data.data.summary.coverage_percent}%`,
+        'success',
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Request failed'
+      setOperationStatus('error')
+      setOperationMessage(message)
+      appendConsole(message, 'error')
+    }
+  }
+
+  const openComplianceAssistant = () => {
+    if (complianceReport === null) {
+      void evaluateCompliance()
+    }
+    if (chatMessages.length === 0) {
+      setChatMessages([
+        {
+          role: 'assistant',
+          content:
+            'Estoy listo para revisar zonas, conduits, niveles Purdue, activos críticos y hallazgos del informe.',
+        },
+      ])
+    }
+    setShowComplianceAssistant(true)
+  }
+
+  const sendComplianceQuestion = async () => {
+    if (!chatDraft.trim()) {
+      return
+    }
+
+    const userMessage: ComplianceChatMessage = {
+      role: 'user',
+      content: chatDraft.trim(),
+    }
+    const nextMessages = [...chatMessages, userMessage]
+    setChatMessages(nextMessages)
+    setChatDraft('')
+    setChatBusy(true)
+    try {
+      const result = await chatWithComplianceAssistant(apiConfig, {
+        topology: payload,
+        messages: nextMessages,
+      })
+
+      if (!result.ok || result.data.data === undefined) {
+        const message = extractMessage(result.data, `HTTP ${result.status}`)
+        setOperationStatus('error')
+        setOperationMessage(message)
+        appendConsole(message, 'error')
+        setChatMessages((current) => [
+          ...current,
+          { role: 'assistant', content: `No pude responder: ${message}` },
+        ])
+        return
+      }
+
+      const response: ComplianceChatResponse = result.data.data
+      setComplianceReport(response.report)
+      setChatMessages((current) => [
+        ...current,
+        { role: 'assistant', content: response.answer },
+      ])
+      setOperationStatus('success')
+      setOperationMessage('Respuesta de compliance generada')
+      appendConsole(
+        `Asistente de compliance: ${response.cited_controls.join(', ') || 'sin control citado'}`,
+        'success',
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Request failed'
+      setOperationStatus('error')
+      setOperationMessage(message)
+      appendConsole(message, 'error')
+      setChatMessages((current) => [
+        ...current,
+        { role: 'assistant', content: `No pude responder: ${message}` },
+      ])
+    } finally {
+      setChatBusy(false)
+    }
+  }
+
   return (
     <main className="app-shell" data-view={activeView}>
       <header className="chrome-header">
@@ -1087,6 +1210,24 @@ function App() {
               type="button"
             >
               <Network size={16} />
+            </button>
+            <button
+              aria-label="Evaluar compliance"
+              className="toolbar-button toolbar-button--icon"
+              onClick={evaluateCompliance}
+              title="Evaluar compliance"
+              type="button"
+            >
+              <ShieldCheck size={16} />
+            </button>
+            <button
+              aria-label="Abrir asistente de compliance"
+              className="toolbar-button toolbar-button--icon"
+              onClick={openComplianceAssistant}
+              title="Asistente de compliance"
+              type="button"
+            >
+              <MessageSquare size={16} />
             </button>
             <button
               aria-label="Persistir topologia"
@@ -1358,8 +1499,12 @@ function App() {
                       ? 'unchecked'
                       : allToolsInstalled
                         ? 'ready'
-                        : 'partial'}
+                      : 'partial'}
                   </strong>
+                </div>
+                <div className="server-summary__row">
+                  <span>Compliance</span>
+                  <strong>{complianceReport?.summary.overall_posture ?? 'unchecked'}</strong>
                 </div>
               </div>
 
@@ -1399,6 +1544,18 @@ function App() {
                 >
                   <Database size={16} />
                   Datos
+                </button>
+                <button className="secondary-button" onClick={evaluateCompliance} type="button">
+                  <ShieldCheck size={16} />
+                  Compliance
+                </button>
+                <button
+                  className="secondary-button"
+                  onClick={openComplianceAssistant}
+                  type="button"
+                >
+                  <MessageSquare size={16} />
+                  Asistente
                 </button>
               </div>
             </div>
@@ -1481,6 +1638,8 @@ function App() {
       {showDataBrowser ? (
         <DataBrowserModal
           artifactText={artifactText}
+          complianceReport={complianceReport}
+          complianceText={complianceText}
           dataTab={dataTab}
           onClose={() => setShowDataBrowser(false)}
           onDataTabChange={setDataTab}
@@ -1489,6 +1648,18 @@ function App() {
           pipelineArtifacts={pipelineArtifacts}
           pipelineRun={pipelineRun}
           pipelineRunText={pipelineRunText}
+        />
+      ) : null}
+
+      {showComplianceAssistant ? (
+        <ComplianceAssistantModal
+          busy={chatBusy}
+          chatDraft={chatDraft}
+          chatMessages={chatMessages}
+          complianceReport={complianceReport}
+          onChatDraftChange={setChatDraft}
+          onClose={() => setShowComplianceAssistant(false)}
+          onSend={sendComplianceQuestion}
         />
       ) : null}
     </main>
@@ -1658,6 +1829,8 @@ function ProjectSettingsModal({
 
 function DataBrowserModal({
   artifactText,
+  complianceReport,
+  complianceText,
   dataTab,
   onClose,
   onDataTabChange,
@@ -1668,6 +1841,8 @@ function DataBrowserModal({
   pipelineRunText,
 }: {
   artifactText: string
+  complianceReport: ComplianceReportResponse | null
+  complianceText: string
   dataTab: DataTab
   onClose: () => void
   onDataTabChange: (tab: DataTab) => void
@@ -1721,6 +1896,15 @@ function DataBrowserModal({
           >
             <span>Ejecucion</span>
           </button>
+          <button
+            className="summary-tab"
+            aria-selected={dataTab === 'compliance'}
+            onClick={() => onDataTabChange('compliance')}
+            role="tab"
+            type="button"
+          >
+            <span>Compliance</span>
+          </button>
         </div>
 
         <div className="modal-body">
@@ -1761,6 +1945,156 @@ function DataBrowserModal({
               </div>
             )
           ) : null}
+
+          {dataTab === 'compliance' ? (
+            complianceReport ? (
+              <DataDrawer
+                label="Compliance"
+                meta={`${complianceReport.summary.failed_controls} fail · ${complianceReport.summary.warned_controls} warn · ${complianceReport.summary.coverage_percent}% coverage`}
+                value={complianceText}
+              />
+            ) : (
+              <div className="empty-state">
+                <strong>Sin informe</strong>
+                <span>Evalua compliance desde la toolbar para revisar findings y cobertura.</span>
+              </div>
+            )
+          ) : null}
+        </div>
+
+        <div className="modal-footer">
+          <button className="secondary-button" onClick={onClose} type="button">
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ComplianceAssistantModal({
+  busy,
+  chatDraft,
+  chatMessages,
+  complianceReport,
+  onChatDraftChange,
+  onClose,
+  onSend,
+}: {
+  busy: boolean
+  chatDraft: string
+  chatMessages: ComplianceChatMessage[]
+  complianceReport: ComplianceReportResponse | null
+  onChatDraftChange: (value: string) => void
+  onClose: () => void
+  onSend: () => void
+}) {
+  return (
+    <div
+      className="modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Compliance assistant"
+    >
+      <div className="modal-shell modal-shell--assistant">
+        <div className="modal-header">
+          <div className="modal-header__brand">
+            <ShieldQuestion size={18} />
+            <div>
+              <strong>Asistente de cumplimiento OT</strong>
+              <span>Baseline NIS2 + IEC 62443 + ISO/IEC 27001</span>
+            </div>
+          </div>
+          <button className="icon-button" onClick={onClose} type="button">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="modal-body">
+          <div className="modal-section">
+            <div className="modal-section__header">
+              <strong>Resumen</strong>
+              <span>Postura y cobertura actual</span>
+            </div>
+            {complianceReport ? (
+              <div className="compliance-summary">
+                <div className="compliance-pill" data-tone={complianceReport.summary.overall_posture}>
+                  {complianceReport.summary.overall_posture}
+                </div>
+                <div className="compliance-stats">
+                  <span>{complianceReport.summary.failed_controls} fail</span>
+                  <span>{complianceReport.summary.warned_controls} warn</span>
+                  <span>{complianceReport.summary.coverage_percent}% coverage</span>
+                </div>
+              </div>
+            ) : (
+              <div className="empty-state">
+                <strong>Sin informe cargado</strong>
+                <span>Abre este asistente tras evaluar compliance o deja que lo haga por ti.</span>
+              </div>
+            )}
+          </div>
+
+          {complianceReport ? (
+            <div className="modal-section">
+              <div className="modal-section__header">
+                <strong>Findings principales</strong>
+                <span>Controles más relevantes para la conversación</span>
+              </div>
+              <div className="compliance-findings">
+                {complianceReport.findings.slice(0, 5).map((finding) => (
+                  <div
+                    className="compliance-finding"
+                    data-status={finding.status}
+                    key={finding.control_id}
+                  >
+                    <div className="compliance-finding__header">
+                      <strong>{finding.control_id}</strong>
+                      <span>{finding.status}</span>
+                    </div>
+                    <p>{finding.summary}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="modal-section">
+            <div className="modal-section__header">
+              <strong>Chat</strong>
+              <span>Pregunta por zonas, conduits, activos o remediaciones</span>
+            </div>
+            <div className="compliance-chat">
+              {chatMessages.map((message, index) => (
+                <div
+                  className="compliance-chat__message"
+                  data-role={message.role}
+                  key={`${message.role}-${index}`}
+                >
+                  <strong>{message.role === 'assistant' ? 'Advisor' : 'You'}</strong>
+                  <p>{message.content}</p>
+                </div>
+              ))}
+            </div>
+            <div className="compliance-chat__composer">
+              <textarea
+                onChange={(event) => onChatDraftChange(event.target.value)}
+                onKeyDown={(event) => {
+                  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+                    event.preventDefault()
+                    onSend()
+                  }
+                }}
+                placeholder="Ejemplo: Como debo conectar SCADA y PLC para que la segmentacion sea correcta?"
+                rows={3}
+                value={chatDraft}
+              />
+              <button className="secondary-button" disabled={busy} onClick={onSend} type="button">
+                <SendHorizonal size={16} />
+                {busy ? 'Pensando' : 'Enviar'}
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="modal-footer">

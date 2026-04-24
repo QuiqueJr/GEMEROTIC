@@ -65,6 +65,66 @@ export type PipelineToolReportResponse = {
   tools: PipelineToolStatus[]
 }
 
+export type ComplianceStatus = 'pass' | 'fail' | 'warn' | 'not_assessed'
+export type ComplianceSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info'
+export type CompliancePosture =
+  | 'strong'
+  | 'attention_required'
+  | 'non_compliant'
+  | 'partial'
+
+export type ComplianceReference = {
+  standard: 'IEC 62443' | 'NIS2' | 'ISO/IEC 27001'
+  reference: string
+  url: string
+}
+
+export type ComplianceFinding = {
+  control_id: string
+  standard: 'IEC 62443' | 'NIS2' | 'ISO/IEC 27001'
+  title: string
+  status: ComplianceStatus
+  severity: ComplianceSeverity
+  summary: string
+  rationale: string
+  affected_assets: string[]
+  affected_zones: string[]
+  evidence: Record<string, unknown>
+  remediation: string[]
+  references: ComplianceReference[]
+}
+
+export type ComplianceSummary = {
+  overall_posture: CompliancePosture
+  assessed_controls: number
+  not_assessed_controls: number
+  passed_controls: number
+  warned_controls: number
+  failed_controls: number
+  coverage_percent: number
+}
+
+export type ComplianceReportResponse = {
+  topology_name: string
+  baseline: Array<'IEC 62443' | 'NIS2' | 'ISO/IEC 27001'>
+  generated_at: string
+  summary: ComplianceSummary
+  findings: ComplianceFinding[]
+}
+
+export type ComplianceChatMessage = {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export type ComplianceChatResponse = {
+  mode: 'local_advisor'
+  answer: string
+  cited_controls: string[]
+  suggested_actions: string[]
+  report: ComplianceReportResponse
+}
+
 export async function getHealth(config: APIConfig): Promise<APIResult<HealthResponse>> {
   return requestJson<HealthResponse>(config, '/api/v1/health')
 }
@@ -124,6 +184,39 @@ export async function deployPipeline(
   return requestJson<APIEnvelope<PipelineRunResponse>>(
     config,
     '/api/v1/pipeline/deploy',
+    {
+      method: 'POST',
+      apiKeyRequired: true,
+      body: payload,
+    },
+  )
+}
+
+export async function generateComplianceReport(
+  config: APIConfig,
+  payload: unknown,
+): Promise<APIResult<APIEnvelope<ComplianceReportResponse>>> {
+  return requestJson<APIEnvelope<ComplianceReportResponse>>(
+    config,
+    '/api/v1/compliance/report',
+    {
+      method: 'POST',
+      apiKeyRequired: true,
+      body: payload,
+    },
+  )
+}
+
+export async function chatWithComplianceAssistant(
+  config: APIConfig,
+  payload: {
+    topology: unknown
+    messages: ComplianceChatMessage[]
+  },
+): Promise<APIResult<APIEnvelope<ComplianceChatResponse>>> {
+  return requestJson<APIEnvelope<ComplianceChatResponse>>(
+    config,
+    '/api/v1/compliance/chat',
     {
       method: 'POST',
       apiKeyRequired: true,

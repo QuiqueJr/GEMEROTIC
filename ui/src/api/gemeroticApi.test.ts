@@ -2,8 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   bootstrapNetBox,
+  chatWithComplianceAssistant,
   createTopology,
   deployPipeline,
+  generateComplianceReport,
   generatePipelineArtifacts,
   getHealth,
   getPipelineTools,
@@ -122,6 +124,63 @@ describe('gemeroticApi', () => {
 
     expect(fetchMock.mock.calls[0][0]).toBe(
       'http://localhost:8000/api/v1/pipeline/tools',
+    )
+    expect(headers.get('X-API-Key')).toBe('test-key')
+  })
+
+  it('genera informe de compliance con API key', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: 'success',
+          message: 'Compliance report generated successfully',
+          data: {
+            topology_name: 'mvp-lab-01',
+            summary: { overall_posture: 'partial' },
+            findings: [],
+          },
+        }),
+      ),
+    )
+
+    await generateComplianceReport(config, { name: 'mvp-lab-01' })
+    const headers = fetchMock.mock.calls[0][1]?.headers as Headers
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'http://localhost:8000/api/v1/compliance/report',
+    )
+    expect(headers.get('X-API-Key')).toBe('test-key')
+  })
+
+  it('consulta al asistente de compliance con API key', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: 'success',
+          message: 'Compliance assistant response generated successfully',
+          data: {
+            mode: 'local_advisor',
+            answer: 'ok',
+            cited_controls: [],
+            suggested_actions: [],
+            report: {
+              topology_name: 'mvp-lab-01',
+              summary: { overall_posture: 'partial' },
+              findings: [],
+            },
+          },
+        }),
+      ),
+    )
+
+    await chatWithComplianceAssistant(config, {
+      topology: { name: 'mvp-lab-01' },
+      messages: [{ role: 'user', content: 'cumple?' }],
+    })
+    const headers = fetchMock.mock.calls[0][1]?.headers as Headers
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'http://localhost:8000/api/v1/compliance/chat',
     )
     expect(headers.get('X-API-Key')).toBe('test-key')
   })
