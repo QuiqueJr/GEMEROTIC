@@ -34,6 +34,9 @@ TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
 - Escribir bundles bajo `var/pipeline/<topology_name>`.
 - Comprobar herramientas locales con `GET /api/v1/pipeline/tools`.
 - Ejecutar `POST /api/v1/pipeline/deploy` protegido por `X-API-Key`.
+- Consultar labs desplegados con `GET /api/v1/pipeline/labs/{topology_name}`.
+- Ejecutar consola controlada por nodo con
+  `POST /api/v1/pipeline/labs/{topology_name}/nodes/{node_id}/console`.
 - Usar comandos allowlistados con `shell=False`:
   - `containerlab deploy --topo containerlab/topology.clab.yml`
   - `ansible-playbook -i ansible/inventory.yml ansible/site.yml`
@@ -51,33 +54,50 @@ TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
     devices toolbar a la izquierda, canvas central, topology/server summary a
     la derecha y consola inferior
   - biblioteca OT/IT por dominio con inserción por clic y por drag and drop
-  - iconografía de estilo appliance industrial para router, switch, firewall,
-    PLC, HMI, RTU, servidor SCADA, patch panel y AP
+  - iconografía 2D más limpia y coherente por tipo de activo: router, switch,
+    firewall, PLC, HMI, RTU, servidor SCADA, patch panel y AP
   - nodos del canvas reducidos a símbolo + etiqueta para evitar ruido visual,
     con configuración por doble clic
   - herramienta de enlace tipo GNS3: selección de origen, destino, puertos,
     nombre de cable y edición posterior por doble clic
   - edición de cables con nombre propio y puertos explícitos por extremo
+  - reparto ortogonal de cables y separación visual de enlaces paralelos para
+    representar mejor comunicaciones entre los mismos equipos por puertos
+    distintos
   - atajos de productividad (`Supr`, `Ctrl/Cmd+Z`, `Ctrl/Cmd+Y`,
     `Ctrl/Cmd+Shift+Z`, `Escape`)
   - etiquetas de interfaz ocultas por defecto, alineadas con el comportamiento
     base de GNS3
   - configuraciones del proyecto, conectividad y navegador de datos movidos a
     modales para no saturar el canvas
+  - pestaña `Puertos` por equipo para activar o desactivar interfaces,
+    marcarlas como gestión y asignar direccionamiento/MAC por puerto
+  - consola inferior por pestañas: `Workspace` más una pestaña por equipo
+    abierto, con acciones rápidas de inspección de red y envío de comandos
+    allowlistados al runtime del lab
+  - catálogo lateral con altura estable por tarjeta para que la distribución
+    visual no cambie según el número de dispositivos de cada grupo
   - comprobación visual del entorno de despliegue desde la propia UI
 - Se incorporó una capa inicial de cumplimiento OT asistida:
   - `POST /api/v1/compliance/report` evalúa la topología contra una baseline
     GEMEROTIC trazable a `NIS2 + IEC 62443 + ISO/IEC 27001`
   - el informe devuelve controles `pass/fail/warn/not_assessed`, cobertura,
     postura global y evidencia estructurada por hallazgo
-  - `POST /api/v1/compliance/chat` activa un asistente local que responde en
+  - `POST /api/v1/compliance/chat` activa un asistente que responde en
     lenguaje natural usando los findings del informe y el contexto de la
     topología
+  - el asistente puede operar en modo local determinista o en modo
+    `Ollama` como capa de explicación estructurada sobre el mismo informe
   - la UI añade botón de evaluación, pestaña de compliance en el navegador de
     datos y modal de chat para revisar zonas, conduits, niveles Purdue y
     activos críticos
-  - el asistente actual es **local y determinista**: ayuda a diseñar y
-    explicar, pero no sustituye una certificación legal ni una auditoría formal
+  - el motor determinista sigue siendo la **fuente de verdad**; Ollama solo
+    explica, prioriza y conversa a partir del informe ya calculado
+  - el asistente aplica guardas de scope: responde exclusivamente sobre la
+    topología OT cargada y sobre la baseline normativa modelada
+  - el sistema **no certifica cumplimiento legal por sí solo**, **no
+    sustituye una auditoría formal** y **no evalúa controles organizativos u
+    operativos no evidenciados en la topología**
 - Para equipos que requieran software específico de explotación o control, la
   ruta correcta no es configurar paquetes ad hoc por nodo, sino introducir una
   futura capa de **runtime profiles**:
@@ -93,6 +113,8 @@ TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
 ### Fuera de alcance de Step 10
 
 - No ejecutar Batfish hasta seleccionar perfiles de NOS y templates vendor.
+- No presentar la consola actual como si fuera CLI vendor: en este paso la
+  consola actúa sobre el runtime Linux desplegado por Containerlab.
 - No integrar LibreNMS/Oxidized hasta que el lab tenga conectividad gestionable.
 - No permitir comandos arbitrarios enviados por el usuario.
 
@@ -162,6 +184,8 @@ La UI respeta el modelo de 3 capas:
   - `POST /api/v1/topology`
   - `POST /api/v1/pipeline/artifacts`
   - `POST /api/v1/pipeline/deploy`
+  - `GET /api/v1/pipeline/labs/{topology_name}`
+  - `POST /api/v1/pipeline/labs/{topology_name}/nodes/{node_id}/console`
   - `POST /api/v1/compliance/report`
   - `POST /api/v1/compliance/chat`
 - Enviar `X-API-Key` desde configuracion local del navegador.

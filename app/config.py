@@ -3,6 +3,8 @@ Configuración centralizada vía variables de entorno.
 Usa pydantic-settings para validar y tipar las variables al iniciar.
 """
 
+from typing import Literal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -42,6 +44,13 @@ class Settings(BaseSettings):
         "http://localhost:5173",
         "http://127.0.0.1:5173",
     )
+
+    # --- Asistente de cumplimiento ---
+    COMPLIANCE_ASSISTANT_PROVIDER: Literal["local", "ollama"] = "local"
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = ""
+    OLLAMA_TIMEOUT_SECONDS: float = 30.0
+    OLLAMA_API_KEY: str = ""
 
 
 # Instancia única — se importa donde se necesite

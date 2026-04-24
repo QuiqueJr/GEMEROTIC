@@ -65,6 +65,35 @@ export type PipelineToolReportResponse = {
   tools: PipelineToolStatus[]
 }
 
+export type PipelineLabNodeResponse = {
+  node_id: string
+  container_name: string
+  container_id: string
+  image: string
+  kind: string
+  state: string
+  status: string
+  ipv4_address: string
+  ipv6_address: string
+}
+
+export type PipelineLabStatusResponse = {
+  topology_name: string
+  lab_path: string
+  abs_lab_path: string
+  nodes: PipelineLabNodeResponse[]
+}
+
+export type PipelineConsoleResultResponse = {
+  topology_name: string
+  node_id: string
+  container_name: string
+  command: string[]
+  exit_code: number
+  stdout_tail: string
+  stderr_tail: string
+}
+
 export type ComplianceStatus = 'pass' | 'fail' | 'warn' | 'not_assessed'
 export type ComplianceSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info'
 export type CompliancePosture =
@@ -118,10 +147,12 @@ export type ComplianceChatMessage = {
 }
 
 export type ComplianceChatResponse = {
-  mode: 'local_advisor'
+  mode: 'local_advisor' | 'ollama_advisor' | 'scope_guard'
+  scope_allowed: boolean
   answer: string
   cited_controls: string[]
   suggested_actions: string[]
+  limitations: string[]
   report: ComplianceReportResponse
 }
 
@@ -188,6 +219,37 @@ export async function deployPipeline(
       method: 'POST',
       apiKeyRequired: true,
       body: payload,
+    },
+  )
+}
+
+export async function getPipelineLabStatus(
+  config: APIConfig,
+  topologyName: string,
+): Promise<APIResult<APIEnvelope<PipelineLabStatusResponse>>> {
+  return requestJson<APIEnvelope<PipelineLabStatusResponse>>(
+    config,
+    `/api/v1/pipeline/labs/${encodeURIComponent(topologyName)}`,
+    {
+      method: 'GET',
+      apiKeyRequired: true,
+    },
+  )
+}
+
+export async function runPipelineConsoleCommand(
+  config: APIConfig,
+  topologyName: string,
+  nodeId: string,
+  command: string,
+): Promise<APIResult<APIEnvelope<PipelineConsoleResultResponse>>> {
+  return requestJson<APIEnvelope<PipelineConsoleResultResponse>>(
+    config,
+    `/api/v1/pipeline/labs/${encodeURIComponent(topologyName)}/nodes/${encodeURIComponent(nodeId)}/console`,
+    {
+      method: 'POST',
+      apiKeyRequired: true,
+      body: { command },
     },
   )
 }

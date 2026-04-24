@@ -38,6 +38,8 @@ python -m venv .venv
 | `SUPERUSER_API_TOKEN` | NetBox | Token inicial legacy del superusuario |
 | `API_KEY` | FastAPI GEMEROTIC | Clave requerida por endpoints mutantes |
 | `NETBOX_TOKEN` | FastAPI GEMEROTIC | Token con el que el API habla con NetBox |
+| `OLLAMA_MODEL` | FastAPI GEMEROTIC | Modelo local usado como capa opcional de explicacion |
+| `OLLAMA_BASE_URL` | FastAPI GEMEROTIC | URL del API local de Ollama |
 
 ---
 
@@ -162,6 +164,20 @@ En peticiones HTTP debe enviarse como header:
 X-API-Key: <API_KEY_GENERADA>
 ```
 
+Si quieres activar el asistente con Ollama local, añade también:
+
+```env
+COMPLIANCE_ASSISTANT_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=gemma3
+OLLAMA_TIMEOUT_SECONDS=30.0
+OLLAMA_API_KEY=
+```
+
+`OLLAMA_API_KEY` puede quedar vacío cuando usas `http://localhost:11434`. La
+documentación oficial de Ollama indica que el API local no requiere
+autenticación; la API key solo aplica a accesos contra `ollama.com/api`.
+
 ---
 
 ## 8. Verificar el API
@@ -278,9 +294,51 @@ ansible-playbook -i ansible/inventory.yml ansible/site.yml
 
 Si falta una herramienta, el API devuelve `503` y no escribe el bundle.
 
+Adicionalmente, la UI ya puede inspeccionar el runtime del lab y abrir una
+consola controlada por nodo usando:
+
+```powershell
+curl http://localhost:8000/api/v1/pipeline/labs/<topology_name> `
+  -H "X-API-Key: <API_KEY_GENERADA>"
+
+curl -X POST http://localhost:8000/api/v1/pipeline/labs/<topology_name>/nodes/<node_id>/console `
+  -H "X-API-Key: <API_KEY_GENERADA>" `
+  -H "Content-Type: application/json" `
+  -d '{"command":"ip link show"}'
+```
+
+En Step 10 esa consola opera sobre el runtime Linux desplegado por
+Containerlab. No es todavía una CLI vendor de router, switch o firewall.
+
 ---
 
-## 10. Mapa rapido de puertos
+## 10. Activar Ollama local para el asistente de compliance
+
+Instala y arranca Ollama en la misma máquina o servidor donde corre FastAPI. El
+CLI oficial expone:
+
+- `ollama serve` para arrancar el servicio local
+- `ollama pull <modelo>` para descargar un modelo
+
+Flujo mínimo:
+
+```powershell
+ollama serve
+ollama pull gemma3
+```
+
+Después arranca FastAPI con `COMPLIANCE_ASSISTANT_PROVIDER=ollama` y
+`OLLAMA_MODEL=gemma3`.
+
+El asistente seguirá respetando estas limitaciones:
+
+- no certifica cumplimiento legal por sí solo
+- no sustituye una auditoría formal
+- no evalúa controles organizativos u operativos no evidenciados en la topología
+
+---
+
+## 11. Mapa rapido de puertos
 
 | Servicio | URL local |
 |---|---|
@@ -292,7 +350,7 @@ Si falta una herramienta, el API devuelve `503` y no escribe el bundle.
 
 ---
 
-## 11. Checklist de problemas comunes
+## 12. Checklist de problemas comunes
 
 - Si `NETBOX_TOKEN` esta vacio, `health.checks.netbox_connected` sera `false`.
 - Si `RATE_LIMIT_REDIS_URL` no usa el password correcto,
@@ -306,3 +364,5 @@ Si falta una herramienta, el API devuelve `503` y no escribe el bundle.
   `RATE_LIMIT_REDIS_URL` en `.env`.
 - Si regeneras `docker/netbox/env/*.local.env`, reinicia el stack Docker para que
   los contenedores lean los nuevos valores.
+- Si activas `COMPLIANCE_ASSISTANT_PROVIDER=ollama` pero `OLLAMA_MODEL` está
+  vacío o el servicio no responde, el asistente vuelve al modo local.

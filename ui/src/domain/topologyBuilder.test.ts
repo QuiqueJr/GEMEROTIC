@@ -9,6 +9,7 @@ import {
   getSuggestedPortIndex,
   slugify,
   updateEdgeData,
+  updatePortConfig,
 } from './topologyBuilder'
 
 describe('topologyBuilder', () => {
@@ -118,7 +119,7 @@ describe('topologyBuilder', () => {
   it('sugiere el siguiente puerto libre por nodo', () => {
     const state = createInitialBuilderState()
 
-    expect(getSuggestedPortIndex(state.nodes[0], state.edges)).toBe(0)
+    expect(getSuggestedPortIndex(state.nodes[0], state.edges)).toBe(1)
     expect(getPortName(state.nodes[0], 0)).toBe('eth0')
   })
 
@@ -135,5 +136,23 @@ describe('topologyBuilder', () => {
     expect(edge.label).toBe('backbone-a')
     expect(edge.data?.sourcePortIndex).toBe(2)
     expect(edge.data?.targetPortIndex).toBe(4)
+  })
+
+  it('permite configurar puertos individualmente antes de generar el payload', () => {
+    const state = createInitialBuilderState()
+    state.nodes = updatePortConfig(state.nodes, 'router-01', 1, {
+      enabled: false,
+      mgmtOnly: true,
+      ipv4Address: '172.16.1.1/24',
+    })
+
+    const payload = buildTopologyPayload(state)
+    const portInterface = payload.interfaces.find(
+      (item) => item.port_id === 'router-01:eth1',
+    )
+
+    expect(portInterface?.enabled).toBe(false)
+    expect(portInterface?.mgmt_only).toBe(true)
+    expect(portInterface?.ipv4_address).toBe('172.16.1.1/24')
   })
 })

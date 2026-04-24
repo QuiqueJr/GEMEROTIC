@@ -5,6 +5,7 @@ import type {
   BuilderEdgeData,
   BuilderNode,
   BuilderNodeData,
+  BuilderPortConfig,
   BuilderState,
   Criticality,
   PurdueLevel,
@@ -120,9 +121,20 @@ const initialEdges: BuilderEdge[] = [
 
 export function createInitialBuilderState(): BuilderState {
   return {
-    settings: initialSettings,
-    nodes: initialNodes,
-    edges: initialEdges,
+    settings: { ...initialSettings },
+    nodes: initialNodes.map((node) => ({
+      ...node,
+      position: { ...node.position },
+      data: {
+        ...node.data,
+        allowedProtocols: [...node.data.allowedProtocols],
+        portConfigs: node.data.portConfigs.map((portConfig) => ({ ...portConfig })),
+      },
+    })),
+    edges: initialEdges.map((edge) => ({
+      ...edge,
+      data: edge.data ? { ...edge.data } : undefined,
+    })),
   }
 }
 
@@ -152,6 +164,7 @@ export function createNodeFromAsset(
       vlanName: asset.vlanName,
       mgmtOnly: false,
       enabled: true,
+      portConfigs: createDefaultPortConfigs(asset.portCount),
       allowedProtocols: asset.defaultProtocols,
     },
   }
@@ -341,26 +354,35 @@ function buildInterfaces(
 ): TopologyPayload['interfaces'] {
   return nodes.flatMap((node) => {
     const ports = portMap.get(node.id) ?? []
+    const portConfigs = reconcilePortConfigs(node.data.portConfigs, node.data.portCount)
     return ports.map((port, index) => {
+      const portConfig = portConfigs[index] ?? createDefaultPortConfig()
+      const isPrimaryPort = index === 0
       const payload: TopologyPayload['interfaces'][number] = {
         port_id: port.id,
-        mgmt_only: node.data.mgmtOnly,
-        enabled: node.data.enabled,
-        description: sanitizeLabel(
-          `${node.data.label} ${port.name} VLAN ${normalizeVlanId(node.data.vlanId)}`,
-        ),
+        mgmt_only: isPrimaryPort ? node.data.mgmtOnly || portConfig.mgmtOnly : portConfig.mgmtOnly,
+        enabled: isPrimaryPort ? node.data.enabled && portConfig.enabled : portConfig.enabled,
+        description:
+          sanitizeLabel(portConfig.description ?? '') ||
+          sanitizeLabel(
+            `${node.data.label} ${port.name} VLAN ${normalizeVlanId(node.data.vlanId)}`,
+          ),
       }
 
-      if (index === 0) {
-        if (node.data.macAddress) {
-          payload.mac_address = node.data.macAddress
-        }
-        if (node.data.ipv4Address) {
-          payload.ipv4_address = node.data.ipv4Address
-        }
-        if (node.data.ipv6Address) {
-          payload.ipv6_address = node.data.ipv6Address
-        }
+      const macAddress = portConfig.macAddress ?? (index === 0 ? node.data.macAddress : undefined)
+      const ipv4Address =
+        portConfig.ipv4Address ?? (index === 0 ? node.data.ipv4Address : undefined)
+      const ipv6Address =
+        portConfig.ipv6Address ?? (index === 0 ? node.data.ipv6Address : undefined)
+
+      if (macAddress) {
+        payload.mac_address = macAddress
+      }
+      if (ipv4Address) {
+        payload.ipv4_address = ipv4Address
+      }
+      if (ipv6Address) {
+        payload.ipv6_address = ipv6Address
       }
 
       return payload
@@ -487,12 +509,41 @@ export function updateNodeData(
       ? {
           ...node,
           data: {
-            ...node.data,
-            ...patch,
+            ...buildNormalizedNodeData({
+              ...node.data,
+              ...patch,
+            }),
           },
         }
       : node,
   )
+}
+
+export function updatePortConfig(
+  nodes: BuilderNode[],
+  nodeId: string,
+  portIndex: number,
+  patch: Partial<BuilderPortConfig>,
+): BuilderNode[] {
+  return nodes.map((node) => {
+    if (node.id !== nodeId) {
+      return node
+    }
+
+    const portConfigs = reconcilePortConfigs(node.data.portConfigs, node.data.portCount)
+    const existing = portConfigs[portIndex] ?? createDefaultPortConfig()
+    const nextPortConfigs = portConfigs.map((portConfig, index) =>
+      index === portIndex ? { ...existing, ...patch } : portConfig,
+    )
+
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        portConfigs: nextPortConfigs,
+      },
+    }
+  })
 }
 
 export function updateEdgeData(
@@ -631,6 +682,38 @@ function clampPortCount(value: number): number {
     return 1
   }
   return Math.min(Math.max(Math.trunc(value), 1), 96)
+}
+
+function createDefaultPortConfig(): BuilderPortConfig {
+  return {
+    enabled: true,
+    mgmtOnly: false,
+  }
+}
+
+function createDefaultPortConfigs(portCount: number): BuilderPortConfig[] {
+  return Array.from({ length: clampPortCount(portCount) }, () => createDefaultPortConfig())
+}
+
+function reconcilePortConfigs(
+  portConfigs: BuilderPortConfig[] | undefined,
+  portCount: number,
+): BuilderPortConfig[] {
+  const normalizedPortCount = clampPortCount(portCount)
+  const source = portConfigs ?? []
+  return Array.from({ length: normalizedPortCount }, (_, index) => ({
+    ...createDefaultPortConfig(),
+    ...source[index],
+  }))
+}
+
+function buildNormalizedNodeData(data: BuilderNodeData): BuilderNodeData {
+  const portCount = clampPortCount(data.portCount)
+  return {
+    ...data,
+    portCount,
+    portConfigs: reconcilePortConfigs(data.portConfigs, portCount),
+  }
 }
 
 function normalizeVlanId(value: number): number {

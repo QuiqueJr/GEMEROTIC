@@ -2,6 +2,8 @@
 Tests del motor y endpoints de cumplimiento OT.
 """
 
+import json
+
 from fastapi.testclient import TestClient
 
 from app.config import settings
@@ -10,6 +12,7 @@ from app.schemas.compliance import ComplianceChatMessage
 from app.schemas.topology import TopologyCreate
 from app.services.compliance_assistant import ComplianceAssistant
 from app.services.compliance_engine import ComplianceEngine
+from app.services.ollama_client import OllamaComplianceClient
 from tests.conftest import AllowAllRateLimiter
 from tests.test_schemas import _mvp_topology_payload
 
@@ -63,6 +66,76 @@ class TestComplianceAssistant:
         assert response.mode == "local_advisor"
         assert "Postura actual" in response.answer
         assert response.cited_controls
+
+    def test_assistant_rejects_questions_outside_scope(self):
+        topology = TopologyCreate(**_mvp_topology_payload())
+        assistant = ComplianceAssistant()
+
+        response = assistant.answer(
+            topology,
+            [
+                ComplianceChatMessage(
+                    role="user",
+                    content="Cual es la capital de Francia?",
+                )
+            ],
+        )
+
+        assert response.mode == "scope_guard"
+        assert response.scope_allowed is False
+        assert "Solo puedo responder" in response.answer
+
+    def test_assistant_can_use_ollama_as_explainer(self, monkeypatch):
+        topology = TopologyCreate(**_mvp_topology_payload())
+        monkeypatch.setattr(settings, "COMPLIANCE_ASSISTANT_PROVIDER", "ollama")
+
+        def fake_post(*args, **kwargs):
+            class FakeResponse:
+                def raise_for_status(self):
+                    return None
+
+                def json(self):
+                    return {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "in_scope": True,
+                                    "answer": "Revisa el conduit OT-IT.",
+                                    "cited_controls": [
+                                        "IEC62443-CONDUIT-001"
+                                    ],
+                                    "suggested_actions": [
+                                        "Declarar un conduit explicito."
+                                    ],
+                                }
+                            )
+                        }
+                    }
+
+            return FakeResponse()
+
+        assistant = ComplianceAssistant(
+            ollama_client=OllamaComplianceClient(
+                base_url="http://localhost:11434",
+                model="gpt-oss",
+                request_func=fake_post,
+            )
+        )
+
+        response = assistant.answer(
+            topology,
+            [
+                ComplianceChatMessage(
+                    role="user",
+                    content="Como reviso los conduits?",
+                )
+            ],
+        )
+
+        assert response.mode == "ollama_advisor"
+        assert response.scope_allowed is True
+        assert response.cited_controls == ["IEC62443-CONDUIT-001"]
+        assert "conduit" in response.answer.lower()
 
 
 class TestComplianceEndpoints:

@@ -37,6 +37,11 @@ La interfaz permite configurar la `Base URL` del API y la cabecera
 `X-API-Key` desde el panel lateral. Esa clave debe coincidir con la variable
 `API_KEY` usada al arrancar FastAPI. La clave no se versiona en git.
 
+Las acciones protegidas de la toolbar (`Bootstrap`, `Artefactos`, `Deploy`,
+`Compliance`, `Persistir`, runtime del lab) verifican primero esa conectividad.
+Si falta `Base URL` o `X-API-Key`, la UI redirige al modal `Proyecto` en lugar
+de fallar de forma silenciosa.
+
 ## Vistas del builder
 
 - `Fisica`: configura sitio, sala, rack, activos, puertos, RU y cableado.
@@ -59,7 +64,22 @@ Flujo minimo para validar la UI contra el pipeline actual:
    Containerlab/Ansible/OPA/Batfish.
 6. Pulsar `Deploy` para ejecutar Containerlab y Ansible si las herramientas
    estan instaladas.
-7. Pulsar `Persistir en NetBox`.
+7. Pulsar `Inspeccionar lab` para descubrir nodos activos del runtime.
+8. Abrir una consola de equipo y lanzar comandos allowlistados como
+   `hostname`, `ip link show` o `ip link set dev eth1 down`.
+9. Pulsar `Persistir en NetBox`.
+
+`Deploy` pre-valida el endpoint `GET /api/v1/pipeline/tools` y bloquea la
+ejecucion si faltan herramientas del workflow.
+
+La pestaña `Puertos` del editor por doble clic permite:
+
+- activar o desactivar cada puerto
+- marcar puertos de gestión
+- asignar IPv4, IPv6, MAC y descripción por interfaz
+
+La consola actual es la del runtime Linux del Step 10. No representa todavía
+una CLI vendor de router, switch o firewall.
 
 ## Validacion local
 

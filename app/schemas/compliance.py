@@ -89,8 +89,12 @@ class ComplianceChatRequest(BaseModel):
 class ComplianceChatResponse(BaseModel):
     """Respuesta del asistente de cumplimiento."""
 
-    mode: Literal["local_advisor"] = Field(default="local_advisor")
+    mode: Literal["local_advisor", "ollama_advisor", "scope_guard"] = Field(
+        default="local_advisor"
+    )
+    scope_allowed: bool = Field(default=True)
     answer: str = Field(..., min_length=1)
     cited_controls: list[str] = Field(default_factory=list)
     suggested_actions: list[str] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
     report: ComplianceReport = Field(...)

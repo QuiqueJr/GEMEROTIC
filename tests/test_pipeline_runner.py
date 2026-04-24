@@ -11,12 +11,19 @@ from app.config import settings
 from app.main import create_app
 from app.schemas.pipeline import (
     PipelineArtifact,
+    PipelineConsoleResult,
+    PipelineLabNode,
+    PipelineLabStatus,
     PipelineRunResult,
     PipelineToolReport,
     PipelineToolStatus,
 )
 from app.schemas.topology import TopologyCreate
-from app.services.pipeline_runner import PipelineRunner, PipelineToolError
+from app.services.pipeline_runner import (
+    PipelineRunner,
+    PipelineRuntimeCommandError,
+    PipelineToolError,
+)
 from tests.conftest import AllowAllRateLimiter
 from tests.test_schemas import _mvp_topology_payload
 
@@ -66,6 +73,42 @@ class FakePipelineRunner:
                 )
             ],
             commands=[],
+        )
+
+    def inspect_lab(self, topology_name: str) -> PipelineLabStatus:
+        return PipelineLabStatus(
+            topology_name=topology_name,
+            lab_path="/tmp/demo.clab.yml",
+            abs_lab_path="/tmp/demo.clab.yml",
+            nodes=[
+                PipelineLabNode(
+                    node_id="router-01",
+                    container_name=f"clab-{topology_name}-router-01",
+                    container_id="abc123",
+                    image="ghcr.io/srl-labs/network-multitool",
+                    kind="linux",
+                    state="running",
+                    status="Up 5 seconds",
+                    ipv4_address="172.20.20.2/24",
+                    ipv6_address="",
+                )
+            ],
+        )
+
+    def run_node_command(
+        self,
+        topology_name: str,
+        node_id: str,
+        command_text: str,
+    ) -> PipelineConsoleResult:
+        return PipelineConsoleResult(
+            topology_name=topology_name,
+            node_id=node_id,
+            container_name=f"clab-{topology_name}-{node_id}",
+            command=["ip", "link", "show"],
+            exit_code=0,
+            stdout_tail=f"executed {command_text}",
+            stderr_tail="",
         )
 
 
@@ -133,6 +176,98 @@ class TestPipelineRunner:
 
         assert not (tmp_path / "mvp-lab-01").exists()
 
+    def test_inspect_lab_parses_containerlab_json(self, tmp_path):
+        runner = PipelineRunner(
+            output_root=tmp_path,
+            tool_resolver=_tool_resolver,
+            command_runner=lambda command, **kwargs: subprocess.CompletedProcess(
+                args=command,
+                returncode=0,
+                stdout=(
+                    '{"mvp-lab-01":[{"lab_name":"mvp-lab-01","labPath":"demo.clab.yml",'
+                    '"absLabPath":"/labs/demo.clab.yml","name":"clab-mvp-lab-01-router-01",'
+                    '"container_id":"abc123","image":"ghcr.io/srl-labs/network-multitool",'
+                    '"kind":"linux","state":"running","status":"Up 5 seconds",'
+                    '"ipv4_address":"172.20.20.2/24","ipv6_address":""}]}'
+                ),
+                stderr="",
+            ),
+        )
+
+        result = runner.inspect_lab("mvp-lab-01")
+
+        assert result.topology_name == "mvp-lab-01"
+        assert result.nodes[0].node_id == "router-01"
+        assert result.nodes[0].container_name == "clab-mvp-lab-01-router-01"
+
+    def test_run_node_command_executes_allowlisted_console_command(self, tmp_path):
+        calls: list[dict] = []
+
+        def command_runner(command, **kwargs):
+            calls.append({"command": command, "kwargs": kwargs})
+            if command[:2] == ["containerlab", "inspect"]:
+                return subprocess.CompletedProcess(
+                    args=command,
+                    returncode=0,
+                    stdout=(
+                        '{"mvp-lab-01":[{"lab_name":"mvp-lab-01","labPath":"demo.clab.yml",'
+                        '"absLabPath":"/labs/demo.clab.yml","name":"clab-mvp-lab-01-router-01",'
+                        '"container_id":"abc123","image":"ghcr.io/srl-labs/network-multitool",'
+                        '"kind":"linux","state":"running","status":"Up 5 seconds",'
+                        '"ipv4_address":"172.20.20.2/24","ipv6_address":""}]}'
+                    ),
+                    stderr="",
+                )
+            return subprocess.CompletedProcess(
+                args=command,
+                returncode=0,
+                stdout="2: eth1: <BROADCAST,UP>",
+                stderr="",
+            )
+
+        runner = PipelineRunner(
+            output_root=tmp_path,
+            tool_resolver=_tool_resolver,
+            command_runner=command_runner,
+        )
+
+        result = runner.run_node_command(
+            topology_name="mvp-lab-01",
+            node_id="router-01",
+            command_text="ip link show dev eth1",
+        )
+
+        assert result.exit_code == 0
+        assert result.command == ["ip", "link", "show", "dev", "eth1"]
+        assert [
+            "docker",
+            "exec",
+            "clab-mvp-lab-01-router-01",
+            "ip",
+            "link",
+            "show",
+            "dev",
+            "eth1",
+        ] in [call["command"] for call in calls]
+
+    def test_run_node_command_rejects_non_allowlisted_console_command(self, tmp_path):
+        runner = PipelineRunner(
+            output_root=tmp_path,
+            tool_resolver=_tool_resolver,
+            command_runner=RecordingCommandRunner(),
+        )
+
+        try:
+            runner.run_node_command(
+                topology_name="mvp-lab-01",
+                node_id="router-01",
+                command_text="rm -rf /",
+            )
+        except PipelineRuntimeCommandError as exc:
+            assert "allowlisted" in str(exc)
+        else:
+            raise AssertionError("unexpected console command was accepted")
+
 
 class TestPipelineRunnerEndpoint:
     """Tests HTTP de endpoints del runner."""
@@ -169,3 +304,36 @@ class TestPipelineRunnerEndpoint:
 
         assert response.status_code == 200
         assert response.json()["message"] == "Pipeline deployed successfully"
+
+    def test_inspect_lab_endpoint_returns_runtime_nodes(self, monkeypatch):
+        monkeypatch.setattr(settings, "API_KEY", "secret-key")
+        application = create_app(rate_limiter=AllowAllRateLimiter())
+        application.dependency_overrides[get_pipeline_runner] = (
+            lambda: FakePipelineRunner()
+        )
+
+        with TestClient(application) as client:
+            response = client.get(
+                "/api/v1/pipeline/labs/mvp-lab-01",
+                headers={"X-API-Key": "secret-key"},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["data"]["nodes"][0]["node_id"] == "router-01"
+
+    def test_console_endpoint_executes_runtime_command(self, monkeypatch):
+        monkeypatch.setattr(settings, "API_KEY", "secret-key")
+        application = create_app(rate_limiter=AllowAllRateLimiter())
+        application.dependency_overrides[get_pipeline_runner] = (
+            lambda: FakePipelineRunner()
+        )
+
+        with TestClient(application) as client:
+            response = client.post(
+                "/api/v1/pipeline/labs/mvp-lab-01/nodes/router-01/console",
+                json={"command": "ip link show"},
+                headers={"X-API-Key": "secret-key"},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["data"]["node_id"] == "router-01"

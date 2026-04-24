@@ -7,6 +7,7 @@ y propone acciones a partir del informe determinista.
 
 from __future__ import annotations
 
+from app.config import settings
 from app.schemas.compliance import (
     ComplianceChatMessage,
     ComplianceChatResponse,
@@ -14,6 +15,7 @@ from app.schemas.compliance import (
 )
 from app.schemas.topology import TopologyCreate
 from app.services.compliance_engine import ComplianceEngine
+from app.services.ollama_client import OllamaComplianceClient
 
 ASSET_GUIDANCE = {
     "plc": (
@@ -59,8 +61,18 @@ ASSET_GUIDANCE = {
 class ComplianceAssistant:
     """Responder preguntas apoyándose en findings y contexto topológico."""
 
-    def __init__(self, engine: ComplianceEngine | None = None):
+    def __init__(
+        self,
+        engine: ComplianceEngine | None = None,
+        ollama_client: OllamaComplianceClient | None = None,
+    ):
         self._engine = engine or ComplianceEngine()
+        self._ollama_client = ollama_client or OllamaComplianceClient(
+            base_url=settings.OLLAMA_BASE_URL,
+            model=settings.OLLAMA_MODEL,
+            timeout_seconds=settings.OLLAMA_TIMEOUT_SECONDS,
+            api_key=settings.OLLAMA_API_KEY,
+        )
 
     def answer(
         self,
@@ -78,6 +90,44 @@ class ComplianceAssistant:
             "",
         )
         normalized_question = latest_question.casefold()
+        if not _question_is_in_scope(topology, normalized_question):
+            return ComplianceChatResponse(
+                mode="scope_guard",
+                scope_allowed=False,
+                answer=(
+                    "Solo puedo responder sobre la topologia OT cargada y sobre "
+                    "la baseline GEMEROTIC trazable a IEC 62443, NIS2 e "
+                    "ISO/IEC 27001. No doy certificaciones legales ni cubro "
+                    "controles no evidenciados en la topologia."
+                ),
+                cited_controls=[],
+                suggested_actions=[
+                    (
+                        "Pregunta por zonas, conduits, niveles Purdue, "
+                        "interfaces, activos criticos o findings del informe."
+                    ),
+                    (
+                        "Formula dudas sobre IEC 62443, NIS2 o ISO/IEC 27001 "
+                        "aplicadas a esta topologia."
+                    ),
+                ],
+                limitations=_default_limitations(),
+                report=report,
+            )
+
+        if (
+            settings.COMPLIANCE_ASSISTANT_PROVIDER == "ollama"
+            and self._ollama_client.configured
+        ):
+            ollama_response = self._answer_with_ollama(
+                topology=topology,
+                report=report,
+                messages=messages,
+                latest_question=latest_question,
+            )
+            if ollama_response is not None:
+                return ollama_response
+
         cited_findings = self._match_findings(
             report.findings,
             topology,
@@ -104,9 +154,12 @@ class ComplianceAssistant:
             )
 
         return ComplianceChatResponse(
+            mode="local_advisor",
+            scope_allowed=True,
             answer="\n\n".join(part for part in answer_parts if part),
             cited_controls=[finding.control_id for finding in cited_findings],
             suggested_actions=suggested_actions[:5],
+            limitations=_default_limitations(),
             report=report,
         )
 
@@ -192,6 +245,35 @@ class ComplianceAssistant:
 
         return " ".join(dict.fromkeys(hints))
 
+    def _answer_with_ollama(
+        self,
+        topology: TopologyCreate,
+        report,
+        messages: list[ComplianceChatMessage],
+        latest_question: str,
+    ) -> ComplianceChatResponse | None:
+        """Usar Ollama como capa de explicación, no como fuente de verdad."""
+        try:
+            llm_output = self._ollama_client.answer(
+                prompt=_build_ollama_prompt(messages, latest_question),
+                context=_build_ollama_context(topology, report),
+            )
+        except Exception:
+            return None
+
+        return ComplianceChatResponse(
+            mode="ollama_advisor",
+            scope_allowed=llm_output.in_scope,
+            answer=llm_output.answer,
+            cited_controls=_filter_control_ids(
+                report.findings,
+                llm_output.cited_controls,
+            ),
+            suggested_actions=llm_output.suggested_actions[:5],
+            limitations=_default_limitations(),
+            report=report,
+        )
+
 
 def _collect_actions(findings: list[ComplianceFinding]) -> list[str]:
     actions: list[str] = []
@@ -243,3 +325,146 @@ def _finding_priority(status: str) -> int:
         "not_assessed": 2,
         "pass": 1,
     }.get(status, 0)
+
+
+def _question_is_in_scope(
+    topology: TopologyCreate,
+    normalized_question: str,
+) -> bool:
+    scope_keywords = {
+        "topologia",
+        "topology",
+        "red",
+        "network",
+        "ot",
+        "ics",
+        "iec",
+        "62443",
+        "nis2",
+        "iso",
+        "27001",
+        "zona",
+        "zone",
+        "conduit",
+        "purdue",
+        "security level",
+        "sl-",
+        "activo",
+        "asset",
+        "plc",
+        "hmi",
+        "rtu",
+        "scada",
+        "vlan",
+        "interface",
+        "interfaz",
+        "cable",
+        "firewall",
+        "router",
+        "switch",
+        "server",
+        "cumple",
+        "compliance",
+    }
+    if any(keyword in normalized_question for keyword in scope_keywords):
+        return True
+
+    dynamic_keywords = {
+        topology.name.casefold(),
+        *(device.id.casefold() for device in topology.devices),
+        *(device.name.casefold() for device in topology.devices),
+        *(zone.id.casefold() for zone in topology.security_zones),
+        *(zone.name.casefold() for zone in topology.security_zones),
+    }
+    return any(
+        keyword and keyword in normalized_question
+        for keyword in dynamic_keywords
+    )
+
+
+def _build_ollama_prompt(
+    messages: list[ComplianceChatMessage],
+    latest_question: str,
+) -> str:
+    transcript = "\n".join(
+        f"{message.role}: {message.content}" for message in messages[-6:]
+    )
+    return (
+        "Answer the latest user question using only the provided GEMEROTIC "
+        "topology and deterministic compliance report.\n"
+        "Conversation:\n"
+        f"{transcript}\n\n"
+        f"Latest question:\n{latest_question}"
+    )
+
+
+def _build_ollama_context(topology: TopologyCreate, report) -> dict[str, object]:
+    return {
+        "topology_name": topology.name,
+        "devices": [
+            {
+                "id": device.id,
+                "name": device.name,
+                "asset_type": device.asset_type.value,
+                "criticality": device.criticality.value,
+            }
+            for device in topology.devices
+        ],
+        "zones": [
+            {
+                "id": zone.id,
+                "name": zone.name,
+                "purdue_level": zone.purdue_level.value,
+                "security_level": zone.security_level.value,
+                "device_ids": zone.device_ids,
+            }
+            for zone in topology.security_zones
+        ],
+        "conduits": [
+            {
+                "id": conduit.id,
+                "source_zone_id": conduit.source_zone_id,
+                "target_zone_id": conduit.target_zone_id,
+                "security_level": conduit.security_level.value,
+                "allowed_protocols": conduit.allowed_protocols,
+            }
+            for conduit in topology.conduits
+        ],
+        "summary": report.summary.model_dump(),
+        "findings": [
+            {
+                "control_id": finding.control_id,
+                "standard": finding.standard,
+                "status": finding.status,
+                "summary": finding.summary,
+                "rationale": finding.rationale,
+                "remediation": finding.remediation,
+                "affected_assets": finding.affected_assets,
+                "affected_zones": finding.affected_zones,
+            }
+            for finding in report.findings
+        ],
+    }
+
+
+def _filter_control_ids(
+    findings: list[ComplianceFinding],
+    control_ids: list[str],
+) -> list[str]:
+    known_controls = {finding.control_id for finding in findings}
+    return [
+        control_id
+        for control_id in control_ids
+        if control_id in known_controls
+    ]
+
+
+def _default_limitations() -> list[str]:
+    return [
+        "No certifica cumplimiento legal por sí solo.",
+        "No sustituye una auditoría formal.",
+        (
+            "No evalúa controles organizativos u operativos no evidenciados "
+            "en la topología."
+        ),
+    ]

@@ -17,6 +17,14 @@ export type Criticality = 'critical' | 'high' | 'medium' | 'low'
 export type SecurityLevel = 'SL-0' | 'SL-1' | 'SL-2' | 'SL-3' | 'SL-4'
 export type PurdueLevel = 0 | 1 | 2 | 3 | 4 | 5
 export type TopologyView = 'physical' | 'logical' | 'security'
+export type BuilderPortConfig = {
+  enabled: boolean
+  mgmtOnly: boolean
+  ipv4Address?: string
+  ipv6Address?: string
+  macAddress?: string
+  description?: string
+}
 
 export type BuilderNodeData = {
   label: string
@@ -40,6 +48,7 @@ export type BuilderNodeData = {
   macAddress?: string
   mgmtOnly: boolean
   enabled: boolean
+  portConfigs: BuilderPortConfig[]
   allowedProtocols: string[]
   activeView?: TopologyView
 }

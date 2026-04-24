@@ -45,15 +45,19 @@ import {
   deployPipeline,
   generateComplianceReport,
   generatePipelineArtifacts,
+  getPipelineLabStatus,
   type ComplianceChatMessage,
   type ComplianceChatResponse,
   type ComplianceReportResponse,
   getHealth,
+  type PipelineConsoleResultResponse,
   getPipelineTools,
   type HealthResponse,
   type PipelineArtifactsResponse,
+  type PipelineLabStatusResponse,
   type PipelineRunResponse,
   type PipelineToolReportResponse,
+  runPipelineConsoleCommand,
 } from './api/gemeroticApi'
 import { AssetNode } from './components/AssetNode'
 import { CableEdge } from './components/CableEdge'
@@ -71,11 +75,13 @@ import {
   slugify,
   updateEdgeData,
   updateNodeData,
+  updatePortConfig,
 } from './domain/topologyBuilder'
 import type {
   AssetType,
   BuilderEdge,
   BuilderNode,
+  BuilderPortConfig,
   BuilderState,
   Criticality,
   PurdueLevel,
@@ -97,13 +103,19 @@ const securityLevelOptions: SecurityLevel[] = ['SL-0', 'SL-1', 'SL-2', 'SL-3', '
 const purdueOptions: PurdueLevel[] = [0, 1, 2, 3, 4, 5]
 
 type OperationStatus = 'idle' | 'running' | 'success' | 'error'
-type EditorTab = 'equipment' | 'logical' | 'security'
+type EditorTab = 'equipment' | 'ports' | 'logical' | 'security'
 type InteractionMode = 'select' | 'link'
 type DataTab = 'topology' | 'artifacts' | 'run' | 'compliance'
 type ConsoleEntry = {
   id: string
   tone: OperationStatus
   text: string
+}
+type DeviceConsole = {
+  nodeId: string
+  label: string
+  draft: string
+  entries: ConsoleEntry[]
 }
 type LinkEndpoint = {
   nodeId: string
@@ -203,12 +215,16 @@ function App() {
   const [pipelineArtifacts, setPipelineArtifacts] =
     useState<PipelineArtifactsResponse | null>(null)
   const [pipelineRun, setPipelineRun] = useState<PipelineRunResponse | null>(null)
+  const [labStatus, setLabStatus] = useState<PipelineLabStatusResponse | null>(null)
   const [complianceReport, setComplianceReport] =
     useState<ComplianceReportResponse | null>(null)
   const [showComplianceAssistant, setShowComplianceAssistant] = useState(false)
   const [chatMessages, setChatMessages] = useState<ComplianceChatMessage[]>([])
   const [chatDraft, setChatDraft] = useState('')
   const [chatBusy, setChatBusy] = useState(false)
+  const [deviceConsoles, setDeviceConsoles] = useState<Record<string, DeviceConsole>>({})
+  const [activeConsoleTabId, setActiveConsoleTabId] = useState<string>('app')
+  const [consoleBusyNodeId, setConsoleBusyNodeId] = useState<string | null>(null)
 
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null
   const selectedEdge = edges.find((edge) => edge.id === selectedEdgeId) ?? null
@@ -313,9 +329,17 @@ function App() {
     toolReport !== null &&
     toolReport.tools.length > 0 &&
     toolReport.tools.every((tool) => tool.installed)
+  const activeDeviceConsole =
+    activeConsoleTabId === 'app' ? null : deviceConsoles[activeConsoleTabId] ?? null
+  const runtimeNodesById = useMemo(
+    () => new Map((labStatus?.nodes ?? []).map((node) => [node.node_id, node])),
+    [labStatus],
+  )
   const canUndo = historyPast.length > 0
   const canRedo = historyFuture.length > 0
   const apiConfig = { baseUrl: apiBaseUrl, apiKey }
+  const hasApiBaseUrl = apiBaseUrl.trim().length > 0
+  const hasApiKey = apiKey.trim().length > 0
 
   function appendConsole(text: string, tone: OperationStatus = 'idle') {
     setConsoleEntries((current) => [
@@ -326,6 +350,129 @@ function App() {
         tone,
       },
     ])
+  }
+
+  function appendDeviceConsole(
+    nodeId: string,
+    text: string,
+    tone: OperationStatus = 'idle',
+  ) {
+    const nodeLabel = nodeById.get(nodeId)?.data.label ?? nodeId
+    setDeviceConsoles((current) => {
+      const existing = current[nodeId] ?? {
+        nodeId,
+        label: nodeLabel,
+        draft: '',
+        entries: [],
+      }
+      return {
+        ...current,
+        [nodeId]: {
+          ...existing,
+          label: nodeLabel,
+          entries: [
+            ...existing.entries.slice(-59),
+            {
+              id: `${Date.now()}-${existing.entries.length}`,
+              text,
+              tone,
+            },
+          ],
+        },
+      }
+    })
+  }
+
+  function openNodeConsole(nodeId: string) {
+    const node = nodeById.get(nodeId)
+    if (!node) {
+      return
+    }
+
+    setDeviceConsoles((current) => ({
+      ...current,
+      [nodeId]:
+        current[nodeId] ?? {
+          nodeId,
+          label: node.data.label,
+          draft: '',
+          entries: [
+            {
+              id: `console-${nodeId}-boot`,
+              tone: 'idle',
+              text:
+                'Consola del runtime Linux del lab. Usa comandos allowlistados como ip link show, ip addr show, ping -c 1 <destino> o ip link set dev eth1 down.',
+            },
+          ],
+        },
+    }))
+    setActiveConsoleTabId(nodeId)
+    if (!runtimeNodesById.has(nodeId) && hasApiBaseUrl && hasApiKey) {
+      void inspectRuntimeLab()
+    }
+  }
+
+  function updateDeviceConsoleDraft(nodeId: string, value: string) {
+    setDeviceConsoles((current) => {
+      const existing = current[nodeId]
+      if (!existing) {
+        return current
+      }
+      return {
+        ...current,
+        [nodeId]: {
+          ...existing,
+          draft: value,
+        },
+      }
+    })
+  }
+
+  function appendRuntimeConsoleResult(
+    nodeId: string,
+    result: PipelineConsoleResultResponse,
+  ) {
+    const stdout = result.stdout_tail.trim()
+    const stderr = result.stderr_tail.trim()
+    if (stdout) {
+      appendDeviceConsole(nodeId, stdout, result.exit_code === 0 ? 'success' : 'error')
+    }
+    if (stderr) {
+      appendDeviceConsole(nodeId, stderr, 'error')
+    }
+    if (!stdout && !stderr) {
+      appendDeviceConsole(
+        nodeId,
+        result.exit_code === 0 ? 'Comando completado sin salida' : 'Comando sin salida',
+        result.exit_code === 0 ? 'success' : 'error',
+      )
+    }
+  }
+
+  function showActionRequired(message: string) {
+    setOperationStatus('error')
+    setOperationMessage(message)
+    setShowProjectSettings(true)
+    appendConsole(message, 'error')
+  }
+
+  function ensureApiBaseUrlConfigured(actionLabel: string): boolean {
+    if (hasApiBaseUrl) {
+      return true
+    }
+    showActionRequired(`Configura Base URL en Proyecto antes de ejecutar: ${actionLabel}.`)
+    return false
+  }
+
+  function ensureProtectedApiConfigured(actionLabel: string): boolean {
+    if (!ensureApiBaseUrlConfigured(actionLabel)) {
+      return false
+    }
+    if (hasApiKey) {
+      return true
+    }
+    showActionRequired(`Configura X-API-Key en Proyecto antes de ejecutar: ${actionLabel}.`)
+    return false
   }
 
   function pushHistorySnapshot() {
@@ -403,6 +550,12 @@ function App() {
         ? null
         : current,
     )
+    setDeviceConsoles((current) => {
+      const next = { ...current }
+      delete next[selectedNodeId]
+      return next
+    })
+    setActiveConsoleTabId((current) => (current === selectedNodeId ? 'app' : current))
     appendConsole(`Equipo eliminado: ${removedLabel}`, 'success')
   }
 
@@ -533,6 +686,7 @@ function App() {
       data: {
         ...selectedNode.data,
         allowedProtocols: [...selectedNode.data.allowedProtocols],
+        portConfigs: selectedNode.data.portConfigs.map((portConfig) => ({ ...portConfig })),
         label: `${selectedNode.data.label} copia`,
       },
     }
@@ -553,6 +707,17 @@ function App() {
     }
     pushHistorySnapshot()
     setNodes((currentNodes) => updateNodeData(currentNodes, editorNodeId, patch))
+  }
+
+  const updateEditorPort = (
+    portIndex: number,
+    patch: Partial<BuilderPortConfig>,
+  ) => {
+    if (editorNodeId === null) {
+      return
+    }
+    pushHistorySnapshot()
+    setNodes((currentNodes) => updatePortConfig(currentNodes, editorNodeId, portIndex, patch))
   }
 
   const changeSelectedAssetType = (assetType: AssetType) => {
@@ -851,6 +1016,9 @@ function App() {
   }
 
   const checkHealth = async () => {
+    if (!ensureApiBaseUrlConfigured('Health')) {
+      return
+    }
     setOperationStatus('running')
     try {
       const result = await getHealth(apiConfig)
@@ -861,6 +1029,9 @@ function App() {
       setOperationStatus(result.ok ? 'success' : 'error')
       setOperationMessage(message)
       appendConsole(message, result.ok ? 'success' : 'error')
+      if (result.ok && hasApiKey) {
+        void checkTools({ quiet: true })
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Request failed'
       setOperationStatus('error')
@@ -869,7 +1040,12 @@ function App() {
     }
   }
 
-  const checkTools = async () => {
+  const checkTools = async (
+    options: { quiet?: boolean } = {},
+  ): Promise<PipelineToolReportResponse | null> => {
+    if (!ensureProtectedApiConfigured('Entorno del pipeline')) {
+      return null
+    }
     setOperationStatus('running')
     try {
       const result = await getPipelineTools(apiConfig)
@@ -878,28 +1054,43 @@ function App() {
         setOperationStatus('error')
         setOperationMessage(message)
         appendConsole(message, 'error')
-        return
+        return null
       }
       setToolReport(result.data.data)
       const message = `${result.data.data.tools.filter((tool) => tool.installed).length}/${result.data.data.tools.length} herramientas detectadas`
       setOperationStatus('success')
       setOperationMessage(message)
-      appendConsole(message, 'success')
+      if (!options.quiet) {
+        appendConsole(message, 'success')
+      }
+      return result.data.data
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Request failed'
       setOperationStatus('error')
       setOperationMessage(message)
       appendConsole(message, 'error')
+      return null
     }
   }
 
-  const bootstrap = () =>
-    runOperation(() => bootstrapNetBox(apiConfig), 'Bootstrap de NetBox completado')
+  const bootstrap = () => {
+    if (!ensureProtectedApiConfigured('Bootstrap NetBox')) {
+      return
+    }
+    return runOperation(() => bootstrapNetBox(apiConfig), 'Bootstrap de NetBox completado')
+  }
 
-  const persistTopology = () =>
-    runOperation(() => createTopology(apiConfig, payload), 'Topologia enviada a NetBox')
+  const persistTopology = () => {
+    if (!ensureProtectedApiConfigured('Persistir topologia')) {
+      return
+    }
+    return runOperation(() => createTopology(apiConfig, payload), 'Topologia enviada a NetBox')
+  }
 
   const generateArtifacts = async () => {
+    if (!ensureProtectedApiConfigured('Generar artefactos')) {
+      return
+    }
     setOperationStatus('running')
     try {
       const result = await generatePipelineArtifacts(apiConfig, payload)
@@ -925,7 +1116,53 @@ function App() {
     }
   }
 
+  const inspectRuntimeLab = async (
+    topologyName = pipelineRun?.topology_name ?? payload.name,
+  ): Promise<PipelineLabStatusResponse | null> => {
+    if (!ensureProtectedApiConfigured('Inspeccionar lab')) {
+      return null
+    }
+    setOperationStatus('running')
+    try {
+      const result = await getPipelineLabStatus(apiConfig, topologyName)
+      if (!result.ok || result.data.data === undefined) {
+        const message = extractMessage(result.data, `HTTP ${result.status}`)
+        setOperationStatus('error')
+        setOperationMessage(message)
+        appendConsole(message, 'error')
+        return null
+      }
+      setLabStatus(result.data.data)
+      const message = `${result.data.data.nodes.length} nodos del lab detectados`
+      setOperationStatus('success')
+      setOperationMessage(message)
+      appendConsole(message, 'success')
+      return result.data.data
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Request failed'
+      setOperationStatus('error')
+      setOperationMessage(message)
+      appendConsole(message, 'error')
+      return null
+    }
+  }
+
   const deployPipelineRun = async () => {
+    if (!ensureProtectedApiConfigured('Desplegar pipeline')) {
+      return
+    }
+    const tools = await checkTools({ quiet: true })
+    if (tools === null) {
+      return
+    }
+    const missingTools = tools.tools.filter((tool) => !tool.installed)
+    if (missingTools.length > 0) {
+      const message = `Faltan herramientas del pipeline: ${missingTools.map((tool) => tool.name).join(', ')}`
+      setOperationStatus('error')
+      setOperationMessage(message)
+      appendConsole(message, 'error')
+      return
+    }
     setOperationStatus('running')
     try {
       const result = await deployPipeline(apiConfig, payload)
@@ -946,6 +1183,7 @@ function App() {
       setOperationStatus('success')
       setOperationMessage('Pipeline desplegado correctamente')
       appendConsole('Pipeline desplegado correctamente', 'success')
+      await inspectRuntimeLab(result.data.data.topology_name)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Request failed'
       setOperationStatus('error')
@@ -954,7 +1192,68 @@ function App() {
     }
   }
 
-  const evaluateCompliance = async () => {
+  const sendRuntimeCommand = async (nodeId: string, explicitCommand?: string) => {
+    if (!ensureProtectedApiConfigured('Consola del runtime')) {
+      return
+    }
+    const consoleState = deviceConsoles[nodeId]
+    const command = (explicitCommand ?? consoleState?.draft ?? '').trim()
+    if (!command) {
+      return
+    }
+
+    appendDeviceConsole(nodeId, `$ ${command}`, 'running')
+    updateDeviceConsoleDraft(nodeId, '')
+    setConsoleBusyNodeId(nodeId)
+
+    try {
+      const result = await runPipelineConsoleCommand(
+        apiConfig,
+        labStatus?.topology_name ?? payload.name,
+        nodeId,
+        command,
+      )
+      if (!result.ok || result.data.data === undefined) {
+        const message = extractMessage(result.data, `HTTP ${result.status}`)
+        appendDeviceConsole(nodeId, message, 'error')
+        setOperationStatus('error')
+        setOperationMessage(message)
+        appendConsole(message, 'error')
+        return
+      }
+
+      const consoleResult = result.data.data
+      appendRuntimeConsoleResult(nodeId, consoleResult)
+      setOperationStatus(consoleResult.exit_code === 0 ? 'success' : 'error')
+      setOperationMessage(
+        consoleResult.exit_code === 0
+          ? `Comando ejecutado en ${nodeId}`
+          : `Comando con salida ${consoleResult.exit_code} en ${nodeId}`,
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Request failed'
+      appendDeviceConsole(nodeId, message, 'error')
+      setOperationStatus('error')
+      setOperationMessage(message)
+      appendConsole(message, 'error')
+    } finally {
+      setConsoleBusyNodeId((current) => (current === nodeId ? null : current))
+    }
+  }
+
+  const openSelectedNodeConsole = () => {
+    if (selectedNodeId === null) {
+      return
+    }
+    openNodeConsole(selectedNodeId)
+  }
+
+  const evaluateCompliance = async (
+    options: { openDataBrowser?: boolean } = {},
+  ): Promise<ComplianceReportResponse | null> => {
+    if (!ensureProtectedApiConfigured('Evaluar compliance')) {
+      return null
+    }
     setOperationStatus('running')
     try {
       const result = await generateComplianceReport(apiConfig, payload)
@@ -963,12 +1262,14 @@ function App() {
         setOperationStatus('error')
         setOperationMessage(message)
         appendConsole(message, 'error')
-        return
+        return null
       }
 
       setComplianceReport(result.data.data)
-      setDataTab('compliance')
-      setShowDataBrowser(true)
+      if (options.openDataBrowser ?? true) {
+        setDataTab('compliance')
+        setShowDataBrowser(true)
+      }
       setOperationStatus('success')
       setOperationMessage(
         `Compliance ${result.data.data.summary.overall_posture} · ${result.data.data.summary.failed_controls} fail · ${result.data.data.summary.warned_controls} warn`,
@@ -977,17 +1278,25 @@ function App() {
         `Compliance ${result.data.data.summary.overall_posture} · cobertura ${result.data.data.summary.coverage_percent}%`,
         'success',
       )
+      return result.data.data
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Request failed'
       setOperationStatus('error')
       setOperationMessage(message)
       appendConsole(message, 'error')
+      return null
     }
   }
 
-  const openComplianceAssistant = () => {
+  const openComplianceAssistant = async () => {
+    if (!ensureProtectedApiConfigured('Asistente de compliance')) {
+      return
+    }
     if (complianceReport === null) {
-      void evaluateCompliance()
+      const report = await evaluateCompliance({ openDataBrowser: false })
+      if (report === null) {
+        return
+      }
     }
     if (chatMessages.length === 0) {
       setChatMessages([
@@ -1002,6 +1311,9 @@ function App() {
   }
 
   const sendComplianceQuestion = async () => {
+    if (!ensureProtectedApiConfigured('Asistente de compliance')) {
+      return
+    }
     if (!chatDraft.trim()) {
       return
     }
@@ -1081,7 +1393,7 @@ function App() {
             >
               Datos
             </button>
-            <button className="menu-bar__item" onClick={checkTools} type="button">
+            <button className="menu-bar__item" onClick={() => void checkTools()} type="button">
               Entorno
             </button>
           </div>
@@ -1212,9 +1524,18 @@ function App() {
               <Network size={16} />
             </button>
             <button
+              aria-label="Inspeccionar lab"
+              className="toolbar-button toolbar-button--icon"
+              onClick={() => void inspectRuntimeLab()}
+              title="Inspeccionar lab"
+              type="button"
+            >
+              <TerminalSquare size={16} />
+            </button>
+            <button
               aria-label="Evaluar compliance"
               className="toolbar-button toolbar-button--icon"
-              onClick={evaluateCompliance}
+              onClick={() => void evaluateCompliance()}
               title="Evaluar compliance"
               type="button"
             >
@@ -1223,7 +1544,7 @@ function App() {
             <button
               aria-label="Abrir asistente de compliance"
               className="toolbar-button toolbar-button--icon"
-              onClick={openComplianceAssistant}
+              onClick={() => void openComplianceAssistant()}
               title="Asistente de compliance"
               type="button"
             >
@@ -1241,6 +1562,16 @@ function App() {
           </div>
 
           <div className="toolbar-group">
+            <button
+              aria-label="Abrir consola del nodo"
+              className="toolbar-button toolbar-button--icon"
+              disabled={selectedNode === null}
+              onClick={openSelectedNodeConsole}
+              title="Abrir consola del nodo"
+              type="button"
+            >
+              <TerminalSquare size={16} />
+            </button>
             <button
               aria-label="Configurar proyecto"
               className="toolbar-button toolbar-button--icon"
@@ -1503,6 +1834,10 @@ function App() {
                   </strong>
                 </div>
                 <div className="server-summary__row">
+                  <span>Lab runtime</span>
+                  <strong>{labStatus ? `${labStatus.nodes.length} nodes` : 'unchecked'}</strong>
+                </div>
+                <div className="server-summary__row">
                   <span>Compliance</span>
                   <strong>{complianceReport?.summary.overall_posture ?? 'unchecked'}</strong>
                 </div>
@@ -1545,13 +1880,17 @@ function App() {
                   <Database size={16} />
                   Datos
                 </button>
-                <button className="secondary-button" onClick={evaluateCompliance} type="button">
+                <button
+                  className="secondary-button"
+                  onClick={() => void evaluateCompliance()}
+                  type="button"
+                >
                   <ShieldCheck size={16} />
                   Compliance
                 </button>
                 <button
                   className="secondary-button"
-                  onClick={openComplianceAssistant}
+                  onClick={() => void openComplianceAssistant()}
                   type="button"
                 >
                   <MessageSquare size={16} />
@@ -1565,19 +1904,55 @@ function App() {
 
       <section className="console-pane" aria-label="GNS3 style console">
         <div className="console-pane__header">
-          <div>
-            <TerminalSquare size={15} />
-            <strong>Console</strong>
+          <div className="console-tabs" role="tablist" aria-label="Pestañas de consola">
+            <button
+              aria-selected={activeConsoleTabId === 'app'}
+              className="console-tab"
+              onClick={() => setActiveConsoleTabId('app')}
+              role="tab"
+              type="button"
+            >
+              <TerminalSquare size={14} />
+              Workspace
+            </button>
+            {Object.values(deviceConsoles).map((consoleTab) => (
+              <button
+                key={consoleTab.nodeId}
+                aria-selected={activeConsoleTabId === consoleTab.nodeId}
+                className="console-tab"
+                onClick={() => setActiveConsoleTabId(consoleTab.nodeId)}
+                role="tab"
+                type="button"
+              >
+                <EquipmentGlyph assetType={nodeById.get(consoleTab.nodeId)?.data.assetType ?? 'host'} size={18} />
+                {consoleTab.label}
+              </button>
+            ))}
           </div>
-          <span>{operationStatus}</span>
+          <span>
+            {activeConsoleTabId === 'app'
+              ? operationStatus
+              : runtimeNodesById.get(activeConsoleTabId)?.state || 'runtime'}
+          </span>
         </div>
         <div className="console-pane__body">
-          {consoleEntries.map((entry) => (
-            <div className="console-line" data-tone={entry.tone} key={entry.id}>
-              <span>{entry.tone.toUpperCase()}</span>
-              <p>{entry.text}</p>
-            </div>
-          ))}
+          {activeConsoleTabId === 'app' ? (
+            consoleEntries.map((entry) => (
+              <div className="console-line" data-tone={entry.tone} key={entry.id}>
+                <span>{entry.tone.toUpperCase()}</span>
+                <p>{entry.text}</p>
+              </div>
+            ))
+          ) : activeDeviceConsole ? (
+            <NodeConsolePane
+              activeNode={nodeById.get(activeDeviceConsole.nodeId) ?? null}
+              busy={consoleBusyNodeId === activeDeviceConsole.nodeId}
+              consoleState={activeDeviceConsole}
+              runtimeNode={runtimeNodesById.get(activeDeviceConsole.nodeId) ?? null}
+              onDraftChange={updateDeviceConsoleDraft}
+              onRunCommand={(command) => void sendRuntimeCommand(activeDeviceConsole.nodeId, command)}
+            />
+          ) : null}
         </div>
       </section>
 
@@ -1586,8 +1961,10 @@ function App() {
           editorNode={editorNode}
           editorTab={editorTab}
           onClose={() => setEditorNodeId(null)}
+          onOpenConsole={() => openNodeConsole(editorNode.id)}
           onDuplicate={duplicateSelectedNode}
           onDelete={removeSelectedNode}
+          onUpdatePort={updateEditorPort}
           onTabChange={setEditorTab}
           onUpdateNode={updateEditorNode}
           onChangeAssetType={changeSelectedAssetType}
@@ -2107,12 +2484,102 @@ function ComplianceAssistantModal({
   )
 }
 
+function NodeConsolePane({
+  activeNode,
+  busy,
+  consoleState,
+  runtimeNode,
+  onDraftChange,
+  onRunCommand,
+}: {
+  activeNode: BuilderNode | null
+  busy: boolean
+  consoleState: DeviceConsole
+  runtimeNode: PipelineLabStatusResponse['nodes'][number] | null
+  onDraftChange: (nodeId: string, value: string) => void
+  onRunCommand: (command?: string) => void
+}) {
+  const quickCommands = ['hostname', 'ip link show', 'ip addr show', 'ip route show']
+
+  return (
+    <div className="node-console">
+      <div className="node-console__meta">
+        <span>{activeNode?.data.assetType.replace('_', ' ') ?? consoleState.nodeId}</span>
+        <strong>
+          {runtimeNode
+            ? `${runtimeNode.container_name} · ${runtimeNode.state || runtimeNode.status || 'runtime'}`
+            : 'Lab no desplegado o nodo no descubierto'}
+        </strong>
+      </div>
+
+      <div className="node-console__quick-actions">
+        {quickCommands.map((command) => (
+          <button
+            className="console-quick-button"
+            disabled={runtimeNode === null || busy}
+            key={command}
+            onClick={() => onRunCommand(command)}
+            type="button"
+          >
+            {command}
+          </button>
+        ))}
+      </div>
+
+      {runtimeNode === null ? (
+        <div className="empty-state empty-state--compact">
+          <strong>Runtime pendiente</strong>
+          <span>
+            Despliega el lab y luego usa Inspeccionar lab. En Step 10 la consola actúa
+            sobre el runtime Linux actual de Containerlab, no sobre una CLI vendor.
+          </span>
+        </div>
+      ) : null}
+
+      <div className="node-console__stream">
+        {consoleState.entries.map((entry) => (
+          <div className="console-line" data-tone={entry.tone} key={entry.id}>
+            <span>{entry.tone.toUpperCase()}</span>
+            <p>{entry.text}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="node-console__composer">
+        <input
+          disabled={runtimeNode === null || busy}
+          onChange={(event) => onDraftChange(consoleState.nodeId, event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              onRunCommand()
+            }
+          }}
+          placeholder="ip link set dev eth1 down"
+          value={consoleState.draft}
+        />
+        <button
+          className="secondary-button"
+          disabled={runtimeNode === null || busy || !consoleState.draft.trim()}
+          onClick={() => onRunCommand()}
+          type="button"
+        >
+          <SendHorizonal size={16} />
+          {busy ? 'Ejecutando' : 'Run'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function NodeEditorModal({
   editorNode,
   editorTab,
   onClose,
+  onOpenConsole,
   onDuplicate,
   onDelete,
+  onUpdatePort,
   onTabChange,
   onUpdateNode,
   onChangeAssetType,
@@ -2120,12 +2587,26 @@ function NodeEditorModal({
   editorNode: BuilderNode
   editorTab: EditorTab
   onClose: () => void
+  onOpenConsole: () => void
   onDuplicate: () => void
   onDelete: () => void
+  onUpdatePort: (portIndex: number, patch: Partial<BuilderPortConfig>) => void
   onTabChange: (tab: EditorTab) => void
   onUpdateNode: (patch: Partial<BuilderNode['data']>) => void
   onChangeAssetType: (assetType: AssetType) => void
 }) {
+  const portRows = Array.from(
+    { length: Math.max(editorNode.data.portCount, editorNode.data.portConfigs.length) },
+    (_, index) => ({
+      index,
+      name: getPortName(editorNode, index),
+      config: editorNode.data.portConfigs[index] ?? {
+        enabled: true,
+        mgmtOnly: false,
+      },
+    }),
+  )
+
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Node editor">
       <div className="modal-shell">
@@ -2145,6 +2626,7 @@ function NodeEditorModal({
         <div className="modal-tabs" role="tablist" aria-label="Node editor tabs">
           {[
             { id: 'equipment', label: 'Equipo' },
+            { id: 'ports', label: 'Puertos' },
             { id: 'logical', label: 'Red' },
             { id: 'security', label: 'Seguridad' },
           ].map((tab) => (
@@ -2256,6 +2738,85 @@ function NodeEditorModal({
             </>
           ) : null}
 
+          {editorTab === 'ports' ? (
+            <div className="port-config-list">
+              {portRows.map((port) => (
+                <section className="port-config-card" key={`${editorNode.id}-${port.index}`}>
+                  <div className="port-config-card__header">
+                    <strong>{port.name}</strong>
+                    <span>Puerto {port.index + 1}</span>
+                  </div>
+                  <div className="toggle-row">
+                    <label>
+                      <input
+                        checked={port.config.enabled}
+                        onChange={(event) =>
+                          onUpdatePort(port.index, { enabled: event.target.checked })
+                        }
+                        type="checkbox"
+                      />
+                      Enlace activo
+                    </label>
+                    <label>
+                      <input
+                        checked={port.config.mgmtOnly}
+                        onChange={(event) =>
+                          onUpdatePort(port.index, { mgmtOnly: event.target.checked })
+                        }
+                        type="checkbox"
+                      />
+                      Solo gestion
+                    </label>
+                  </div>
+                  <div className="field-grid">
+                    <label className="field">
+                      <span>IPv4</span>
+                      <input
+                        placeholder="192.168.10.10/24"
+                        value={port.config.ipv4Address ?? ''}
+                        onChange={(event) =>
+                          onUpdatePort(port.index, { ipv4Address: event.target.value })
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span>IPv6</span>
+                      <input
+                        placeholder="2001:db8::10/64"
+                        value={port.config.ipv6Address ?? ''}
+                        onChange={(event) =>
+                          onUpdatePort(port.index, { ipv6Address: event.target.value })
+                        }
+                      />
+                    </label>
+                  </div>
+                  <div className="field-grid">
+                    <label className="field">
+                      <span>MAC</span>
+                      <input
+                        placeholder="00:1A:2B:3C:4D:5E"
+                        value={port.config.macAddress ?? ''}
+                        onChange={(event) =>
+                          onUpdatePort(port.index, { macAddress: event.target.value })
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span>Descripcion</span>
+                      <input
+                        placeholder={`${editorNode.data.label} ${port.name}`}
+                        value={port.config.description ?? ''}
+                        onChange={(event) =>
+                          onUpdatePort(port.index, { description: event.target.value })
+                        }
+                      />
+                    </label>
+                  </div>
+                </section>
+              ))}
+            </div>
+          ) : null}
+
           {editorTab === 'logical' ? (
             <>
               <div className="field-grid">
@@ -2281,47 +2842,12 @@ function NodeEditorModal({
                   />
                 </label>
               </div>
-              <label className="field">
-                <span>IPv4 principal</span>
-                <input
-                  placeholder="192.168.10.10/24"
-                  value={editorNode.data.ipv4Address ?? ''}
-                  onChange={(event) => onUpdateNode({ ipv4Address: event.target.value })}
-                />
-              </label>
-              <label className="field">
-                <span>IPv6 principal</span>
-                <input
-                  placeholder="2001:db8::10/64"
-                  value={editorNode.data.ipv6Address ?? ''}
-                  onChange={(event) => onUpdateNode({ ipv6Address: event.target.value })}
-                />
-              </label>
-              <label className="field">
-                <span>MAC principal</span>
-                <input
-                  placeholder="00:1A:2B:3C:4D:5E"
-                  value={editorNode.data.macAddress ?? ''}
-                  onChange={(event) => onUpdateNode({ macAddress: event.target.value })}
-                />
-              </label>
-              <div className="toggle-row">
-                <label>
-                  <input
-                    checked={editorNode.data.enabled}
-                    onChange={(event) => onUpdateNode({ enabled: event.target.checked })}
-                    type="checkbox"
-                  />
-                  Interfaz habilitada
-                </label>
-                <label>
-                  <input
-                    checked={editorNode.data.mgmtOnly}
-                    onChange={(event) => onUpdateNode({ mgmtOnly: event.target.checked })}
-                    type="checkbox"
-                  />
-                  Solo gestion
-                </label>
+              <div className="empty-state empty-state--compact">
+                <strong>Configuracion por puerto</strong>
+                <span>
+                  El direccionamiento, el estado administrativo y el modo de gestion se
+                  ajustan en la pestaña Puertos para reflejar el runtime del lab.
+                </span>
               </div>
             </>
           ) : null}
@@ -2409,6 +2935,10 @@ function NodeEditorModal({
         </div>
 
         <div className="modal-footer">
+          <button className="secondary-button" onClick={onOpenConsole} type="button">
+            <TerminalSquare size={16} />
+            Consola
+          </button>
           <button className="secondary-button" onClick={onDuplicate} type="button">
             <Copy size={16} />
             Duplicar
@@ -2618,6 +3148,7 @@ function cloneSnapshot(snapshot: BuilderState): BuilderState {
       data: {
         ...node.data,
         allowedProtocols: [...node.data.allowedProtocols],
+        portConfigs: node.data.portConfigs.map((portConfig) => ({ ...portConfig })),
       },
     })),
     edges: snapshot.edges.map((edge) => ({

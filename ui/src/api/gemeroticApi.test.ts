@@ -8,7 +8,9 @@ import {
   generateComplianceReport,
   generatePipelineArtifacts,
   getHealth,
+  getPipelineLabStatus,
   getPipelineTools,
+  runPipelineConsoleCommand,
 } from './gemeroticApi'
 
 const config = {
@@ -128,6 +130,54 @@ describe('gemeroticApi', () => {
     expect(headers.get('X-API-Key')).toBe('test-key')
   })
 
+  it('consulta el estado del lab con API key', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: 'success',
+          message: 'Pipeline lab status collected',
+          data: { topology_name: 'mvp-lab-01', nodes: [] },
+        }),
+      ),
+    )
+
+    await getPipelineLabStatus(config, 'mvp-lab-01')
+    const headers = fetchMock.mock.calls[0][1]?.headers as Headers
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'http://localhost:8000/api/v1/pipeline/labs/mvp-lab-01',
+    )
+    expect(headers.get('X-API-Key')).toBe('test-key')
+  })
+
+  it('ejecuta comandos de consola del runtime con API key', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: 'success',
+          message: 'Pipeline console command executed',
+          data: {
+            topology_name: 'mvp-lab-01',
+            node_id: 'router-01',
+            container_name: 'clab-mvp-lab-01-router-01',
+            command: ['ip', 'link', 'show'],
+            exit_code: 0,
+            stdout_tail: '',
+            stderr_tail: '',
+          },
+        }),
+      ),
+    )
+
+    await runPipelineConsoleCommand(config, 'mvp-lab-01', 'router-01', 'ip link show')
+    const headers = fetchMock.mock.calls[0][1]?.headers as Headers
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'http://localhost:8000/api/v1/pipeline/labs/mvp-lab-01/nodes/router-01/console',
+    )
+    expect(headers.get('X-API-Key')).toBe('test-key')
+  })
+
   it('genera informe de compliance con API key', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(
@@ -160,9 +210,11 @@ describe('gemeroticApi', () => {
           message: 'Compliance assistant response generated successfully',
           data: {
             mode: 'local_advisor',
+            scope_allowed: true,
             answer: 'ok',
             cited_controls: [],
             suggested_actions: [],
+            limitations: [],
             report: {
               topology_name: 'mvp-lab-01',
               summary: { overall_posture: 'partial' },

@@ -313,8 +313,10 @@ button {
 }
 
 .device-catalog {
+  align-content: start;
   display: grid;
   gap: 8px;
+  grid-auto-rows: 76px;
   min-height: 0;
   overflow: auto;
   padding-right: 2px;
@@ -326,7 +328,7 @@ button {
   display: grid;
   gap: 10px;
   grid-template-columns: 50px minmax(0, 1fr);
-  min-height: 62px;
+  height: 76px;
   padding: 8px 12px;
   text-align: left;
 }
@@ -646,6 +648,7 @@ button {
   border-bottom: 1px solid var(--console-line);
   color: #dce4ea;
   display: flex;
+  gap: 12px;
   justify-content: space-between;
   padding: 0 12px;
 }
@@ -665,11 +668,38 @@ button {
 }
 
 .console-pane__body {
-  display: grid;
-  gap: 6px;
+  display: block;
   min-height: 0;
   overflow: auto;
   padding: 10px 12px;
+}
+
+.console-tabs {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.console-tab {
+  align-items: center;
+  background: #11171d;
+  border: 1px solid #2b3742;
+  border-radius: 8px;
+  color: #c4d0d9;
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+}
+
+.console-tab[aria-selected='true'] {
+  background: #273240;
+  border-color: #4b5f75;
+  color: #ffffff;
 }
 
 .console-line {
@@ -1233,6 +1263,117 @@ button {
   font-size: 12px;
   line-height: 1.5;
   max-width: 42ch;
+}
+
+.empty-state--compact {
+  min-height: 112px;
+}
+
+.port-config-list {
+  display: grid;
+  gap: 12px;
+}
+
+.port-config-card {
+  background: #ffffff;
+  border: 1px solid var(--chrome-line);
+  border-radius: 10px;
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+}
+
+.port-config-card__header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.port-config-card__header strong {
+  font-size: 13px;
+}
+
+.port-config-card__header span {
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.node-console {
+  display: grid;
+  gap: 10px;
+}
+
+.node-console__meta {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.node-console__meta span,
+.node-console__meta strong {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.node-console__meta span {
+  color: #8ca0af;
+}
+
+.node-console__meta strong {
+  color: #dce4ea;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-console__quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.console-quick-button {
+  background: #18212a;
+  border: 1px solid #33414d;
+  border-radius: 8px;
+  color: #dce4ea;
+  cursor: pointer;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 10px;
+  min-height: 28px;
+  padding: 0 10px;
+}
+
+.console-quick-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.node-console__stream {
+  display: grid;
+  gap: 6px;
+  max-height: 98px;
+  overflow: auto;
+}
+
+.node-console__composer {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.node-console__composer input {
+  background: #0d1217;
+  border: 1px solid #33414d;
+  border-radius: 8px;
+  color: #f1f5f7;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  min-height: 38px;
+  padding: 8px 10px;
 }
 
 .status-dot {
