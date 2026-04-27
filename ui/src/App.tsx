@@ -1,5 +1,6 @@
 import {
   Background,
+  Controls,
   ReactFlow,
   type ReactFlowInstance,
   useEdgesState,
@@ -37,7 +38,13 @@ import {
   Undo2,
   X,
 } from 'lucide-react'
-import { useEffect, useMemo, useState, type DragEvent as ReactDragEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type DragEvent as ReactDragEvent,
+} from 'react'
 
 import './App.css'
 import {
@@ -264,8 +271,12 @@ function createDrawingNode(
     draggable: true,
     position: options.position,
     selectable: true,
+    style: {
+      height: options.height,
+      width: options.width,
+    },
     type: 'drawing',
-    zIndex: 0,
+    zIndex: -10,
   }
 }
 
@@ -368,6 +379,28 @@ function App() {
     }),
     [edges.length, nodes.length, payload.interfaces.length, payload.security_zones.length],
   )
+  const resizeDrawingFromCanvas = useCallback(
+    (drawingId: string, width: number, height: number) => {
+      const nextWidth = clampDrawingSize(width)
+      const nextHeight = clampDrawingSize(height)
+      const snapshot = cloneSnapshot({ settings, nodes, edges, drawings })
+      setHistoryPast((previous) => [...previous.slice(-59), snapshot])
+      setHistoryFuture([])
+      setDrawings((currentDrawings) =>
+        currentDrawings.map((drawing) =>
+          drawing.id === drawingId
+            ? syncDrawingDimensions(drawing, {
+                height: nextHeight,
+                width: nextWidth,
+              })
+            : drawing,
+        ),
+      )
+      setOperationStatus('success')
+      setOperationMessage('Dibujo redimensionado')
+    },
+    [drawings, edges, nodes, setDrawings, settings],
+  )
   const displayedNodes = useMemo(
     () =>
       nodes.map((node) => ({
@@ -386,9 +419,19 @@ function App() {
         .filter((drawing) => drawing.data.view === activeView)
         .map((drawing) => ({
           ...drawing,
+          data: {
+            ...drawing.data,
+            onResizeEnd: (width: number, height: number) =>
+              resizeDrawingFromCanvas(drawing.id, width, height),
+          },
           selected: drawing.id === selectedDrawingId,
+          style: {
+            height: drawing.data.height,
+            width: drawing.data.width,
+          },
+          zIndex: -10,
         })),
-    [activeView, drawings, selectedDrawingId],
+    [activeView, drawings, resizeDrawingFromCanvas, selectedDrawingId],
   )
   const displayedCanvasNodes = useMemo(
     () => [...displayedDrawings, ...displayedNodes] as CanvasNode[],
@@ -879,18 +922,49 @@ function App() {
     setDrawings((currentDrawings) =>
       currentDrawings.map((drawing) =>
         drawing.id === drawingId
-          ? {
-              ...drawing,
-              data: {
-                ...drawing.data,
-                ...patch,
-                height: clampDrawingSize(patch.height ?? drawing.data.height),
-                width: clampDrawingSize(patch.width ?? drawing.data.width),
-              },
-            }
+          ? syncDrawingDimensions(drawing, {
+              ...patch,
+              height: clampDrawingSize(patch.height ?? drawing.data.height),
+              width: clampDrawingSize(patch.width ?? drawing.data.width),
+            })
           : drawing,
       ),
     )
+  }
+
+  const duplicateSelectedDrawing = () => {
+    if (selectedDrawing === null) {
+      return
+    }
+    pushHistorySnapshot()
+    const width = clampDrawingSize(selectedDrawing.data.width)
+    const height = clampDrawingSize(selectedDrawing.data.height)
+    const duplicatedDrawing: DrawingNodeModel = {
+      ...selectedDrawing,
+      data: {
+        ...stripDrawingRuntimeData(selectedDrawing.data),
+        height,
+        label: `${selectedDrawing.data.label} copia`,
+        width,
+      },
+      id: `drawing-copy-${Date.now()}`,
+      position: {
+        x: selectedDrawing.position.x + 28,
+        y: selectedDrawing.position.y + 28,
+      },
+      selected: false,
+      style: {
+        height,
+        width,
+      },
+      zIndex: -10,
+    }
+    setDrawings((currentDrawings) => [...currentDrawings, duplicatedDrawing])
+    setSelectedDrawingId(duplicatedDrawing.id)
+    setSelectedNodeId(null)
+    setSelectedEdgeId(null)
+    setDrawingEditorId(duplicatedDrawing.id)
+    appendConsole(`Dibujo duplicado: ${duplicatedDrawing.data.label}`, 'success')
   }
 
   const duplicateSelectedNode = () => {
@@ -934,6 +1008,14 @@ function App() {
     }
     pushHistorySnapshot()
     setNodes((currentNodes) => updateNodeData(currentNodes, editorNodeId, patch))
+  }
+
+  const duplicateCurrentSelection = () => {
+    if (selectedDrawing !== null) {
+      duplicateSelectedDrawing()
+      return
+    }
+    duplicateSelectedNode()
   }
 
   const updateEditorPort = (
@@ -1685,11 +1767,11 @@ function App() {
               <Redo2 size={16} />
             </button>
             <button
-              aria-label="Duplicar dispositivo"
+              aria-label="Duplicar seleccion"
               className="toolbar-button toolbar-button--icon"
-              disabled={selectedNode === null}
-              onClick={duplicateSelectedNode}
-              title="Duplicar dispositivo"
+              disabled={selectedNode === null && selectedDrawing === null}
+              onClick={duplicateCurrentSelection}
+              title="Duplicar seleccion"
               type="button"
             >
               <Copy size={16} />
@@ -2070,6 +2152,7 @@ function App() {
               }}
             >
               <Background color="#b9c0c6" gap={26} size={1} />
+              <Controls position="bottom-left" showInteractive={false} />
             </ReactFlow>
           </div>
           <div className="workspace-statusbar" aria-live="polite">
@@ -3715,9 +3798,48 @@ function cloneSnapshot(snapshot: CanvasHistoryState): CanvasHistoryState {
     })),
     drawings: snapshot.drawings.map((drawing) => ({
       ...drawing,
-      data: { ...drawing.data },
+      data: stripDrawingRuntimeData(drawing.data),
       position: { ...drawing.position },
+      style: drawing.style ? { ...drawing.style } : undefined,
     })),
+  }
+}
+
+function stripDrawingRuntimeData(
+  data: DrawingNodeModel['data'],
+): DrawingNodeModel['data'] {
+  return {
+    color: data.color,
+    height: data.height,
+    kind: data.kind,
+    label: data.label,
+    purdueLevel: data.purdueLevel,
+    securityLevel: data.securityLevel,
+    view: data.view,
+    width: data.width,
+  }
+}
+
+function syncDrawingDimensions(
+  drawing: DrawingNodeModel,
+  patch: Partial<DrawingNodeModel['data']>,
+): DrawingNodeModel {
+  const height = clampDrawingSize(patch.height ?? drawing.data.height)
+  const width = clampDrawingSize(patch.width ?? drawing.data.width)
+  return {
+    ...drawing,
+    data: {
+      ...drawing.data,
+      ...patch,
+      height,
+      width,
+    },
+    style: {
+      ...(drawing.style ?? {}),
+      height,
+      width,
+    },
+    zIndex: -10,
   }
 }
 

@@ -11,6 +11,7 @@ export type DrawingNodeData = {
   height: number
   view: TopologyView
   width: number
+  onResizeEnd?: (width: number, height: number) => void
   purdueLevel?: PurdueLevel
   securityLevel?: SecurityLevel
 }

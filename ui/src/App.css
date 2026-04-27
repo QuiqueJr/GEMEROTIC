@@ -1,23 +1,23 @@
 :root {
-  --chrome: #bfc7ce;
-  --chrome-top: #eef1f3;
-  --chrome-line: #aab4bd;
-  --chrome-line-strong: #87929b;
-  --panel: #dfe5e9;
-  --panel-strong: #f6f8f9;
-  --panel-dark: #ccd5dc;
-  --canvas: #c8ced4;
+  --chrome: #b7c5d1;
+  --chrome-top: #e7f1fa;
+  --chrome-line: #9fb0bf;
+  --chrome-line-strong: #768b9d;
+  --panel: #dbe5ed;
+  --panel-strong: #f4f8fb;
+  --panel-dark: #c7d5df;
+  --canvas: #c7d1da;
   --console: #11161b;
   --console-line: #202a33;
   --ink: #151c23;
   --ink-soft: #465663;
   --muted: #64727e;
-  --accent: #2467a2;
-  --accent-soft: #d8e8f6;
+  --accent: #1f5f99;
+  --accent-soft: #d9eafa;
   --success: #2d8a58;
   --warn: #b8781d;
   --danger: #bc4242;
-  --active: #e6f0fa;
+  --active: #dbeeff;
   --surface: #ffffff;
   --shadow: 0 18px 34px rgba(12, 18, 24, 0.16);
 }
@@ -125,8 +125,8 @@ button {
 
 .top-toolbar {
   align-items: center;
-  background: #e4e9ed;
-  border-bottom: 1px solid var(--chrome-line);
+  background: #d9e8f4;
+  border-bottom: 1px solid #8fa9bf;
   box-shadow: inset 0 1px 0 #ffffff;
   display: flex;
   gap: 10px;
@@ -136,7 +136,7 @@ button {
 
 .toolbar-group {
   align-items: center;
-  border-right: 1px solid var(--chrome-line);
+  border-right: 1px solid #a2b9ca;
   display: inline-flex;
   flex: 0 0 auto;
   gap: 6px;
@@ -175,7 +175,7 @@ button {
 }
 
 .toolbar-button {
-  background: var(--surface);
+  background: #f6fbff;
   border-radius: 5px;
   box-shadow:
     inset 0 1px 0 #ffffff,
@@ -192,6 +192,7 @@ button {
 .secondary-button:hover,
 .danger-button:hover,
 .icon-button:hover {
+  background: #ffffff;
   border-color: #8f99a1;
   color: var(--ink);
   box-shadow:
@@ -242,8 +243,8 @@ button {
 
 .workflow-strip {
   align-items: center;
-  background: #f6f8f9;
-  border-bottom: 1px solid var(--chrome-line);
+  background: #eef6fc;
+  border-bottom: 1px solid #a8bccb;
   display: grid;
   gap: 10px;
   grid-template-columns: minmax(0, 1fr) minmax(220px, 0.9fr);
@@ -542,11 +543,31 @@ button {
 }
 
 .workspace-canvas .react-flow__node-drawing {
-  z-index: 1;
+  z-index: -10 !important;
 }
 
 .workspace-canvas .react-flow__node-asset {
-  z-index: 5;
+  z-index: 20 !important;
+}
+
+.workspace-canvas .react-flow__controls {
+  border: 1px solid var(--chrome-line);
+  border-radius: 7px;
+  box-shadow: 0 8px 18px rgba(17, 24, 31, 0.12);
+  overflow: hidden;
+}
+
+.workspace-canvas .react-flow__controls-button {
+  background: #f8fafb;
+  border-bottom: 1px solid var(--chrome-line);
+  color: var(--ink-soft);
+  height: 30px;
+  width: 30px;
+}
+
+.workspace-canvas .react-flow__controls-button:hover {
+  background: #ffffff;
+  color: var(--ink);
 }
 
 .workspace-statusbar {
@@ -1588,8 +1609,11 @@ button {
   cursor: move;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
   opacity: 0.88;
   overflow: hidden;
+  position: relative;
+  width: 100%;
 }
 
 .drawing-node[data-selected='true'] {
@@ -1659,6 +1683,19 @@ button {
   font-size: 13px;
 }
 
+.drawing-node__resize-handle {
+  background: #ffffff !important;
+  border: 1px solid color-mix(in srgb, var(--drawing-color) 72%, #17212b) !important;
+  border-radius: 2px !important;
+  height: 9px !important;
+  width: 9px !important;
+}
+
+.drawing-node__resize-line {
+  border-color: color-mix(in srgb, var(--drawing-color) 72%, #17212b) !important;
+  border-width: 1px !important;
+}
+
 .asset-node {
   align-items: center;
   cursor: pointer;
@@ -1719,95 +1756,196 @@ button {
 }
 
 .equipment-glyph {
-  --glyph-base: #d7dee5;
-  --glyph-body: #9fb3c8;
-  --glyph-ink: #1e2933;
-  --glyph-led: #f5c542;
-  --glyph-mark: #ffffff;
-  --glyph-muted: #6b7b88;
-  --glyph-panel: #c8d7e5;
-  --glyph-port: #26333d;
-  --glyph-screen: #6fa8c9;
-  --glyph-stroke: #25313a;
-  display: block;
-  overflow: visible;
+  --glyph-bg: #e8eef5;
+  --glyph-border: #26333d;
+  --glyph-fill: #7f94a6;
+  --glyph-ink: #17212b;
+  --glyph-led: #f1b93a;
+  --glyph-port: #17212b;
+  --glyph-soft: #f8fbfd;
+  color: var(--glyph-ink);
+  display: inline-grid;
+  height: var(--glyph-size);
+  place-items: center;
+  width: var(--glyph-size);
+}
+
+.equipment-glyph__plate {
+  align-items: center;
+  background: var(--glyph-bg);
+  border: 2px solid var(--glyph-border);
+  border-radius: 8px;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  height: 100%;
+  justify-items: center;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  width: 100%;
+}
+
+.equipment-glyph[data-profile='appliance'] .equipment-glyph__plate {
+  border-radius: 999px;
+}
+
+.equipment-glyph[data-profile='controller'] .equipment-glyph__plate {
+  border-radius: 5px;
+}
+
+.equipment-glyph[data-profile='screen'] .equipment-glyph__plate {
+  border-radius: 7px;
+}
+
+.equipment-glyph[data-profile='radio'] .equipment-glyph__plate {
+  border-radius: 999px 999px 9px 9px;
+}
+
+.equipment-glyph__icon {
+  color: var(--glyph-fill);
+  filter: none;
+  grid-row: 1 / 2;
+  margin-top: 14%;
+}
+
+.equipment-glyph__ports {
+  align-items: center;
+  display: grid;
+  gap: 3px;
+  grid-auto-flow: column;
+  grid-auto-columns: 4px;
+  justify-content: center;
+  margin-bottom: 8%;
+  min-height: 6px;
+}
+
+.equipment-glyph__ports span {
+  background: var(--glyph-port);
+  border-radius: 1px;
+  height: 5px;
+  width: 4px;
+}
+
+.equipment-glyph__tag {
+  background: var(--glyph-soft);
+  border: 1px solid color-mix(in srgb, var(--glyph-border) 34%, #ffffff);
+  border-radius: 4px;
+  color: var(--glyph-ink);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: clamp(6px, calc(var(--glyph-size) * 0.105), 10px);
+  font-weight: 900;
+  left: 50%;
+  letter-spacing: 0;
+  line-height: 1;
+  max-width: calc(var(--glyph-size) - 14px);
+  overflow: hidden;
+  padding: 2px 4px;
+  position: absolute;
+  text-overflow: ellipsis;
+  top: 8%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.equipment-glyph__signal {
+  border: 2px solid var(--glyph-fill);
+  border-bottom-color: transparent;
+  border-left-color: transparent;
+  border-radius: 999px;
+  height: 42%;
+  opacity: 0.54;
+  position: absolute;
+  right: 12%;
+  top: 16%;
+  transform: rotate(-45deg);
+  width: 42%;
+}
+
+.equipment-glyph[data-compact='true'] .equipment-glyph__ports,
+.equipment-glyph[data-compact='true'] .equipment-glyph__signal,
+.equipment-glyph[data-compact='true'] .equipment-glyph__tag {
+  display: none;
+}
+
+.equipment-glyph[data-compact='true'] .equipment-glyph__icon {
+  margin-top: 0;
 }
 
 .equipment-glyph--router {
-  --glyph-base: #dbeafe;
-  --glyph-body: #2563eb;
-  --glyph-panel: #93c5fd;
-  --glyph-mark: #ffffff;
+  --glyph-bg: #dcecff;
+  --glyph-border: #1f5f99;
+  --glyph-fill: #1d68a8;
+  --glyph-soft: #f2f8ff;
 }
 
 .equipment-glyph--switch {
-  --glyph-base: #ccfbf1;
-  --glyph-body: #0f766e;
-  --glyph-panel: #5eead4;
-  --glyph-mark: #ecfeff;
+  --glyph-bg: #d9f3f0;
+  --glyph-border: #0f766e;
+  --glyph-fill: #0a6d66;
+  --glyph-soft: #effdfb;
 }
 
 .equipment-glyph--firewall {
-  --glyph-base: #fee2e2;
-  --glyph-body: #dc2626;
-  --glyph-mark: #ffffff;
-  --glyph-panel: #fecaca;
+  --glyph-bg: #fee2e2;
+  --glyph-border: #b4232c;
+  --glyph-fill: #c4212d;
+  --glyph-soft: #fff7f7;
 }
 
 .equipment-glyph--server {
-  --glyph-base: #e2e8f0;
-  --glyph-body: #64748b;
-  --glyph-panel: #cbd5e1;
-  --glyph-mark: #f8fafc;
+  --glyph-bg: #e5eaf0;
+  --glyph-border: #516171;
+  --glyph-fill: #5f7183;
+  --glyph-soft: #f9fbfd;
 }
 
 .equipment-glyph--scada_server {
-  --glyph-base: #e0e7ff;
-  --glyph-body: #4f46e5;
-  --glyph-mark: #ffffff;
-  --glyph-panel: #c7d2fe;
-  --glyph-screen: #38bdf8;
+  --glyph-bg: #dde8ff;
+  --glyph-border: #315aa5;
+  --glyph-fill: #345fc0;
+  --glyph-soft: #f3f7ff;
 }
 
 .equipment-glyph--host {
-  --glyph-base: #dbeafe;
-  --glyph-body: #3b82f6;
-  --glyph-panel: #bfdbfe;
-  --glyph-screen: #7dd3fc;
+  --glyph-bg: #dbeafe;
+  --glyph-border: #2b6aa3;
+  --glyph-fill: #2f73b7;
+  --glyph-soft: #f2f8ff;
 }
 
 .equipment-glyph--plc {
-  --glyph-base: #fef3c7;
-  --glyph-body: #d97706;
-  --glyph-mark: #fff7ed;
-  --glyph-panel: #fde68a;
+  --glyph-bg: #fff0c8;
+  --glyph-border: #a05a10;
+  --glyph-fill: #b66610;
+  --glyph-soft: #fffaf0;
 }
 
 .equipment-glyph--hmi {
-  --glyph-base: #cffafe;
-  --glyph-body: #0891b2;
-  --glyph-mark: #ffffff;
-  --glyph-screen: #67e8f9;
+  --glyph-bg: #d8f4fb;
+  --glyph-border: #08799d;
+  --glyph-fill: #087fa5;
+  --glyph-soft: #f0fbfe;
 }
 
 .equipment-glyph--rtu {
-  --glyph-base: #dcfce7;
-  --glyph-body: #16a34a;
-  --glyph-mark: #ecfdf5;
-  --glyph-panel: #86efac;
+  --glyph-bg: #dff7e8;
+  --glyph-border: #1c7a43;
+  --glyph-fill: #1f8a4a;
+  --glyph-soft: #f1fff6;
 }
 
 .equipment-glyph--patch_panel {
-  --glyph-base: #f1f5f9;
-  --glyph-body: #94a3b8;
-  --glyph-panel: #e2e8f0;
+  --glyph-bg: #edf2f6;
+  --glyph-border: #5d6c78;
+  --glyph-fill: #647482;
+  --glyph-soft: #ffffff;
 }
 
 .equipment-glyph--wireless_ap {
-  --glyph-base: #e0f2fe;
-  --glyph-body: #0284c7;
-  --glyph-mark: #ffffff;
-  --glyph-panel: #bae6fd;
+  --glyph-bg: #dff1ff;
+  --glyph-border: #1c6f9f;
+  --glyph-fill: #1c77ad;
+  --glyph-soft: #f2faff;
 }
 
 @media (max-width: 1240px) {

@@ -27,6 +27,7 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Añadir rectangulo' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Añadir circulo' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Añadir texto' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /zoom in/i })).toBeInTheDocument()
   })
 
   it('crea un cable nuevo mediante el flujo por puertos tipo gns3', () => {
@@ -91,6 +92,9 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cerrar editor de dibujo' }))
 
     expect(screen.getByText('Sala MCC principal')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Duplicar seleccion' }))
+
+    expect(screen.getByText('Sala MCC principal copia')).toBeInTheDocument()
   })
 
   it('muestra una pestaña de puertos en el editor del dispositivo', () => {

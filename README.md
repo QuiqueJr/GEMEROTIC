@@ -55,7 +55,8 @@ TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
     la derecha y consola inferior
   - biblioteca OT/IT por dominio con inserción por clic y por drag and drop
   - iconografía 2D más limpia y coherente por tipo de activo: router, switch,
-    firewall, PLC, HMI, RTU, servidor SCADA, patch panel y AP
+    firewall, PLC, HMI, RTU, servidor SCADA, patch panel y AP, basada en
+    iconos Lucide reales con chasis/puertos propios del builder
   - nodos del canvas reducidos a símbolo + etiqueta para evitar ruido visual,
     con configuración por doble clic
   - herramienta de enlace tipo GNS3: selección de origen, destino, puertos,
@@ -71,8 +72,12 @@ TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
   - configuraciones del proyecto, conectividad y navegador de datos movidos a
     modales para no saturar el canvas
   - dibujo editable tipo GNS3 para la vista física y de seguridad: zonas,
-    rectángulos, círculos y texto movibles, con color, tamaño y capa visual por
-    vista, sin contaminar el payload `TopologyCreate`
+    rectángulos, círculos y texto movibles, redimensionables desde el propio
+    canvas, duplicables y enviados siempre al fondo frente a equipos/enlaces,
+    con color, tamaño y capa visual por vista, sin contaminar el payload
+    `TopologyCreate`
+  - controles de zoom/fit integrados en el workspace para navegar topologías
+    grandes sin depender del navegador
   - pestaña `Puertos` por equipo para activar o desactivar interfaces,
     marcarlas como gestión y asignar direccionamiento/MAC por puerto
   - consola inferior por pestañas: `Workspace` más una pestaña por equipo
@@ -84,10 +89,10 @@ TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
   - vistas diferenciadas por capa: dibujo libre de planta/sala/rack en
     `Fisica`, conectividad y puertos en `Logica`, y zonas Purdue/SL en
     `Seguridad`
-  - política de iconografía: Lucide para interfaz general y SVG propios 2D,
-    planos y coloreados para equipos de red/OT; Equinor Engineering Symbols y
-    FUXA quedan como referencias permisivas, mientras que Cisco o packs sin
-    licencia clara solo se usan como referencia visual
+  - política de iconografía: Lucide para interfaz general y para los símbolos
+    base de equipos de red/OT; Equinor Engineering Symbols y FUXA quedan como
+    referencias permisivas, mientras que Cisco o packs sin licencia clara solo
+    se usan como referencia visual
 - Se incorporó una capa inicial de cumplimiento OT asistida:
   - `POST /api/v1/compliance/report` evalúa la topología contra una baseline
     GEMEROTIC trazable a `NIS2 + IEC 62443 + ISO/IEC 27001`

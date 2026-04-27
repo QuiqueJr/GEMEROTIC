@@ -60,7 +60,9 @@ de configuracion.
 
 Las herramientas superiores de dibujo crean `zona`, `rectangulo`, `circulo` y
 `texto`. Cada elemento se mueve arrastrandolo sobre el workspace, se edita por
-doble clic y participa en `Supr`, `Ctrl/Cmd+Z` y `Ctrl/Cmd+Y`. Esta capa es
+doble clic, se redimensiona con tiradores en el canvas cuando esta seleccionado,
+se puede duplicar y participa en `Supr`, `Ctrl/Cmd+Z` y `Ctrl/Cmd+Y`. Los
+dibujos quedan siempre en el fondo frente a equipos y enlaces. Esta capa es
 visual: no se envia al backend para no mezclar responsabilidades entre Layer 1,
 Layer 2 y Layer 3.
 
@@ -69,12 +71,17 @@ equipo destino y puerto destino. Los enlaces paralelos entre los mismos equipos
 se separan automaticamente y las etiquetas de interfaz se activan desde el boton
 de etiquetas, manteniendo ocultas por defecto como en GNS3.
 
-La iconografia usa Lucide para controles generales de interfaz y SVG propios
-2D, planos y coloreados para equipos de red/OT. Equinor Engineering Symbols y
-FUXA se usan como referencia visual industrial por su licencia MIT; los iconos
-Cisco y el pack minimalista de red se tratan solo como referencia visual salvo
-revision legal adicional, porque no conviene distribuir iconografia de marca o
-sin licencia clara dentro del producto.
+El workspace incluye controles de zoom y ajuste de vista para manejar topologias
+grandes sin perder contexto operativo.
+
+La iconografia usa Lucide para controles generales y como base real de los
+simbolos de equipos de red/OT. El builder anade chasis, puertos, etiquetas
+cortas y color por tipo de activo para aproximar la lectura a GNS3 sin copiar
+iconografia de terceros. Equinor Engineering Symbols y FUXA se usan como
+referencia visual industrial por su licencia MIT; los iconos Cisco y el pack
+minimalista de red se tratan solo como referencia visual salvo revision legal
+adicional, porque no conviene distribuir iconografia de marca o sin licencia
+clara dentro del producto.
 
 El panel `Payload TopologyCreate` muestra el JSON exacto que se enviara al
 backend. Esa vista debe mantenerse como contrato visible entre React Flow,
