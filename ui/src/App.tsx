@@ -1,6 +1,5 @@
 import {
   Background,
-  MarkerType,
   ReactFlow,
   type ReactFlowInstance,
   useEdgesState,
@@ -16,6 +15,7 @@ import {
   Cable,
   CheckCircle2,
   ChevronRight,
+  Circle,
   Copy,
   Database,
   Factory,
@@ -30,8 +30,10 @@ import {
   ShieldCheck,
   ShieldQuestion,
   SendHorizonal,
+  Square,
   TerminalSquare,
   Trash2,
+  Type,
   Undo2,
   X,
 } from 'lucide-react'
@@ -61,6 +63,7 @@ import {
 } from './api/gemeroticApi'
 import { AssetNode } from './components/AssetNode'
 import { CableEdge } from './components/CableEdge'
+import { DrawingNode as DrawingCanvasNode } from './components/DrawingNode'
 import { EquipmentGlyph } from './components/EquipmentGlyph'
 import { getEdgeHandleIds, getSiblingOffsets } from './domain/edgeLayout'
 import { assetCatalog, getAssetDefinition } from './domain/assetCatalog'
@@ -77,6 +80,7 @@ import {
   updateNodeData,
   updatePortConfig,
 } from './domain/topologyBuilder'
+import type { DrawingKind, DrawingNode as DrawingNodeModel } from './domain/drawingTypes'
 import type {
   AssetType,
   BuilderEdge,
@@ -92,6 +96,7 @@ import type {
 
 const nodeTypes = {
   asset: AssetNode,
+  drawing: DrawingCanvasNode,
 }
 
 const edgeTypes = {
@@ -141,7 +146,10 @@ type CableDraft = {
   label: string
   sourcePortIndex: number
   targetPortIndex: number
-  routeOffset: number
+}
+type CanvasNode = BuilderNode | DrawingNodeModel
+type CanvasHistoryState = BuilderState & {
+  drawings: DrawingNodeModel[]
 }
 
 const viewOptions: Array<{
@@ -163,10 +171,6 @@ const assetGroups = [
 
 const defaultEdgeOptions: DefaultEdgeOptions = {
   animated: false,
-  markerEnd: {
-    type: MarkerType.ArrowClosed,
-    color: '#5f6972',
-  },
   style: {
     stroke: '#5f6972',
     strokeWidth: 2,
@@ -183,16 +187,102 @@ const purdueLabels: Record<PurdueLevel, string> = {
   5: 'Enterprise',
 }
 
+const drawingPalette = ['#2563eb', '#0f766e', '#b45309', '#b91c1c', '#64748b']
+
+const drawingKindLabels: Record<DrawingKind, string> = {
+  zone: 'Zona',
+  rectangle: 'Rectangulo',
+  ellipse: 'Circulo',
+  text: 'Texto',
+}
+
+function createInitialDrawingNodes(): DrawingNodeModel[] {
+  return [
+    createDrawingNode('drawing-room', 'rectangle', 'Cuarto de servidores', 'physical', {
+      color: '#64748b',
+      height: 230,
+      position: { x: 70, y: 58 },
+      width: 360,
+    }),
+    createDrawingNode('drawing-cell', 'rectangle', 'Celda OT / Linea A', 'physical', {
+      color: '#0f766e',
+      height: 250,
+      position: { x: 520, y: 160 },
+      width: 360,
+    }),
+    createDrawingNode('drawing-dmz', 'zone', 'Zona DMZ industrial', 'security', {
+      color: '#b45309',
+      height: 250,
+      position: { x: 260, y: 110 },
+      purdueLevel: 3,
+      securityLevel: 'SL-3',
+      width: 300,
+    }),
+    createDrawingNode('drawing-control', 'zone', 'Zona OT Control', 'security', {
+      color: '#0f766e',
+      height: 270,
+      position: { x: 600, y: 155 },
+      purdueLevel: 1,
+      securityLevel: 'SL-3',
+      width: 300,
+    }),
+    createDrawingNode('drawing-note', 'text', 'Doble clic para editar texto o zona', 'physical', {
+      color: '#2563eb',
+      height: 56,
+      position: { x: 88, y: 328 },
+      width: 280,
+    }),
+  ]
+}
+
+function createDrawingNode(
+  id: string,
+  kind: DrawingKind,
+  label: string,
+  view: TopologyView,
+  options: {
+    color: string
+    height: number
+    position: { x: number; y: number }
+    width: number
+    purdueLevel?: PurdueLevel
+    securityLevel?: SecurityLevel
+  },
+): DrawingNodeModel {
+  return {
+    id,
+    data: {
+      color: options.color,
+      height: options.height,
+      kind,
+      label,
+      purdueLevel: options.purdueLevel,
+      securityLevel: options.securityLevel,
+      view,
+      width: options.width,
+    },
+    draggable: true,
+    position: options.position,
+    selectable: true,
+    type: 'drawing',
+    zIndex: 0,
+  }
+}
+
 function App() {
   const initialState = useMemo(() => createInitialBuilderState(), [])
   const [settings, setSettings] = useState<TopologySettings>(initialState.settings)
   const [nodes, setNodes, onNodesChange] = useNodesState<BuilderNode>(initialState.nodes)
+  const [drawings, setDrawings, onDrawingsChange] =
+    useNodesState<DrawingNodeModel>(createInitialDrawingNodes())
   const [edges, setEdges, onEdgesChange] = useEdgesState<BuilderEdge>(initialState.edges)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(
     initialState.nodes[0]?.id ?? null,
   )
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
+  const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null)
   const [editorNodeId, setEditorNodeId] = useState<string | null>(null)
+  const [drawingEditorId, setDrawingEditorId] = useState<string | null>(null)
   const [editorTab, setEditorTab] = useState<EditorTab>('equipment')
   const [activeView, setActiveView] = useState<TopologyView>('physical')
   const [interactionMode, setInteractionMode] = useState<InteractionMode>('select')
@@ -204,12 +294,12 @@ function App() {
   const [showProjectSettings, setShowProjectSettings] = useState(false)
   const [showDataBrowser, setShowDataBrowser] = useState(false)
   const [linkDraft, setLinkDraft] = useState<CableDraft | null>(null)
-  const [historyPast, setHistoryPast] = useState<BuilderState[]>([])
-  const [historyFuture, setHistoryFuture] = useState<BuilderState[]>([])
+  const [historyPast, setHistoryPast] = useState<CanvasHistoryState[]>([])
+  const [historyFuture, setHistoryFuture] = useState<CanvasHistoryState[]>([])
   const [apiBaseUrl, setApiBaseUrl] = useState('http://localhost:8000')
   const [apiKey, setApiKey] = useState('')
   const [reactFlowInstance, setReactFlowInstance] =
-    useState<ReactFlowInstance<BuilderNode, BuilderEdge> | null>(null)
+    useState<ReactFlowInstance<CanvasNode, BuilderEdge> | null>(null)
   const [operationStatus, setOperationStatus] = useState<OperationStatus>('idle')
   const [operationMessage, setOperationMessage] = useState('Proyecto cargado')
   const [consoleEntries, setConsoleEntries] = useState<ConsoleEntry[]>([
@@ -237,7 +327,11 @@ function App() {
 
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null
   const selectedEdge = edges.find((edge) => edge.id === selectedEdgeId) ?? null
+  const selectedDrawing =
+    drawings.find((drawing) => drawing.id === selectedDrawingId) ?? null
   const editorNode = nodes.find((node) => node.id === editorNodeId) ?? null
+  const editorDrawing =
+    drawings.find((drawing) => drawing.id === drawingEditorId) ?? null
   const nodeById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes])
   const pendingLinkSourceNode =
     pendingLinkSource === null ? null : nodeById.get(pendingLinkSource.nodeId) ?? null
@@ -286,6 +380,20 @@ function App() {
       })),
     [activeView, nodes, selectedNodeId],
   )
+  const displayedDrawings = useMemo(
+    () =>
+      drawings
+        .filter((drawing) => drawing.data.view === activeView)
+        .map((drawing) => ({
+          ...drawing,
+          selected: drawing.id === selectedDrawingId,
+        })),
+    [activeView, drawings, selectedDrawingId],
+  )
+  const displayedCanvasNodes = useMemo(
+    () => [...displayedDrawings, ...displayedNodes] as CanvasNode[],
+    [displayedDrawings, displayedNodes],
+  )
   const siblingOffsets = useMemo(() => getSiblingOffsets(edges), [edges])
   const displayedEdges = useMemo(
     () =>
@@ -300,10 +408,6 @@ function App() {
 
         return {
           ...edge,
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
-            color: edge.id === selectedEdgeId ? '#b87416' : getEdgeColor(activeView),
-          },
           sourceHandle: handlePair.sourceHandle,
           targetHandle: handlePair.targetHandle,
           style: {
@@ -321,7 +425,6 @@ function App() {
             displayLabel,
             showPortLabels: showInterfaceLabels,
             siblingOffset: siblingOffsets.get(edge.id) ?? 0,
-            routeOffset: edge.data?.routeOffset ?? 0,
             sourcePortName:
               sourceNode === undefined
                 ? ''
@@ -485,22 +588,26 @@ function App() {
   }
 
   function pushHistorySnapshot() {
-    const snapshot = cloneSnapshot({ settings, nodes, edges })
+    const snapshot = cloneSnapshot({ settings, nodes, edges, drawings })
     setHistoryPast((previous) => [...previous.slice(-59), snapshot])
     setHistoryFuture([])
   }
 
-  function restoreSnapshot(snapshot: BuilderState) {
+  function restoreSnapshot(snapshot: CanvasHistoryState) {
     const cloned = cloneSnapshot(snapshot)
     setSettings(cloned.settings)
     setNodes(cloned.nodes)
     setEdges(cloned.edges)
+    setDrawings(cloned.drawings)
     setSelectedNodeId(null)
     setSelectedEdgeId(null)
+    setSelectedDrawingId(null)
     setEditorNodeId(null)
+    setDrawingEditorId(null)
     setPendingLinkSource(null)
     setPortPicker(null)
     setLinkDraft(null)
+    setDrawingEditorId(null)
     setInteractionMode('select')
   }
 
@@ -509,7 +616,7 @@ function App() {
       return
     }
     const previous = historyPast[historyPast.length - 1]
-    const current = cloneSnapshot({ settings, nodes, edges })
+    const current = cloneSnapshot({ settings, nodes, edges, drawings })
     setHistoryPast(historyPast.slice(0, -1))
     setHistoryFuture([current, ...historyFuture].slice(0, 60))
     restoreSnapshot(previous)
@@ -521,7 +628,7 @@ function App() {
       return
     }
     const next = historyFuture[0]
-    const current = cloneSnapshot({ settings, nodes, edges })
+    const current = cloneSnapshot({ settings, nodes, edges, drawings })
     setHistoryPast([...historyPast, current].slice(-60))
     setHistoryFuture(historyFuture.slice(1))
     restoreSnapshot(next)
@@ -581,6 +688,22 @@ function App() {
     appendConsole(`Cable eliminado: ${removedLabel}`, 'success')
   }
 
+  function removeSelectedDrawing() {
+    if (selectedDrawingId === null) {
+      return
+    }
+    pushHistorySnapshot()
+    const removedLabel =
+      drawings.find((drawing) => drawing.id === selectedDrawingId)?.data.label ??
+      selectedDrawingId
+    setDrawings((currentDrawings) =>
+      currentDrawings.filter((drawing) => drawing.id !== selectedDrawingId),
+    )
+    setSelectedDrawingId(null)
+    setDrawingEditorId(null)
+    appendConsole(`Dibujo eliminado: ${removedLabel}`, 'success')
+  }
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null
@@ -612,6 +735,11 @@ function App() {
       }
 
       if (event.key === 'Delete' || event.key === 'Backspace') {
+        if (selectedDrawingId) {
+          event.preventDefault()
+          removeSelectedDrawing()
+          return
+        }
         if (selectedEdgeId) {
           event.preventDefault()
           removeSelectedEdge()
@@ -639,6 +767,33 @@ function App() {
     if (removedSelectedNode) {
       setSelectedNodeId(null)
       setEditorNodeId(null)
+    }
+  }
+
+  const handleCanvasNodesChange = (changes: NodeChange<CanvasNode>[]) => {
+    const drawingIds = new Set(drawings.map((drawing) => drawing.id))
+    const drawingChanges = changes.filter((change) =>
+      drawingIds.has(getNodeChangeId(change)),
+    ) as NodeChange<DrawingNodeModel>[]
+    const assetChanges = changes.filter(
+      (change) => !drawingIds.has(getNodeChangeId(change)),
+    ) as NodeChange<BuilderNode>[]
+
+    if (assetChanges.length > 0) {
+      handleNodesChange(assetChanges)
+    }
+    if (drawingChanges.length > 0) {
+      if (shouldRecordNodeChanges(drawingChanges)) {
+        pushHistorySnapshot()
+      }
+      onDrawingsChange(drawingChanges)
+      const removedSelectedDrawing = drawingChanges.some(
+        (change) => change.type === 'remove' && change.id === selectedDrawingId,
+      )
+      if (removedSelectedDrawing) {
+        setSelectedDrawingId(null)
+        setDrawingEditorId(null)
+      }
     }
   }
 
@@ -671,9 +826,71 @@ function App() {
     setNodes((currentNodes) => [...currentNodes, node])
     setSelectedNodeId(node.id)
     setSelectedEdgeId(null)
+    setSelectedDrawingId(null)
     setOperationStatus('success')
     setOperationMessage(`${asset.label} agregado`)
     appendConsole(`Equipo agregado: ${asset.label}`, 'success')
+  }
+
+  const addDrawing = (kind: DrawingKind) => {
+    pushHistorySnapshot()
+    const index = drawings.length + 1
+    const viewportPosition = reactFlowInstance?.screenToFlowPosition({
+      x: Math.min(window.innerWidth * 0.48, 720),
+      y: 260,
+    })
+    const defaultSize =
+      kind === 'text'
+        ? { height: 58, width: 280 }
+        : kind === 'ellipse'
+          ? { height: 160, width: 220 }
+          : { height: 190, width: 300 }
+    const drawing = createDrawingNode(
+      `drawing-${kind}-${Date.now()}`,
+      kind,
+      `${drawingKindLabels[kind]} ${index}`,
+      activeView,
+      {
+        color: drawingPalette[index % drawingPalette.length],
+        height: defaultSize.height,
+        position: viewportPosition ?? {
+          x: 180 + index * 28,
+          y: 120 + index * 24,
+        },
+        purdueLevel: activeView === 'security' || kind === 'zone' ? 2 : undefined,
+        securityLevel: activeView === 'security' || kind === 'zone' ? 'SL-2' : undefined,
+        width: defaultSize.width,
+      },
+    )
+    setDrawings((currentDrawings) => [...currentDrawings, drawing])
+    setSelectedDrawingId(drawing.id)
+    setDrawingEditorId(drawing.id)
+    setSelectedNodeId(null)
+    setSelectedEdgeId(null)
+    setEditorNodeId(null)
+    appendConsole(`Dibujo agregado: ${drawing.data.label}`, 'success')
+  }
+
+  const updateDrawing = (
+    drawingId: string,
+    patch: Partial<DrawingNodeModel['data']>,
+  ) => {
+    pushHistorySnapshot()
+    setDrawings((currentDrawings) =>
+      currentDrawings.map((drawing) =>
+        drawing.id === drawingId
+          ? {
+              ...drawing,
+              data: {
+                ...drawing.data,
+                ...patch,
+                height: clampDrawingSize(patch.height ?? drawing.data.height),
+                width: clampDrawingSize(patch.width ?? drawing.data.width),
+              },
+            }
+          : drawing,
+      ),
+    )
   }
 
   const duplicateSelectedNode = () => {
@@ -701,6 +918,7 @@ function App() {
     }
     setNodes((currentNodes) => [...currentNodes, duplicatedNode])
     setSelectedNodeId(duplicatedNode.id)
+    setSelectedDrawingId(null)
     setEditorNodeId(duplicatedNode.id)
     appendConsole(`Equipo duplicado: ${duplicatedNode.data.label}`, 'success')
   }
@@ -815,7 +1033,6 @@ function App() {
         targetNode,
         targetEndpoint.portIndex,
       ),
-      routeOffset: 0,
       sourcePortIndex: sourceEndpoint.portIndex,
       targetPortIndex: targetEndpoint.portIndex,
     }
@@ -836,7 +1053,6 @@ function App() {
       source: draft.sourceId,
       target: draft.targetId,
       label: draft.label,
-      routeOffset: draft.routeOffset,
       sourcePortIndex: draft.sourcePortIndex,
       targetPortIndex: draft.targetPortIndex,
     })
@@ -882,6 +1098,7 @@ function App() {
     if (interactionMode !== 'link') {
       setSelectedNodeId(node.id)
       setSelectedEdgeId(null)
+      setSelectedDrawingId(null)
       return
     }
 
@@ -910,18 +1127,42 @@ function App() {
     appendConsole(`Editor abierto: ${node.data.label}`, 'success')
   }
 
+  const handleCanvasNodeClick = (_: unknown, node: CanvasNode) => {
+    if (node.type === 'drawing') {
+      setSelectedDrawingId(node.id)
+      setSelectedNodeId(null)
+      setSelectedEdgeId(null)
+      setEditorNodeId(null)
+      return
+    }
+    handleNodeClick(_, node as BuilderNode)
+  }
+
+  const handleCanvasNodeDoubleClick = (_: unknown, node: CanvasNode) => {
+    if (node.type === 'drawing') {
+      setSelectedDrawingId(node.id)
+      setDrawingEditorId(node.id)
+      setSelectedNodeId(null)
+      setSelectedEdgeId(null)
+      setEditorNodeId(null)
+      appendConsole(`Editor de dibujo abierto: ${node.data.label}`, 'success')
+      return
+    }
+    handleNodeDoubleClick(_, node as BuilderNode)
+  }
+
   const openCableEditor = (edge: BuilderEdge) => {
     setInteractionMode('select')
     setPendingLinkSource(null)
     setPortPicker(null)
     setSelectedNodeId(null)
+    setSelectedDrawingId(null)
     setSelectedEdgeId(edge.id)
     setLinkDraft({
       id: edge.id,
       sourceId: edge.source,
       targetId: edge.target,
       label: edge.data?.label ?? edge.label?.toString() ?? edge.id,
-      routeOffset: edge.data?.routeOffset ?? 0,
       sourcePortIndex: edge.data?.sourcePortIndex ?? 0,
       targetPortIndex: edge.data?.targetPortIndex ?? 0,
     })
@@ -944,7 +1185,6 @@ function App() {
       setEdges((currentEdges) =>
         updateEdgeData(currentEdges, linkDraft.id!, {
           label: linkDraft.label,
-          routeOffset: linkDraft.routeOffset,
           sourcePortIndex: linkDraft.sourcePortIndex,
           targetPortIndex: linkDraft.targetPortIndex,
         }),
@@ -957,7 +1197,6 @@ function App() {
         source: linkDraft.sourceId,
         target: linkDraft.targetId,
         label: linkDraft.label,
-        routeOffset: linkDraft.routeOffset,
         sourcePortIndex: linkDraft.sourcePortIndex,
         targetPortIndex: linkDraft.targetPortIndex,
       })
@@ -971,6 +1210,10 @@ function App() {
   }
 
   const removeCurrentSelection = () => {
+    if (selectedDrawingId) {
+      removeSelectedDrawing()
+      return
+    }
     if (selectedEdgeId) {
       removeSelectedEdge()
       return
@@ -1454,7 +1697,11 @@ function App() {
             <button
               aria-label="Eliminar seleccion"
               className="toolbar-button toolbar-button--icon"
-              disabled={selectedNodeId === null && selectedEdgeId === null}
+              disabled={
+                selectedNodeId === null &&
+                selectedEdgeId === null &&
+                selectedDrawingId === null
+              }
               onClick={removeCurrentSelection}
               title="Eliminar seleccion"
               type="button"
@@ -1483,6 +1730,42 @@ function App() {
               type="button"
             >
               <Link2 size={16} />
+            </button>
+            <button
+              aria-label="Añadir zona"
+              className="toolbar-button toolbar-button--icon"
+              onClick={() => addDrawing('zone')}
+              title="Añadir zona"
+              type="button"
+            >
+              <ShieldQuestion size={16} />
+            </button>
+            <button
+              aria-label="Añadir rectangulo"
+              className="toolbar-button toolbar-button--icon"
+              onClick={() => addDrawing('rectangle')}
+              title="Añadir rectangulo"
+              type="button"
+            >
+              <Square size={16} />
+            </button>
+            <button
+              aria-label="Añadir circulo"
+              className="toolbar-button toolbar-button--icon"
+              onClick={() => addDrawing('ellipse')}
+              title="Añadir circulo"
+              type="button"
+            >
+              <Circle size={16} />
+            </button>
+            <button
+              aria-label="Añadir texto"
+              className="toolbar-button toolbar-button--icon"
+              onClick={() => addDrawing('text')}
+              title="Añadir texto"
+              type="button"
+            >
+              <Type size={16} />
             </button>
           </div>
 
@@ -1756,11 +2039,6 @@ function App() {
             onDragOver={handleWorkspaceDragOver}
             onDrop={handleWorkspaceDrop}
           >
-            <CanvasViewContext
-              activeView={activeView}
-              nodes={nodes}
-              settings={settings}
-            />
             <ReactFlow
               defaultEdgeOptions={defaultEdgeOptions}
               edges={displayedEdges}
@@ -1768,22 +2046,24 @@ function App() {
               edgeTypes={edgeTypes}
               fitView
               fitViewOptions={{ padding: 0.18 }}
-              nodes={displayedNodes}
+              nodes={displayedCanvasNodes}
               nodesConnectable={false}
               nodeTypes={nodeTypes}
               onEdgesChange={handleEdgesChange}
               onEdgeClick={(_, edge) => {
                 setSelectedEdgeId(edge.id)
                 setSelectedNodeId(null)
+                setSelectedDrawingId(null)
                 setEditorNodeId(null)
               }}
               onEdgeDoubleClick={(_, edge) => openCableEditor(edge as BuilderEdge)}
               onInit={setReactFlowInstance}
-              onNodeClick={handleNodeClick}
-              onNodeDoubleClick={handleNodeDoubleClick}
-              onNodesChange={handleNodesChange}
+              onNodeClick={handleCanvasNodeClick}
+              onNodeDoubleClick={handleCanvasNodeDoubleClick}
+              onNodesChange={handleCanvasNodesChange}
               onPaneClick={() => {
                 setSelectedEdgeId(null)
+                setSelectedDrawingId(null)
                 if (interactionMode !== 'link') {
                   setSelectedNodeId(null)
                 }
@@ -1808,11 +2088,13 @@ function App() {
             <strong>
               {pendingLinkSource
                 ? `Origen seleccionado: ${pendingLinkSourceNode?.data.label ?? pendingLinkSource.nodeId}:${pendingLinkSourceNode ? getPortName(pendingLinkSourceNode, pendingLinkSource.portIndex) : pendingLinkSource.portIndex}`
-                : selectedEdge
-                  ? `Cable: ${selectedEdge.data?.label ?? selectedEdge.id}`
-                  : selectedNode
-                    ? `Equipo: ${selectedNode.data.label}`
-                    : `${topologySummary.assets} equipos · ${topologySummary.links} enlaces · ${topologySummary.interfaces} interfaces · ${operationMessage}`}
+                : selectedDrawing
+                  ? `Dibujo: ${selectedDrawing.data.label}`
+                  : selectedEdge
+                    ? `Cable: ${selectedEdge.data?.label ?? selectedEdge.id}`
+                    : selectedNode
+                      ? `Equipo: ${selectedNode.data.label}`
+                      : `${topologySummary.assets} equipos · ${topologySummary.links} enlaces · ${topologySummary.interfaces} interfaces · ${operationMessage}`}
             </strong>
           </div>
         </section>
@@ -1840,6 +2122,7 @@ function App() {
                     onClick={() => {
                       setSelectedNodeId(node.id)
                       setSelectedEdgeId(null)
+                      setSelectedDrawingId(null)
                     }}
                     onDoubleClick={() => {
                       setEditorNodeId(node.id)
@@ -1869,6 +2152,7 @@ function App() {
                     onClick={() => {
                       setSelectedEdgeId(edge.id)
                       setSelectedNodeId(null)
+                      setSelectedDrawingId(null)
                     }}
                     onDoubleClick={() => openCableEditor(edge)}
                     type="button"
@@ -2055,6 +2339,15 @@ function App() {
         />
       ) : null}
 
+      {editorDrawing ? (
+        <DrawingEditorModal
+          drawing={editorDrawing}
+          onChange={(patch) => updateDrawing(editorDrawing.id, patch)}
+          onClose={() => setDrawingEditorId(null)}
+          onDelete={removeSelectedDrawing}
+        />
+      ) : null}
+
       {portPicker ? (
         <PortPickerModal
           edges={edges}
@@ -2169,83 +2462,6 @@ function WorkflowChip({
     <div className="workflow-chip" data-state={state}>
       <span>{label}</span>
       <strong>{value}</strong>
-    </div>
-  )
-}
-
-function CanvasViewContext({
-  activeView,
-  nodes,
-  settings,
-}: {
-  activeView: TopologyView
-  nodes: BuilderNode[]
-  settings: TopologySettings
-}) {
-  const vlanBands = Array.from(
-    nodes.reduce((current, node) => {
-      current.set(node.data.vlanId, node.data.vlanName)
-      return current
-    }, new Map<number, string>()),
-  )
-    .sort(([left], [right]) => left - right)
-    .slice(0, 4)
-  const zoneBands = Array.from(
-    nodes.reduce((current, node) => {
-      current.set(node.data.zoneId, {
-        name: node.data.zoneName,
-        purdueLevel: node.data.purdueLevel,
-        securityLevel: node.data.securityLevel,
-      })
-      return current
-    }, new Map<string, { name: string; purdueLevel: PurdueLevel; securityLevel: SecurityLevel }>()),
-  )
-    .sort(([, left], [, right]) => left.purdueLevel - right.purdueLevel)
-    .slice(0, 4)
-
-  return (
-    <div className={`canvas-context canvas-context--${activeView}`} aria-hidden="true">
-      {activeView === 'physical' ? (
-        <>
-          <div className="plant-map plant-map--yard">
-            <span>{settings.siteName}</span>
-          </div>
-          <div className="plant-map plant-map--server-room">
-            <span>{settings.roomName}</span>
-            <strong>{settings.rackName}</strong>
-          </div>
-          <div className="plant-map plant-map--control-cell">
-            <span>Celda OT</span>
-            <strong>Control / Proceso</strong>
-          </div>
-          <div className="plant-map plant-map--dmz">
-            <span>DMZ industrial</span>
-          </div>
-        </>
-      ) : null}
-
-      {activeView === 'logical' ? (
-        <div className="logic-map">
-          {vlanBands.map(([vlanId, vlanName]) => (
-            <div className="logic-map__band" key={vlanId}>
-              <span>VLAN {vlanId}</span>
-              <strong>{vlanName}</strong>
-            </div>
-          ))}
-        </div>
-      ) : null}
-
-      {activeView === 'security' ? (
-        <div className="security-map">
-          {zoneBands.map(([zoneId, zone]) => (
-            <div className="security-map__band" key={zoneId}>
-              <span>L{zone.purdueLevel}</span>
-              <strong>{zone.name}</strong>
-              <small>{zone.securityLevel}</small>
-            </div>
-          ))}
-        </div>
-      ) : null}
     </div>
   )
 }
@@ -2560,7 +2776,12 @@ function ComplianceAssistantModal({
               <span>Baseline NIS2 + IEC 62443 + ISO/IEC 27001</span>
             </div>
           </div>
-          <button className="icon-button" onClick={onClose} type="button">
+          <button
+            aria-label="Cerrar selector de puerto"
+            className="icon-button"
+            onClick={onClose}
+            type="button"
+          >
             <X size={16} />
           </button>
         </div>
@@ -3202,6 +3423,155 @@ function PortPickerModal({
   )
 }
 
+function DrawingEditorModal({
+  drawing,
+  onChange,
+  onClose,
+  onDelete,
+}: {
+  drawing: DrawingNodeModel
+  onChange: (patch: Partial<DrawingNodeModel['data']>) => void
+  onClose: () => void
+  onDelete: () => void
+}) {
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Drawing editor">
+      <div className="modal-shell modal-shell--drawing">
+        <div className="modal-header">
+          <div className="modal-header__brand">
+            <Square size={18} />
+            <div>
+              <strong>Editar dibujo</strong>
+              <span>{drawingKindLabels[drawing.data.kind]}</span>
+            </div>
+          </div>
+          <button
+            aria-label="Cerrar editor de dibujo"
+            className="icon-button"
+            onClick={onClose}
+            type="button"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="modal-body">
+          <label className="field">
+            <span>Texto</span>
+            <input
+              value={drawing.data.label}
+              onChange={(event) => onChange({ label: event.target.value })}
+            />
+          </label>
+          <div className="field-grid">
+            <label className="field">
+              <span>Tipo</span>
+              <select
+                value={drawing.data.kind}
+                onChange={(event) => onChange({ kind: event.target.value as DrawingKind })}
+              >
+                {Object.entries(drawingKindLabels).map(([kind, label]) => (
+                  <option key={kind} value={kind}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>Vista</span>
+              <select
+                value={drawing.data.view}
+                onChange={(event) => onChange({ view: event.target.value as TopologyView })}
+              >
+                {viewOptions.map((view) => (
+                  <option key={view.id} value={view.id}>
+                    {view.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="field-grid">
+            <label className="field">
+              <span>Ancho</span>
+              <input
+                min="44"
+                type="number"
+                value={drawing.data.width}
+                onChange={(event) => onChange({ width: Number(event.target.value) })}
+              />
+            </label>
+            <label className="field">
+              <span>Alto</span>
+              <input
+                min="44"
+                type="number"
+                value={drawing.data.height}
+                onChange={(event) => onChange({ height: Number(event.target.value) })}
+              />
+            </label>
+          </div>
+          <div className="swatch-row" aria-label="Color del dibujo">
+            {drawingPalette.map((color) => (
+              <button
+                aria-label={`Color ${color}`}
+                className="swatch-button"
+                data-active={drawing.data.color === color}
+                key={color}
+                onClick={() => onChange({ color })}
+                style={{ backgroundColor: color }}
+                type="button"
+              />
+            ))}
+          </div>
+
+          {drawing.data.kind === 'zone' ? (
+            <div className="field-grid">
+              <label className="field">
+                <span>Nivel Purdue</span>
+                <select
+                  value={drawing.data.purdueLevel ?? 2}
+                  onChange={(event) =>
+                    onChange({ purdueLevel: Number(event.target.value) as PurdueLevel })
+                  }
+                >
+                  {purdueOptions.map((level) => (
+                    <option key={level} value={level}>
+                      L{level} · {purdueLabels[level]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Security Level</span>
+                <select
+                  value={drawing.data.securityLevel ?? 'SL-2'}
+                  onChange={(event) =>
+                    onChange({ securityLevel: event.target.value as SecurityLevel })
+                  }
+                >
+                  {securityLevelOptions.map((level) => (
+                    <option key={level} value={level}>
+                      {level}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="modal-footer">
+          <button className="danger-button" onClick={onDelete} type="button">
+            <Trash2 size={16} />
+            Eliminar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function CableEditorModal({
   draft,
   edges,
@@ -3242,7 +3612,12 @@ function CableEditorModal({
               </span>
             </div>
           </div>
-          <button className="icon-button" onClick={onCancel} type="button">
+          <button
+            aria-label="Cerrar editor de cable"
+            className="icon-button"
+            onClick={onCancel}
+            type="button"
+          >
             <X size={16} />
           </button>
         </div>
@@ -3298,36 +3673,6 @@ function CableEditorModal({
               </select>
             </label>
           </div>
-          <div className="route-editor">
-            <label className="field">
-              <span>Desplazamiento del trazado</span>
-              <input
-                max="180"
-                min="-180"
-                step="10"
-                type="range"
-                value={draft.routeOffset}
-                onChange={(event) =>
-                  onChange({
-                    ...draft,
-                    routeOffset: Number(event.target.value),
-                  })
-                }
-              />
-            </label>
-            <button
-              className="secondary-button"
-              onClick={() =>
-                onChange({
-                  ...draft,
-                  routeOffset: 0,
-                })
-              }
-              type="button"
-            >
-              Centrar trazado
-            </button>
-          </div>
         </div>
 
         <div className="modal-footer">
@@ -3347,7 +3692,7 @@ function CableEditorModal({
   )
 }
 
-function cloneSnapshot(snapshot: BuilderState): BuilderState {
+function cloneSnapshot(snapshot: CanvasHistoryState): CanvasHistoryState {
   return {
     settings: { ...snapshot.settings },
     nodes: snapshot.nodes.map((node) => ({
@@ -3368,10 +3713,15 @@ function cloneSnapshot(snapshot: BuilderState): BuilderState {
           : edge.markerEnd,
       style: edge.style ? { ...edge.style } : undefined,
     })),
+    drawings: snapshot.drawings.map((drawing) => ({
+      ...drawing,
+      data: { ...drawing.data },
+      position: { ...drawing.position },
+    })),
   }
 }
 
-function shouldRecordNodeChanges(changes: NodeChange<BuilderNode>[]): boolean {
+function shouldRecordNodeChanges<T extends CanvasNode>(changes: NodeChange<T>[]): boolean {
   return changes.some((change) => {
     if (change.type === 'remove' || change.type === 'add' || change.type === 'replace') {
       return true
@@ -3381,6 +3731,10 @@ function shouldRecordNodeChanges(changes: NodeChange<BuilderNode>[]): boolean {
     }
     return false
   })
+}
+
+function getNodeChangeId<T extends CanvasNode>(change: NodeChange<T>): string {
+  return 'id' in change ? change.id : change.item.id
 }
 
 function isEditableElement(element: HTMLElement | null): boolean {
@@ -3394,6 +3748,13 @@ function isEditableElement(element: HTMLElement | null): boolean {
     tag === 'select' ||
     element.isContentEditable
   )
+}
+
+function clampDrawingSize(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 120
+  }
+  return Math.max(44, Math.min(900, Math.round(value)))
 }
 
 function buildPortOptions(

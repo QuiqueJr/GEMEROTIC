@@ -175,7 +175,6 @@ export function createBuilderEdge(input: {
   source: string
   target: string
   label?: string
-  routeOffset?: number
   sourcePortIndex?: number
   targetPortIndex?: number
 }): BuilderEdge {
@@ -188,7 +187,6 @@ export function createBuilderEdge(input: {
       label: normalizeCableLabel(input.label, input.id),
       sourcePortIndex: normalizePortIndex(input.sourcePortIndex),
       targetPortIndex: normalizePortIndex(input.targetPortIndex),
-      routeOffset: normalizeRouteOffset(input.routeOffset),
     },
   }
 }
@@ -566,9 +564,6 @@ export function updateEdgeData(
             targetPortIndex: normalizePortIndex(
               patch.targetPortIndex ?? edge.data?.targetPortIndex,
             ),
-            routeOffset: normalizeRouteOffset(
-              patch.routeOffset ?? edge.data?.routeOffset,
-            ),
           },
         }
       : edge,
@@ -672,13 +667,6 @@ function normalizePortIndex(value: number | undefined): number {
     return 0
   }
   return Math.max(0, Math.trunc(value))
-}
-
-function normalizeRouteOffset(value: number | undefined): number {
-  if (value === undefined || !Number.isFinite(value)) {
-    return 0
-  }
-  return Math.max(-180, Math.min(180, Math.round(value)))
 }
 
 function sanitizeProtocol(value: string): string {

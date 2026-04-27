@@ -47,21 +47,34 @@ de configuracion.
 ## Vistas del builder
 
 - `Fisica`: configura sitio, sala, rack, activos, puertos, RU y cableado. El
-  canvas muestra una base de planta/sala/rack para situar los equipos en su
-  contexto fisico.
+  canvas permite dibujar zonas, rectangulos, circulos y texto movible para que
+  el operador modele salas, racks, celdas, lineas y areas de planta como en
+  GNS3.
 - `Logica`: configura VLANs, direcciones IPv4/IPv6, MAC, estado de interfaz y
-  gestion. El canvas prioriza bandas de VLAN e interfaces para revisar
-  conectividad logica sin mezclarla con ubicacion fisica.
+  gestion. El canvas prioriza enlaces directos, puertos y etiquetas opcionales
+  de interfaz para revisar conectividad logica sin mezclarla con ubicacion
+  fisica.
 - `Seguridad`: configura zonas IEC 62443, niveles Purdue, Security Level,
-  criticidad y protocolos permitidos en conductos. El canvas agrupa zonas y
-  niveles Purdue para revisar segmentacion OT.
+  criticidad y protocolos permitidos en conductos. El canvas permite dibujar
+  zonas Purdue/SL y mantenerlas separadas del modelo fisico.
+
+Las herramientas superiores de dibujo crean `zona`, `rectangulo`, `circulo` y
+`texto`. Cada elemento se mueve arrastrandolo sobre el workspace, se edita por
+doble clic y participa en `Supr`, `Ctrl/Cmd+Z` y `Ctrl/Cmd+Y`. Esta capa es
+visual: no se envia al backend para no mezclar responsabilidades entre Layer 1,
+Layer 2 y Layer 3.
+
+Los cables se crean con `Add Link`: se selecciona equipo origen, puerto origen,
+equipo destino y puerto destino. Los enlaces paralelos entre los mismos equipos
+se separan automaticamente y las etiquetas de interfaz se activan desde el boton
+de etiquetas, manteniendo ocultas por defecto como en GNS3.
 
 La iconografia usa Lucide para controles generales de interfaz y SVG propios
-para equipos de red/OT. Equinor Engineering Symbols y FUXA se usan como
-referencia visual industrial por su licencia MIT; los iconos Cisco y el pack
-minimalista de red se tratan solo como referencia visual salvo revision legal
-adicional, porque no conviene distribuir iconografia de marca o sin licencia
-clara dentro del producto.
+2D, planos y coloreados para equipos de red/OT. Equinor Engineering Symbols y
+FUXA se usan como referencia visual industrial por su licencia MIT; los iconos
+Cisco y el pack minimalista de red se tratan solo como referencia visual salvo
+revision legal adicional, porque no conviene distribuir iconografia de marca o
+sin licencia clara dentro del producto.
 
 El panel `Payload TopologyCreate` muestra el JSON exacto que se enviara al
 backend. Esa vista debe mantenerse como contrato visible entre React Flow,

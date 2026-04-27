@@ -61,17 +61,18 @@ TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
   - herramienta de enlace tipo GNS3: selección de origen, destino, puertos,
     nombre de cable y edición posterior por doble clic
   - edición de cables con nombre propio y puertos explícitos por extremo
-  - ajuste visual del trazado del cable desde el editor de enlace para evitar
-    controles decorativos no funcionales en el canvas
-  - reparto ortogonal de cables y separación visual de enlaces paralelos para
-    representar mejor comunicaciones entre los mismos equipos por puertos
-    distintos
+  - cables directos estilo GNS3, sin flechas por defecto, con etiquetas de
+    interfaz opcionales y separación visual automática de enlaces paralelos
+    entre los mismos equipos por puertos distintos
   - atajos de productividad (`Supr`, `Ctrl/Cmd+Z`, `Ctrl/Cmd+Y`,
     `Ctrl/Cmd+Shift+Z`, `Escape`)
   - etiquetas de interfaz ocultas por defecto, alineadas con el comportamiento
     base de GNS3
   - configuraciones del proyecto, conectividad y navegador de datos movidos a
     modales para no saturar el canvas
+  - dibujo editable tipo GNS3 para la vista física y de seguridad: zonas,
+    rectángulos, círculos y texto movibles, con color, tamaño y capa visual por
+    vista, sin contaminar el payload `TopologyCreate`
   - pestaña `Puertos` por equipo para activar o desactivar interfaces,
     marcarlas como gestión y asignar direccionamiento/MAC por puerto
   - consola inferior por pestañas: `Workspace` más una pestaña por equipo
@@ -80,11 +81,13 @@ TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
   - catálogo lateral con altura estable por tarjeta para que la distribución
     visual no cambie según el número de dispositivos de cada grupo
   - comprobación visual del entorno de despliegue desde la propia UI
-  - vistas diferenciadas por capa: base de planta/sala/rack en `Fisica`,
-    bandas de VLAN en `Logica` y agrupación Purdue/zona en `Seguridad`
-  - política de iconografía: Lucide para interfaz general, SVG propios para
-    equipos de red/OT y referencias industriales permisivas; iconografía Cisco
-    o sin licencia clara solo como referencia visual, no como asset distribuido
+  - vistas diferenciadas por capa: dibujo libre de planta/sala/rack en
+    `Fisica`, conectividad y puertos en `Logica`, y zonas Purdue/SL en
+    `Seguridad`
+  - política de iconografía: Lucide para interfaz general y SVG propios 2D,
+    planos y coloreados para equipos de red/OT; Equinor Engineering Symbols y
+    FUXA quedan como referencias permisivas, mientras que Cisco o packs sin
+    licencia clara solo se usan como referencia visual
 - Se incorporó una capa inicial de cumplimiento OT asistida:
   - `POST /api/v1/compliance/report` evalúa la topología contra una baseline
     GEMEROTIC trazable a `NIS2 + IEC 62443 + ISO/IEC 27001`

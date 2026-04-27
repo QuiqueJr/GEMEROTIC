@@ -18,7 +18,6 @@ export function CableEdge({
     targetX,
     targetY,
     data?.siblingOffset ?? 0,
-    data?.routeOffset ?? 0,
   )
 
   return (
@@ -32,8 +31,8 @@ export function CableEdge({
       />
       <circle
         className="cable-edge__terminal"
-        cx={geometry.points[3].x}
-        cy={geometry.points[3].y}
+        cx={geometry.points[1].x}
+        cy={geometry.points[1].y}
         r="4"
       />
       <EdgeLabelRenderer>
@@ -81,22 +80,18 @@ function buildCableGeometry(
   targetX: number,
   targetY: number,
   siblingOffset: number,
-  routeOffset: number,
 ) {
   const offsetPoints = applyParallelOffset(sourceX, sourceY, targetX, targetY, siblingOffset)
-  const points = buildOrthogonalPoints(
-    offsetPoints.sourceX,
-    offsetPoints.sourceY,
-    offsetPoints.targetX,
-    offsetPoints.targetY,
-    routeOffset,
-  )
+  const points = [
+    { x: offsetPoints.sourceX, y: offsetPoints.sourceY },
+    { x: offsetPoints.targetX, y: offsetPoints.targetY },
+  ]
   return {
     path: pointsToPath(points),
     points,
-    center: midpoint(points[1], points[2]),
-    sourceLabel: midpoint(points[0], points[1]),
-    targetLabel: midpoint(points[2], points[3]),
+    center: midpoint(points[0], points[1]),
+    sourceLabel: interpolate(points[0], points[1], 0.18),
+    targetLabel: interpolate(points[0], points[1], 0.82),
   }
 }
 
@@ -121,32 +116,6 @@ function applyParallelOffset(
   }
 }
 
-function buildOrthogonalPoints(
-  sourceX: number,
-  sourceY: number,
-  targetX: number,
-  targetY: number,
-  routeOffset: number,
-) {
-  if (Math.abs(targetX - sourceX) >= Math.abs(targetY - sourceY)) {
-    const middleX = sourceX + (targetX - sourceX) / 2 + routeOffset
-    return [
-      { x: sourceX, y: sourceY },
-      { x: middleX, y: sourceY },
-      { x: middleX, y: targetY },
-      { x: targetX, y: targetY },
-    ]
-  }
-
-  const middleY = sourceY + (targetY - sourceY) / 2 + routeOffset
-  return [
-    { x: sourceX, y: sourceY },
-    { x: sourceX, y: middleY },
-    { x: targetX, y: middleY },
-    { x: targetX, y: targetY },
-  ]
-}
-
 function pointsToPath(points: Array<{ x: number; y: number }>): string {
   return points
     .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x},${point.y}`)
@@ -154,8 +123,16 @@ function pointsToPath(points: Array<{ x: number; y: number }>): string {
 }
 
 function midpoint(left: { x: number; y: number }, right: { x: number; y: number }) {
+  return interpolate(left, right, 0.5)
+}
+
+function interpolate(
+  left: { x: number; y: number },
+  right: { x: number; y: number },
+  ratio: number,
+) {
   return {
-    x: left.x + (right.x - left.x) / 2,
-    y: left.y + (right.y - left.y) / 2,
+    x: left.x + (right.x - left.x) * ratio,
+    y: left.y + (right.y - left.y) * ratio,
   }
 }

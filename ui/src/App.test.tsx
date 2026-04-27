@@ -1,9 +1,10 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import App from './App'
 
 afterEach(() => {
+  cleanup()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
@@ -21,7 +22,11 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Seguridad' })).toBeInTheDocument()
     expect(screen.getByText('Topology Summary')).toBeInTheDocument()
     expect(screen.getByText('Servers Summary')).toBeInTheDocument()
-    expect(screen.getByText('Celda OT')).toBeInTheDocument()
+    expect(screen.getByText(/Celda OT/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Añadir zona' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Añadir rectangulo' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Añadir circulo' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Añadir texto' })).toBeInTheDocument()
   })
 
   it('crea un cable nuevo mediante el flujo por puertos tipo gns3', () => {
@@ -63,22 +68,29 @@ describe('App', () => {
     ).toBeInTheDocument()
   })
 
-  it('permite ajustar el trazado visual de un cable', () => {
+  it('permite crear y editar dibujos fisicos tipo gns3', () => {
     render(<App />)
 
-    const cableButton = screen
-      .getAllByText('uplink-core')
-      .map((element) => element.closest('button'))
-      .find((element): element is HTMLButtonElement => element !== null)
+    fireEvent.click(screen.getByRole('button', { name: 'Añadir rectangulo' }))
 
-    expect(cableButton).toBeDefined()
-    fireEvent.doubleClick(cableButton!)
+    const editor = screen.getByRole('dialog', { name: 'Drawing editor' })
+    expect(editor).toBeInTheDocument()
 
-    const routeInput = screen.getByLabelText('Desplazamiento del trazado')
-    fireEvent.change(routeInput, { target: { value: '80' } })
+    fireEvent.change(screen.getByLabelText('Texto'), {
+      target: { value: 'Sala MCC principal' },
+    })
+    fireEvent.change(screen.getByLabelText('Tipo'), {
+      target: { value: 'ellipse' },
+    })
+    fireEvent.change(screen.getByLabelText('Ancho'), {
+      target: { value: '240' },
+    })
+    fireEvent.change(screen.getByLabelText('Alto'), {
+      target: { value: '160' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar editor de dibujo' }))
 
-    expect((routeInput as HTMLInputElement).value).toBe('80')
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar enlace' }))
+    expect(screen.getByText('Sala MCC principal')).toBeInTheDocument()
   })
 
   it('muestra una pestaña de puertos en el editor del dispositivo', () => {
