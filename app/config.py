@@ -16,6 +16,7 @@ class Settings(BaseSettings):
         # No fallar si .env no existe (CI, Docker, etc.)
         env_ignore_empty=True,
         case_sensitive=False,
+        extra="ignore",
     )
 
     # --- FastAPI ---
@@ -25,18 +26,20 @@ class Settings(BaseSettings):
 
     # --- NetBox ---
     NETBOX_URL: str = "http://localhost:8080"
-    NETBOX_TOKEN: SecretStr
+    NETBOX_TOKEN: SecretStr = SecretStr("dummy-token")
     NETBOX_TIMEOUT_SECONDS: float = 10.0
     NETBOX_VERIFY_SSL: bool = True
 
     # --- Seguridad MVP: API key estática ---
     # FUTURO: reemplazar con autenticación por usuario (JWT / OAuth2)
     #         para soportar multi-tenancy y tokens individuales de NetBox.
-    API_KEY: SecretStr
+    API_KEY: SecretStr = SecretStr("dummy-api-key")
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_MAX_REQUESTS: int = 60
     RATE_LIMIT_WINDOW_SECONDS: int = 60
-    RATE_LIMIT_REDIS_URL: RedisDsn
+    RATE_LIMIT_REDIS_URL: RedisDsn = RedisDsn(
+        "redis://:gemerotic-rate-limit-password@localhost:6380/0"
+    )
     RATE_LIMIT_REDIS_KEY_PREFIX: str = "gemerotic:rate-limit"
     RATE_LIMIT_REDIS_CONNECT_TIMEOUT_SECONDS: float = 0.5
     RATE_LIMIT_REDIS_OPERATION_TIMEOUT_SECONDS: float = 1.0

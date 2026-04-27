@@ -25,7 +25,7 @@ def build_rate_limiter() -> RateLimitBackend:
         return DisabledRateLimiter()
 
     return RedisSlidingWindowRateLimiter(
-        redis_url=settings.RATE_LIMIT_REDIS_URL,
+        redis_url=str(settings.RATE_LIMIT_REDIS_URL),
         key_prefix=settings.RATE_LIMIT_REDIS_KEY_PREFIX,
         connect_timeout_seconds=settings.RATE_LIMIT_REDIS_CONNECT_TIMEOUT_SECONDS,
         operation_timeout_seconds=settings.RATE_LIMIT_REDIS_OPERATION_TIMEOUT_SECONDS,

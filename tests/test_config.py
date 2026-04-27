@@ -66,7 +66,7 @@ class TestSettings:
 
         settings = Settings(_env_file=None)
 
-        assert settings.RATE_LIMIT_REDIS_URL == (
+        assert str(settings.RATE_LIMIT_REDIS_URL) == (
             "redis://:gemerotic-rate-limit-password@localhost:6380/0"
         )
         assert settings.RATE_LIMIT_REDIS_KEY_PREFIX == "gemerotic:rate-limit"
