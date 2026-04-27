@@ -141,6 +141,7 @@ type CableDraft = {
   label: string
   sourcePortIndex: number
   targetPortIndex: number
+  routeOffset: number
 }
 
 const viewOptions: Array<{
@@ -320,6 +321,7 @@ function App() {
             displayLabel,
             showPortLabels: showInterfaceLabels,
             siblingOffset: siblingOffsets.get(edge.id) ?? 0,
+            routeOffset: edge.data?.routeOffset ?? 0,
             sourcePortName:
               sourceNode === undefined
                 ? ''
@@ -813,6 +815,7 @@ function App() {
         targetNode,
         targetEndpoint.portIndex,
       ),
+      routeOffset: 0,
       sourcePortIndex: sourceEndpoint.portIndex,
       targetPortIndex: targetEndpoint.portIndex,
     }
@@ -833,6 +836,7 @@ function App() {
       source: draft.sourceId,
       target: draft.targetId,
       label: draft.label,
+      routeOffset: draft.routeOffset,
       sourcePortIndex: draft.sourcePortIndex,
       targetPortIndex: draft.targetPortIndex,
     })
@@ -917,6 +921,7 @@ function App() {
       sourceId: edge.source,
       targetId: edge.target,
       label: edge.data?.label ?? edge.label?.toString() ?? edge.id,
+      routeOffset: edge.data?.routeOffset ?? 0,
       sourcePortIndex: edge.data?.sourcePortIndex ?? 0,
       targetPortIndex: edge.data?.targetPortIndex ?? 0,
     })
@@ -939,6 +944,7 @@ function App() {
       setEdges((currentEdges) =>
         updateEdgeData(currentEdges, linkDraft.id!, {
           label: linkDraft.label,
+          routeOffset: linkDraft.routeOffset,
           sourcePortIndex: linkDraft.sourcePortIndex,
           targetPortIndex: linkDraft.targetPortIndex,
         }),
@@ -951,6 +957,7 @@ function App() {
         source: linkDraft.sourceId,
         target: linkDraft.targetId,
         label: linkDraft.label,
+        routeOffset: linkDraft.routeOffset,
         sourcePortIndex: linkDraft.sourcePortIndex,
         targetPortIndex: linkDraft.targetPortIndex,
       })
@@ -1744,10 +1751,16 @@ function App() {
         <section className="workspace-pane" aria-label="GNS3 style workspace">
           <div
             className="workspace-canvas"
+            data-view={activeView}
             data-link-mode={interactionMode === 'link'}
             onDragOver={handleWorkspaceDragOver}
             onDrop={handleWorkspaceDrop}
           >
+            <CanvasViewContext
+              activeView={activeView}
+              nodes={nodes}
+              settings={settings}
+            />
             <ReactFlow
               defaultEdgeOptions={defaultEdgeOptions}
               edges={displayedEdges}
@@ -2156,6 +2169,83 @@ function WorkflowChip({
     <div className="workflow-chip" data-state={state}>
       <span>{label}</span>
       <strong>{value}</strong>
+    </div>
+  )
+}
+
+function CanvasViewContext({
+  activeView,
+  nodes,
+  settings,
+}: {
+  activeView: TopologyView
+  nodes: BuilderNode[]
+  settings: TopologySettings
+}) {
+  const vlanBands = Array.from(
+    nodes.reduce((current, node) => {
+      current.set(node.data.vlanId, node.data.vlanName)
+      return current
+    }, new Map<number, string>()),
+  )
+    .sort(([left], [right]) => left - right)
+    .slice(0, 4)
+  const zoneBands = Array.from(
+    nodes.reduce((current, node) => {
+      current.set(node.data.zoneId, {
+        name: node.data.zoneName,
+        purdueLevel: node.data.purdueLevel,
+        securityLevel: node.data.securityLevel,
+      })
+      return current
+    }, new Map<string, { name: string; purdueLevel: PurdueLevel; securityLevel: SecurityLevel }>()),
+  )
+    .sort(([, left], [, right]) => left.purdueLevel - right.purdueLevel)
+    .slice(0, 4)
+
+  return (
+    <div className={`canvas-context canvas-context--${activeView}`} aria-hidden="true">
+      {activeView === 'physical' ? (
+        <>
+          <div className="plant-map plant-map--yard">
+            <span>{settings.siteName}</span>
+          </div>
+          <div className="plant-map plant-map--server-room">
+            <span>{settings.roomName}</span>
+            <strong>{settings.rackName}</strong>
+          </div>
+          <div className="plant-map plant-map--control-cell">
+            <span>Celda OT</span>
+            <strong>Control / Proceso</strong>
+          </div>
+          <div className="plant-map plant-map--dmz">
+            <span>DMZ industrial</span>
+          </div>
+        </>
+      ) : null}
+
+      {activeView === 'logical' ? (
+        <div className="logic-map">
+          {vlanBands.map(([vlanId, vlanName]) => (
+            <div className="logic-map__band" key={vlanId}>
+              <span>VLAN {vlanId}</span>
+              <strong>{vlanName}</strong>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {activeView === 'security' ? (
+        <div className="security-map">
+          {zoneBands.map(([zoneId, zone]) => (
+            <div className="security-map__band" key={zoneId}>
+              <span>L{zone.purdueLevel}</span>
+              <strong>{zone.name}</strong>
+              <small>{zone.securityLevel}</small>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -3207,6 +3297,36 @@ function CableEditorModal({
                 ))}
               </select>
             </label>
+          </div>
+          <div className="route-editor">
+            <label className="field">
+              <span>Desplazamiento del trazado</span>
+              <input
+                max="180"
+                min="-180"
+                step="10"
+                type="range"
+                value={draft.routeOffset}
+                onChange={(event) =>
+                  onChange({
+                    ...draft,
+                    routeOffset: Number(event.target.value),
+                  })
+                }
+              />
+            </label>
+            <button
+              className="secondary-button"
+              onClick={() =>
+                onChange({
+                  ...draft,
+                  routeOffset: 0,
+                })
+              }
+              type="button"
+            >
+              Centrar trazado
+            </button>
           </div>
         </div>
 

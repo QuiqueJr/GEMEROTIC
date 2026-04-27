@@ -46,11 +46,22 @@ de configuracion.
 
 ## Vistas del builder
 
-- `Fisica`: configura sitio, sala, rack, activos, puertos, RU y cableado.
+- `Fisica`: configura sitio, sala, rack, activos, puertos, RU y cableado. El
+  canvas muestra una base de planta/sala/rack para situar los equipos en su
+  contexto fisico.
 - `Logica`: configura VLANs, direcciones IPv4/IPv6, MAC, estado de interfaz y
-  gestion.
+  gestion. El canvas prioriza bandas de VLAN e interfaces para revisar
+  conectividad logica sin mezclarla con ubicacion fisica.
 - `Seguridad`: configura zonas IEC 62443, niveles Purdue, Security Level,
-  criticidad y protocolos permitidos en conductos.
+  criticidad y protocolos permitidos en conductos. El canvas agrupa zonas y
+  niveles Purdue para revisar segmentacion OT.
+
+La iconografia usa Lucide para controles generales de interfaz y SVG propios
+para equipos de red/OT. Equinor Engineering Symbols y FUXA se usan como
+referencia visual industrial por su licencia MIT; los iconos Cisco y el pack
+minimalista de red se tratan solo como referencia visual salvo revision legal
+adicional, porque no conviene distribuir iconografia de marca o sin licencia
+clara dentro del producto.
 
 El panel `Payload TopologyCreate` muestra el JSON exacto que se enviara al
 backend. Esa vista debe mantenerse como contrato visible entre React Flow,

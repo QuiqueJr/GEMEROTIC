@@ -58,6 +58,7 @@ export type BuilderEdgeData = {
   label: string
   sourcePortIndex: number
   targetPortIndex: number
+  routeOffset?: number
   sourcePortName?: string
   targetPortName?: string
   siblingOffset?: number

@@ -486,8 +486,35 @@ button {
   position: relative;
 }
 
+.workspace-canvas::before {
+  background:
+    linear-gradient(rgba(82, 94, 105, 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(82, 94, 105, 0.12) 1px, transparent 1px);
+  background-size: 52px 52px;
+  content: '';
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 0;
+}
+
+.workspace-canvas[data-view='physical'] {
+  background: #c9d0d5;
+}
+
+.workspace-canvas[data-view='logical'] {
+  background: #c8d1d7;
+}
+
+.workspace-canvas[data-view='security'] {
+  background: #ccd3d2;
+}
+
 .workspace-canvas .react-flow {
+  background: transparent;
   min-height: 100%;
+  position: relative;
+  z-index: 2;
 }
 
 .workspace-canvas .react-flow__renderer {
@@ -496,6 +523,110 @@ button {
 
 .workspace-canvas .react-flow__pane {
   cursor: default;
+}
+
+.canvas-context {
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  position: absolute;
+  z-index: 1;
+}
+
+.plant-map {
+  align-items: start;
+  background: rgba(246, 248, 249, 0.36);
+  border: 1px solid rgba(86, 99, 109, 0.34);
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  position: absolute;
+}
+
+.plant-map span,
+.plant-map strong,
+.logic-map__band span,
+.logic-map__band strong,
+.security-map__band span,
+.security-map__band strong,
+.security-map__band small {
+  color: rgba(30, 40, 49, 0.62);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: 0;
+}
+
+.plant-map span,
+.logic-map__band span,
+.security-map__band span,
+.security-map__band small {
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.plant-map strong,
+.logic-map__band strong,
+.security-map__band strong {
+  font-size: 12px;
+}
+
+.plant-map--yard {
+  inset: 38px 42px 42px;
+}
+
+.plant-map--server-room {
+  height: 42%;
+  left: 8%;
+  top: 13%;
+  width: 34%;
+}
+
+.plant-map--control-cell {
+  bottom: 14%;
+  height: 40%;
+  right: 8%;
+  width: 38%;
+}
+
+.plant-map--dmz {
+  height: 21%;
+  left: 45%;
+  top: 16%;
+  width: 24%;
+}
+
+.logic-map {
+  bottom: 28px;
+  display: grid;
+  gap: 8px;
+  left: 34px;
+  position: absolute;
+  right: 34px;
+}
+
+.logic-map__band {
+  align-items: center;
+  background: rgba(247, 250, 252, 0.42);
+  border: 1px solid rgba(74, 94, 112, 0.28);
+  display: flex;
+  justify-content: space-between;
+  min-height: 32px;
+  padding: 0 12px;
+}
+
+.security-map {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  inset: 34px;
+  position: absolute;
+}
+
+.security-map__band {
+  align-content: end;
+  background: rgba(247, 250, 249, 0.32);
+  border-left: 1px solid rgba(92, 108, 98, 0.3);
+  display: grid;
+  gap: 4px;
+  padding: 12px;
 }
 
 .workspace-canvas[data-link-mode='true'] .react-flow__pane {
@@ -1372,14 +1503,6 @@ button {
   stroke-width: 1.8;
 }
 
-.cable-edge__elbow {
-  fill: #f8fafb;
-  opacity: 0.88;
-  pointer-events: none;
-  stroke: #687783;
-  stroke-width: 1.2;
-}
-
 .cable-edge__label {
   box-shadow: 0 4px 12px rgba(15, 19, 23, 0.08);
   font-weight: 700;
@@ -1390,6 +1513,18 @@ button {
   border-radius: 8px;
   font-size: 9px;
   padding: 2px 6px;
+}
+
+.route-editor {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.route-editor input[type='range'] {
+  accent-color: var(--accent);
+  padding: 0;
 }
 
 .empty-state strong {

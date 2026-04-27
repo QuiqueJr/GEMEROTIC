@@ -21,6 +21,7 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Seguridad' })).toBeInTheDocument()
     expect(screen.getByText('Topology Summary')).toBeInTheDocument()
     expect(screen.getByText('Servers Summary')).toBeInTheDocument()
+    expect(screen.getByText('Celda OT')).toBeInTheDocument()
   })
 
   it('crea un cable nuevo mediante el flujo por puertos tipo gns3', () => {
@@ -60,6 +61,24 @@ describe('App', () => {
     expect(
       screen.getByText(/Consola del runtime Linux del lab/i),
     ).toBeInTheDocument()
+  })
+
+  it('permite ajustar el trazado visual de un cable', () => {
+    render(<App />)
+
+    const cableButton = screen
+      .getAllByText('uplink-core')
+      .map((element) => element.closest('button'))
+      .find((element): element is HTMLButtonElement => element !== null)
+
+    expect(cableButton).toBeDefined()
+    fireEvent.doubleClick(cableButton!)
+
+    const routeInput = screen.getByLabelText('Desplazamiento del trazado')
+    fireEvent.change(routeInput, { target: { value: '80' } })
+
+    expect((routeInput as HTMLInputElement).value).toBe('80')
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar enlace' }))
   })
 
   it('muestra una pestaña de puertos en el editor del dispositivo', () => {

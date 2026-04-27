@@ -18,6 +18,7 @@ export function CableEdge({
     targetX,
     targetY,
     data?.siblingOffset ?? 0,
+    data?.routeOffset ?? 0,
   )
 
   return (
@@ -35,17 +36,6 @@ export function CableEdge({
         cy={geometry.points[3].y}
         r="4"
       />
-      {geometry.points.slice(1, 3).map((point, index) => (
-        <rect
-          className="cable-edge__elbow"
-          height="5"
-          key={`${id}-elbow-${index}`}
-          rx="1"
-          width="5"
-          x={point.x - 2.5}
-          y={point.y - 2.5}
-        />
-      ))}
       <EdgeLabelRenderer>
         {data?.displayLabel ? (
           <div
@@ -91,6 +81,7 @@ function buildCableGeometry(
   targetX: number,
   targetY: number,
   siblingOffset: number,
+  routeOffset: number,
 ) {
   const offsetPoints = applyParallelOffset(sourceX, sourceY, targetX, targetY, siblingOffset)
   const points = buildOrthogonalPoints(
@@ -98,6 +89,7 @@ function buildCableGeometry(
     offsetPoints.sourceY,
     offsetPoints.targetX,
     offsetPoints.targetY,
+    routeOffset,
   )
   return {
     path: pointsToPath(points),
@@ -134,9 +126,10 @@ function buildOrthogonalPoints(
   sourceY: number,
   targetX: number,
   targetY: number,
+  routeOffset: number,
 ) {
   if (Math.abs(targetX - sourceX) >= Math.abs(targetY - sourceY)) {
-    const middleX = sourceX + (targetX - sourceX) / 2
+    const middleX = sourceX + (targetX - sourceX) / 2 + routeOffset
     return [
       { x: sourceX, y: sourceY },
       { x: middleX, y: sourceY },
@@ -145,7 +138,7 @@ function buildOrthogonalPoints(
     ]
   }
 
-  const middleY = sourceY + (targetY - sourceY) / 2
+  const middleY = sourceY + (targetY - sourceY) / 2 + routeOffset
   return [
     { x: sourceX, y: sourceY },
     { x: sourceX, y: middleY },

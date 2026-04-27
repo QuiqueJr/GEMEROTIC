@@ -61,6 +61,8 @@ TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
   - herramienta de enlace tipo GNS3: selección de origen, destino, puertos,
     nombre de cable y edición posterior por doble clic
   - edición de cables con nombre propio y puertos explícitos por extremo
+  - ajuste visual del trazado del cable desde el editor de enlace para evitar
+    controles decorativos no funcionales en el canvas
   - reparto ortogonal de cables y separación visual de enlaces paralelos para
     representar mejor comunicaciones entre los mismos equipos por puertos
     distintos
@@ -78,6 +80,11 @@ TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
   - catálogo lateral con altura estable por tarjeta para que la distribución
     visual no cambie según el número de dispositivos de cada grupo
   - comprobación visual del entorno de despliegue desde la propia UI
+  - vistas diferenciadas por capa: base de planta/sala/rack en `Fisica`,
+    bandas de VLAN en `Logica` y agrupación Purdue/zona en `Seguridad`
+  - política de iconografía: Lucide para interfaz general, SVG propios para
+    equipos de red/OT y referencias industriales permisivas; iconografía Cisco
+    o sin licencia clara solo como referencia visual, no como asset distribuido
 - Se incorporó una capa inicial de cumplimiento OT asistida:
   - `POST /api/v1/compliance/report` evalúa la topología contra una baseline
     GEMEROTIC trazable a `NIS2 + IEC 62443 + ISO/IEC 27001`
