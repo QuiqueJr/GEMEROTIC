@@ -93,6 +93,15 @@ jobs:
           python -m pip install -e .[dev]
 
       - name: Render NetBox env files
+        env:
+          API_TOKEN_PEPPER: ci-pepper
+          NETBOX_SECRET_KEY: ci-secret-key
+          POSTGRES_PASSWORD: ci-postgres-password
+          REDIS_PASSWORD: ci-redis-password
+          REDIS_CACHE_PASSWORD: ci-redis-cache-password
+          RATE_LIMIT_REDIS_PASSWORD: gemerotic-rate-limit-password
+          SUPERUSER_PASSWORD: netbox-admin-password
+          SUPERUSER_API_TOKEN: 0123456789abcdef0123456789abcdef01234567
         run: ./scripts/render_netbox_env.sh --force
 
       - name: Validate Docker Compose file
@@ -122,6 +131,15 @@ jobs:
           python -m pip install -e .[dev]
 
       - name: Render NetBox env files
+        env:
+          API_TOKEN_PEPPER: ci-pepper
+          NETBOX_SECRET_KEY: ci-secret-key
+          POSTGRES_PASSWORD: ci-postgres-password
+          REDIS_PASSWORD: ci-redis-password
+          REDIS_CACHE_PASSWORD: ci-redis-cache-password
+          RATE_LIMIT_REDIS_PASSWORD: gemerotic-rate-limit-password
+          SUPERUSER_PASSWORD: netbox-admin-password
+          SUPERUSER_API_TOKEN: 0123456789abcdef0123456789abcdef01234567
         run: ./scripts/render_netbox_env.sh --force
 
       - name: Build and start NetBox stack
