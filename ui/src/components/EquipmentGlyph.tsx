@@ -110,11 +110,32 @@ function Screw({ x, y }: { x: number; y: number }) {
   )
 }
 
+function DeviceLabel({ children, x, y }: { children: string; x: number; y: number }) {
+  return (
+    <text
+      fill="var(--glyph-text)"
+      fontFamily="ui-monospace, SFMono-Regular, Consolas, monospace"
+      fontSize="5.4"
+      fontWeight="700"
+      textAnchor="middle"
+      x={x}
+      y={y}
+    >
+      {children}
+    </text>
+  )
+}
+
 function RackUnit({ kind }: { kind: 'router' | 'switch' | 'firewall' }) {
+  const label = kind === 'router' ? 'RTR' : kind === 'switch' ? 'SWITCH' : 'FW'
+
   return (
     <>
+      <rect fill="var(--glyph-side)" height="32" rx="4" width="8" x="8" y="22" />
+      <rect fill="var(--glyph-side)" height="32" rx="4" width="8" x="104" y="22" />
       <Frame x={14} y={24} width={92} height={28} radius={7} />
       <rect fill="var(--glyph-accent)" height="5" rx="2.5" width="22" x="22" y="28" />
+      <DeviceLabel x={78} y={33.5}>{label}</DeviceLabel>
       <path d="M18 38h84" opacity="0.16" stroke="var(--glyph-stroke)" strokeWidth="1" />
       <Screw x={20} y={30} />
       <Screw x={100} y={30} />
@@ -196,8 +217,10 @@ function FirewallFace() {
 function ServerTower({ kind }: { kind: 'server' | 'scada' }) {
   return (
     <>
+      <rect fill="var(--glyph-side)" height="48" rx="4" width="6" x="30" y="17" />
       <Frame x={36} y={14} width={32} height={52} radius={6} />
       <rect fill="rgba(255,255,255,0.16)" height="4" rx="2" width="20" x="42" y="18" />
+      <DeviceLabel x={52} y={25}>{kind === 'server' ? 'SRV' : 'SCADA'}</DeviceLabel>
       {kind === 'server' ? (
         <>
           {[28, 38, 48].map((y) => (
@@ -291,6 +314,8 @@ function PlcIcon() {
   return (
     <>
       <Frame x={30} y={20} width={44} height={38} radius={5} />
+      <rect fill="var(--glyph-side)" height="34" rx="3" width="7" x="23" y="22" />
+      <rect fill="var(--glyph-side)" height="34" rx="3" width="7" x="74" y="22" />
       {Array.from({ length: 8 }, (_, index) => 34 + index * 4.4).map((x) => (
         <rect
           fill="var(--glyph-detail-dark)"
@@ -303,6 +328,7 @@ function PlcIcon() {
         />
       ))}
       <rect fill="rgba(255,255,255,0.2)" height="14" rx="2.4" width="16" x="38" y="30" />
+      <DeviceLabel x={46} y={39.5}>PLC</DeviceLabel>
       <StatusLights values={[42, 47, 52]} />
       {Array.from({ length: 6 }, (_, index) => 38 + index * 5.2).map((x) => (
         <rect
@@ -344,6 +370,7 @@ function HmiIcon() {
         y="26"
       />
       <rect fill="rgba(255,255,255,0.28)" height="2.4" rx="1" width="14" x="43" y="29" />
+      <DeviceLabel x={50} y={36}>HMI</DeviceLabel>
       <path
         d="m41 40 5-4 4 2 7-6"
         stroke="var(--glyph-detail)"
@@ -362,6 +389,7 @@ function RtuIcon() {
   return (
     <>
       <Frame x={34} y={22} width={36} height={34} radius={5} />
+      <DeviceLabel x={52} y={36}>RTU</DeviceLabel>
       <path
         d="M52 12v10m0-10 5 5m-5-5-5 5"
         stroke="var(--glyph-stroke)"
@@ -391,6 +419,7 @@ function PatchPanel() {
     <>
       <Frame x={14} y={30} width={92} height={18} radius={6} />
       <rect fill="rgba(255,255,255,0.22)" height="3" rx="1.5" width="22" x="22" y="34" />
+      <DeviceLabel x={87} y={38}>PATCH</DeviceLabel>
       {Array.from({ length: 10 }, (_, index) => 28 + index * 7.2).map((x) => (
         <g key={`patch-${x}`}>
           <rect fill="var(--glyph-detail-dark)" height="5" rx="1" width="4" x={x} y="37" />
@@ -415,6 +444,7 @@ function WirelessAccessPoint() {
         strokeWidth="1.8"
       />
       <circle cx="60" cy="40" fill="var(--glyph-led)" r="2.2" />
+      <DeviceLabel x={60} y={61}>AP</DeviceLabel>
       <path
         d="M49 37c6-5 16-5 22 0M44 31c9-8 23-8 32 0"
         stroke="var(--glyph-accent)"

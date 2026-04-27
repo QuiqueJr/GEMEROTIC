@@ -23,6 +23,29 @@ export function CableEdge({
   return (
     <>
       <BaseEdge id={id} interactionWidth={28} markerEnd={markerEnd} path={geometry.path} style={style} />
+      <circle
+        className="cable-edge__terminal"
+        cx={geometry.points[0].x}
+        cy={geometry.points[0].y}
+        r="4"
+      />
+      <circle
+        className="cable-edge__terminal"
+        cx={geometry.points[3].x}
+        cy={geometry.points[3].y}
+        r="4"
+      />
+      {geometry.points.slice(1, 3).map((point, index) => (
+        <rect
+          className="cable-edge__elbow"
+          height="5"
+          key={`${id}-elbow-${index}`}
+          rx="1"
+          width="5"
+          x={point.x - 2.5}
+          y={point.y - 2.5}
+        />
+      ))}
       <EdgeLabelRenderer>
         {data?.displayLabel ? (
           <div
@@ -78,6 +101,7 @@ function buildCableGeometry(
   )
   return {
     path: pointsToPath(points),
+    points,
     center: midpoint(points[1], points[2]),
     sourceLabel: midpoint(points[0], points[1]),
     targetLabel: midpoint(points[2], points[3]),

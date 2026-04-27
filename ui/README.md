@@ -39,8 +39,10 @@ La interfaz permite configurar la `Base URL` del API y la cabecera
 
 Las acciones protegidas de la toolbar (`Bootstrap`, `Artefactos`, `Deploy`,
 `Compliance`, `Persistir`, runtime del lab) verifican primero esa conectividad.
-Si falta `Base URL` o `X-API-Key`, la UI redirige al modal `Proyecto` en lugar
-de fallar de forma silenciosa.
+Si falta `Base URL` o `X-API-Key`, la UI lo informa en la barra de estado del
+workflow y en la consola inferior sin cambiar de herramienta ni abrir modales
+automaticamente. El modal `Proyecto` se abre desde el menu superior o el boton
+de configuracion.
 
 ## Vistas del builder
 

@@ -43,8 +43,8 @@ describe('App', () => {
     fireEvent.click(within(targetPicker).getByRole('button', { name: /eth3/i }))
 
     expect(
-      screen.getByText(/Cable creado: Router Core eth1 -> Switch Acceso eth3/i),
-    ).toBeInTheDocument()
+      screen.getAllByText(/Cable creado: Router Core eth1 -> Switch Acceso eth3/i).length,
+    ).toBeGreaterThan(0)
   })
 
   it('abre una consola dedicada por nodo seleccionado', () => {
@@ -73,17 +73,18 @@ describe('App', () => {
     expect(screen.getAllByLabelText('Enlace activo').length).toBeGreaterThan(0)
   })
 
-  it('redirige a Proyecto cuando una accion protegida no tiene X-API-Key', () => {
+  it('informa acciones protegidas sin abrir Proyecto automaticamente', () => {
     render(<App />)
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Bootstrap NetBox' })[0])
 
     expect(
-      screen.getByRole('dialog', { name: 'Project settings' }),
-    ).toBeInTheDocument()
+      screen.queryByRole('dialog', { name: 'Project settings' }),
+    ).not.toBeInTheDocument()
     expect(
-      screen.getByText(/Configura X-API-Key en Proyecto antes de ejecutar: Bootstrap NetBox/i),
-    ).toBeInTheDocument()
+      screen.getAllByText(/Configura X-API-Key en Proyecto antes de ejecutar: Bootstrap NetBox/i)
+        .length,
+    ).toBeGreaterThan(0)
   })
 
   it('genera artefactos desde la toolbar cuando la conectividad esta configurada', async () => {

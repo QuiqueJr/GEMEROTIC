@@ -103,6 +103,14 @@ const securityLevelOptions: SecurityLevel[] = ['SL-0', 'SL-1', 'SL-2', 'SL-3', '
 const purdueOptions: PurdueLevel[] = [0, 1, 2, 3, 4, 5]
 
 type OperationStatus = 'idle' | 'running' | 'success' | 'error'
+type WorkflowState =
+  | 'online'
+  | 'ready'
+  | 'missing'
+  | 'partial'
+  | 'unchecked'
+  | 'running'
+  | 'error'
 type EditorTab = 'equipment' | 'ports' | 'logical' | 'security'
 type InteractionMode = 'select' | 'link'
 type DataTab = 'topology' | 'artifacts' | 'run' | 'compliance'
@@ -452,7 +460,6 @@ function App() {
   function showActionRequired(message: string) {
     setOperationStatus('error')
     setOperationMessage(message)
-    setShowProjectSettings(true)
     appendConsole(message, 'error')
   }
 
@@ -1595,6 +1602,70 @@ function App() {
             </button>
           </div>
         </div>
+        <div className="workflow-strip" role="status" aria-live="polite">
+          <div className="workflow-strip__chips">
+            <WorkflowChip
+              label="API"
+              state={
+                hasApiBaseUrl
+                  ? operationStatus === 'running'
+                    ? 'running'
+                    : 'ready'
+                  : 'missing'
+              }
+              value={apiBaseUrl.replace(/^https?:\/\//, '') || 'sin url'}
+            />
+            <WorkflowChip
+              label="NetBox"
+              state={
+                health === null
+                  ? 'unchecked'
+                  : health.checks.netbox_connected
+                    ? 'online'
+                    : 'error'
+              }
+              value={health?.checks.netbox_connected ? 'online' : 'sin verificar'}
+            />
+            <WorkflowChip
+              label="Pipeline"
+              state={
+                toolReport === null
+                  ? 'unchecked'
+                  : allToolsInstalled
+                    ? 'ready'
+                    : 'partial'
+              }
+              value={
+                toolReport === null
+                  ? 'sin verificar'
+                  : `${toolReport.tools.filter((tool) => tool.installed).length}/${
+                      toolReport.tools.length
+                    }`
+              }
+            />
+            <WorkflowChip
+              label="Lab"
+              state={labStatus === null ? 'unchecked' : 'online'}
+              value={labStatus === null ? 'sin runtime' : `${labStatus.nodes.length} nodos`}
+            />
+            <WorkflowChip
+              label="Compliance"
+              state={
+                complianceReport === null
+                  ? 'unchecked'
+                  : complianceReport.summary.failed_controls > 0
+                    ? 'error'
+                    : complianceReport.summary.warned_controls > 0
+                      ? 'partial'
+                      : 'ready'
+              }
+              value={complianceReport?.summary.overall_posture ?? 'sin informe'}
+            />
+          </div>
+          <p className="workflow-strip__message" data-tone={operationStatus}>
+            {operationMessage}
+          </p>
+        </div>
       </header>
 
       <section className="workspace-grid">
@@ -2066,6 +2137,23 @@ function StatusDot({ tone }: { tone: OperationStatus }) {
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="metric-chip">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  )
+}
+
+function WorkflowChip({
+  label,
+  state,
+  value,
+}: {
+  label: string
+  state: WorkflowState
+  value: string
+}) {
+  return (
+    <div className="workflow-chip" data-state={state}>
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
