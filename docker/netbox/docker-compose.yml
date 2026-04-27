@@ -65,7 +65,7 @@ services:
         - pg_isready -q -t 5 -d $$POSTGRES_DB -U $$POSTGRES_USER
       start_period: 45s
       interval: 15s
-      timeout: 15s
+      timeout: 30s
       retries: 10
     restart: unless-stopped
     volumes:
