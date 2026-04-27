@@ -24,10 +24,10 @@ services:
       test:
         - CMD-SHELL
         - curl -fsS http://localhost:8080/login/ >/dev/null || exit 1
-      start_period: 300s
-      interval: 30s
-      timeout: 10s
-      retries: 20
+      start_period: 120s
+      interval: 20s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
     volumes:
       - netbox-media-files:/opt/netbox/netbox/media:rw
@@ -49,9 +49,9 @@ services:
       test:
         - CMD-SHELL
         - ps -aux | grep -v grep | grep -q rqworker || exit 1
-      start_period: 60s
-      interval: 30s
-      timeout: 10s
+      start_period: 30s
+      interval: 20s
+      timeout: 5s
       retries: 10
 
   postgres:
@@ -62,11 +62,11 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - pg_isready -q -t 5 -d $$POSTGRES_DB -U $$POSTGRES_USER
-      start_period: 45s
-      interval: 15s
+        - pg_isready -q -t 2 -d $$POSTGRES_DB -U $$POSTGRES_USER
+      start_period: 20s
+      interval: 10s
       timeout: 30s
-      retries: 10
+      retries: 5
     restart: unless-stopped
     volumes:
       - netbox-postgres:/var/lib/postgresql:rw

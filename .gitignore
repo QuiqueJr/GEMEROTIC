@@ -52,6 +52,3 @@ init_system.sh
 excalidraw.log
 .gemini_security/
 GEMINI.md
-
-.gemini/
-gha-creds-*.json
