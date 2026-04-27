@@ -1,0 +1,30 @@
+services:
+  gemerotic-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gemerotic-api
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    networks:
+      - netbox_default
+
+  gemerotic-ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+    container_name: gemerotic-ui
+    restart: always
+    ports:
+      - "3000:80"
+    depends_on:
+      - gemerotic-api
+    networks:
+      - netbox_default
+
+networks:
+  netbox_default:
+    external: true

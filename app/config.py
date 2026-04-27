@@ -5,6 +5,7 @@ Usa pydantic-settings para validar y tipar las variables al iniciar.
 
 from typing import Literal
 
+from pydantic import RedisDsn, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,6 +15,7 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         # No fallar si .env no existe (CI, Docker, etc.)
         env_ignore_empty=True,
+        case_sensitive=False,
     )
 
     # --- FastAPI ---
@@ -23,18 +25,18 @@ class Settings(BaseSettings):
 
     # --- NetBox ---
     NETBOX_URL: str = "http://localhost:8080"
-    NETBOX_TOKEN: str = ""
+    NETBOX_TOKEN: SecretStr
     NETBOX_TIMEOUT_SECONDS: float = 10.0
     NETBOX_VERIFY_SSL: bool = True
 
     # --- Seguridad MVP: API key estática ---
     # FUTURO: reemplazar con autenticación por usuario (JWT / OAuth2)
     #         para soportar multi-tenancy y tokens individuales de NetBox.
-    API_KEY: str = ""
+    API_KEY: SecretStr
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_MAX_REQUESTS: int = 60
     RATE_LIMIT_WINDOW_SECONDS: int = 60
-    RATE_LIMIT_REDIS_URL: str = "redis://:gemerotic-rate-limit-password@localhost:6380/0"
+    RATE_LIMIT_REDIS_URL: RedisDsn
     RATE_LIMIT_REDIS_KEY_PREFIX: str = "gemerotic:rate-limit"
     RATE_LIMIT_REDIS_CONNECT_TIMEOUT_SECONDS: float = 0.5
     RATE_LIMIT_REDIS_OPERATION_TIMEOUT_SECONDS: float = 1.0
@@ -45,12 +47,15 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5173",
     )
 
+    # --- Proxy y Red ---
+    TRUSTED_PROXIES: list[str] = []
+
     # --- Asistente de cumplimiento ---
     COMPLIANCE_ASSISTANT_PROVIDER: Literal["local", "ollama"] = "local"
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = ""
     OLLAMA_TIMEOUT_SECONDS: float = 30.0
-    OLLAMA_API_KEY: str = ""
+    OLLAMA_API_KEY: SecretStr = SecretStr("")
 
 
 # Instancia única — se importa donde se necesite

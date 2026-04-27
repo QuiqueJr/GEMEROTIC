@@ -39,7 +39,7 @@ def require_api_key(
 
     El servicio falla en modo cerrado si la clave no está configurada.
     """
-    configured_api_key = settings.API_KEY.strip()
+    configured_api_key = settings.API_KEY.get_secret_value().strip()
     if not configured_api_key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -129,20 +129,27 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return f"{identity}:{client_host}:{method}:{path}"
 
     def _client_host(self, request: Request) -> str:
-        forwarded_for = request.headers.get("X-Forwarded-For", "")
-        if forwarded_for.strip():
-            return forwarded_for.split(",")[0].strip()
+        client_ip = request.client.host if request.client is not None else ""
+        
+        # Solo confiar en cabeceras de proxy si el cliente directo es de confianza
+        is_trusted = (
+            "*" in settings.TRUSTED_PROXIES
+            or client_ip in settings.TRUSTED_PROXIES
+        )
+        
+        if is_trusted:
+            forwarded_for = request.headers.get("X-Forwarded-For", "")
+            if forwarded_for.strip():
+                return forwarded_for.split(",")[0].strip()
 
-        real_ip = request.headers.get("X-Real-IP", "").strip()
-        if real_ip:
-            return real_ip
+            real_ip = request.headers.get("X-Real-IP", "").strip()
+            if real_ip:
+                return real_ip
 
-        if request.client is not None:
-            return request.client.host
-        return "unknown"
+        return client_ip or "unknown"
 
     def _client_identity(self, request: Request) -> str:
-        configured_api_key = settings.API_KEY.strip()
+        configured_api_key = settings.API_KEY.get_secret_value().strip()
         api_key = request.headers.get(API_KEY_HEADER_NAME, "").strip()
         if (
             not configured_api_key

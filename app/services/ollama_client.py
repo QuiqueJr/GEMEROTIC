@@ -47,39 +47,37 @@ class OllamaComplianceClient:
 
     def answer(
         self,
-        prompt: str,
+        messages: list[dict[str, str]],
         context: dict[str, Any],
     ) -> OllamaComplianceOutput:
         """Solicitar una respuesta JSON estricta al modelo."""
         if not self.configured:
             raise RuntimeError("Ollama model is not configured")
 
+        # Inyectar el contexto de la topología en el primer mensaje de usuario o como sistema
+        full_messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are GEMEROTIC OT compliance assistant. "
+                    "You can only answer OT topology and compliance questions "
+                    "using the provided report and topology context. "
+                    "Never claim legal certification. "
+                    "Never mark not assessed controls as compliant. "
+                    "If the question is outside scope, set in_scope=false and "
+                    "briefly refuse. "
+                    f"Topology Context:\n{context}"
+                ),
+            },
+            *messages,
+        ]
+
         payload = {
             "model": self._model,
             "stream": False,
             "format": OllamaComplianceOutput.model_json_schema(),
             "options": {"temperature": 0},
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are GEMEROTIC OT compliance assistant. "
-                        "You can only answer OT topology and compliance questions "
-                        "using the provided report and topology context. "
-                        "Never claim legal certification. "
-                        "Never mark not assessed controls as compliant. "
-                        "If the question is outside scope, set in_scope=false and "
-                        "briefly refuse."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        f"{prompt}\n\n"
-                        f"Context:\n{context}"
-                    ),
-                },
-            ],
+            "messages": full_messages,
         }
         headers = {"Content-Type": "application/json"}
         if self._api_key:
