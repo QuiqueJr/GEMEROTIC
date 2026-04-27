@@ -54,7 +54,8 @@ class OllamaComplianceClient:
         if not self.configured:
             raise RuntimeError("Ollama model is not configured")
 
-        # Inyectar el contexto de la topología en el primer mensaje de usuario o como sistema
+        # Inyectar el contexto de la topología en el primer mensaje
+        # de usuario o como sistema
         full_messages = [
             {
                 "role": "system",
