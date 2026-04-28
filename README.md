@@ -124,6 +124,16 @@ TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
   implementarla de extremo a extremo.
 - La raíz del backend (`/`) redirige a `/docs` y `favicon.ico` deja de
   generar ruido `404` en desarrollo local
+- Se añade despliegue Docker para servidor Linux:
+  - `Dockerfile` del API con `docker` CLI, `containerlab` y `ansible-core`
+    para que `GET /api/v1/pipeline/tools` funcione dentro del contenedor
+  - `docker-compose.api.yml` ejecuta el API con red host, privilegios
+    controlados, socket Docker y `/run/netns`, requisitos operativos de
+    Containerlab
+  - `ui/Dockerfile` sirve el build de React mediante nginx en el puerto `3000`
+  - la UI calcula por defecto la URL del API desde el host desde el que se
+    sirve, por ejemplo `http://212.128.44.220:8000` al abrir el frontend del
+    servidor
 
 ### Fuera de alcance de Step 10
 

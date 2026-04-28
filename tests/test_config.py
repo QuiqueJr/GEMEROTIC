@@ -70,3 +70,13 @@ class TestSettings:
             "redis://:gemerotic-rate-limit-password@localhost:6380/0"
         )
         assert settings.RATE_LIMIT_REDIS_KEY_PREFIX == "gemerotic:rate-limit"
+
+    def test_settings_ignore_non_api_operational_variables(self, monkeypatch):
+        """Variables de despliegue ajenas al API no deben romper el arranque."""
+        monkeypatch.setenv("SERVER_IP", "127.0.0.1")
+        monkeypatch.setenv("SERVER_USER", "operator")
+        monkeypatch.setenv("GITHUB_TOKEN", "dummy-token")
+
+        settings = Settings(_env_file=None)
+
+        assert settings.APP_NAME == "GEMEROTIC"

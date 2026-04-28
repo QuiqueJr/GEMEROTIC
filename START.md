@@ -219,6 +219,58 @@ curl -X POST http://localhost:8000/api/v1/netbox/bootstrap `
 
 ---
 
+## 9. Despliegue en servidor Linux
+
+En servidor Linux se recomienda ejecutar NetBox/Valkey con el compose de
+NetBox y el API con `docker-compose.api.yml`. El contenedor del API se ejecuta
+con red host, socket Docker y `/run/netns` porque el Step 10 necesita lanzar
+Containerlab y Ansible desde el runtime del API.
+
+> No guardar `SERVER_PASS`, `GITHUB_TOKEN` ni credenciales SSH dentro de `.env`.
+> Ese fichero solo debe contener configuracion consumida por GEMEROTIC.
+
+Crear `.env` en la raiz del repo en el servidor:
+
+```env
+API_KEY=<API_KEY_GENERADA>
+NETBOX_URL=http://127.0.0.1:8080
+NETBOX_TOKEN=<NETBOX_TOKEN_NBT>
+NETBOX_TIMEOUT_SECONDS=10.0
+NETBOX_VERIFY_SSL=true
+
+RATE_LIMIT_ENABLED=true
+RATE_LIMIT_MAX_REQUESTS=60
+RATE_LIMIT_WINDOW_SECONDS=60
+RATE_LIMIT_REDIS_URL=redis://:<RATE_LIMIT_REDIS_PASSWORD>@127.0.0.1:6380/0
+RATE_LIMIT_REDIS_KEY_PREFIX=gemerotic:rate-limit
+RATE_LIMIT_REDIS_CONNECT_TIMEOUT_SECONDS=0.5
+RATE_LIMIT_REDIS_OPERATION_TIMEOUT_SECONDS=1.0
+
+CORS_ALLOWED_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000","http://212.128.44.220:3000"]
+```
+
+Levantar o reconstruir el API y la UI:
+
+```bash
+docker compose -f docker-compose.api.yml up -d --build
+```
+
+Verificar:
+
+```bash
+curl http://127.0.0.1:8000/api/v1/health
+curl -H "X-API-Key: <API_KEY_GENERADA>" http://127.0.0.1:8000/api/v1/pipeline/tools
+curl -I http://127.0.0.1:3000
+```
+
+Accesos esperados:
+
+- UI: `http://212.128.44.220:3000`
+- API docs: `http://212.128.44.220:8000/docs`
+- NetBox: `http://212.128.44.220:8080`
+
+---
+
 ## 9. Probar la UI con Bun
 
 El frontend se ejecuta con Bun, no con npm. Desde otra terminal:

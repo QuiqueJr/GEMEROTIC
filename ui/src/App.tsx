@@ -307,7 +307,7 @@ function App() {
   const [linkDraft, setLinkDraft] = useState<CableDraft | null>(null)
   const [historyPast, setHistoryPast] = useState<CanvasHistoryState[]>([])
   const [historyFuture, setHistoryFuture] = useState<CanvasHistoryState[]>([])
-  const [apiBaseUrl, setApiBaseUrl] = useState('http://localhost:8000')
+  const [apiBaseUrl, setApiBaseUrl] = useState(() => getDefaultApiBaseUrl())
   const [apiKey, setApiKey] = useState('')
   const [reactFlowInstance, setReactFlowInstance] =
     useState<ReactFlowInstance<CanvasNode, BuilderEdge> | null>(null)
@@ -2501,6 +2501,19 @@ function App() {
       ) : null}
     </main>
   )
+}
+
+function getDefaultApiBaseUrl(): string {
+  if (typeof window === 'undefined') {
+    return 'http://localhost:8000'
+  }
+
+  const hostname = window.location.hostname
+  if (!hostname || hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'http://localhost:8000'
+  }
+
+  return `${window.location.protocol}//${hostname}:8000`
 }
 
 function CategoryGlyph({ groupId }: { groupId: string }) {

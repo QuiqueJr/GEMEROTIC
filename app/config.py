@@ -14,6 +14,8 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         # No fallar si .env no existe (CI, Docker, etc.)
         env_ignore_empty=True,
+        # Ignorar variables operativas ajenas al API si aparecen en .env local.
+        extra="ignore",
     )
 
     # --- FastAPI ---

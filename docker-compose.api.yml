@@ -1,0 +1,28 @@
+services:
+  gemerotic-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: gemerotic/api:latest
+    container_name: gemerotic-api
+    env_file:
+      - .env
+    network_mode: host
+    privileged: true
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /run/netns:/run/netns
+      - ./var:/app/var
+
+  gemerotic-ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+    image: gemerotic/ui:latest
+    container_name: gemerotic-ui
+    depends_on:
+      - gemerotic-api
+    ports:
+      - "3000:80"
+    restart: unless-stopped

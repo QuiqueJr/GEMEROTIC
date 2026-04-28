@@ -85,3 +85,20 @@ class TestRuntimeRequirements:
         requirements = Path("requirements.txt").read_text(encoding="utf-8")
 
         assert "redis>=5.2.0" in requirements
+
+    def test_api_image_installs_pipeline_runtime_tools(self):
+        """La imagen del API debe poder ejecutar el Step 10 completo."""
+        dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
+
+        assert "docker:28-cli" in dockerfile
+        assert "containerlab_" in dockerfile
+        assert "ansible-core" in dockerfile
+
+    def test_api_compose_uses_host_network_and_docker_socket(self):
+        """Containerlab necesita red host, privilegios y socket Docker."""
+        compose = Path("docker-compose.api.yml").read_text(encoding="utf-8")
+
+        assert "network_mode: host" in compose
+        assert "privileged: true" in compose
+        assert "/var/run/docker.sock:/var/run/docker.sock" in compose
+        assert "/run/netns:/run/netns" in compose

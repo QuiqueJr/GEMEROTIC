@@ -1,0 +1,16 @@
+.git
+.venv
+.pytest_cache
+.ruff_cache
+.codex
+node_modules
+ui/node_modules
+ui/dist
+dist
+build
+var
+.env
+docker/netbox/env/*.local.env
+docker/netbox/.env
+__pycache__
+*.pyc
