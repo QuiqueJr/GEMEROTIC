@@ -18,7 +18,41 @@ UI (React Flow) -> Core API (FastAPI) -> SSoT (NetBox) -> Generador de Configura
 
 ---
 
-## Estado Actual: Step 10 - Ejecucion Controlada de Containerlab y Ansible
+## Estado Actual: Step 11 - Validacion Batfish con Perfiles Mixtos
+
+### Objetivo de este paso
+
+Implementar una arquitectura de validacion hibrida en Batfish que permita analizar
+redes industriales con planos de control mixtos (Network OS y Linux/Host):
+
+```
+TopologyCreate -> Mixed Pipeline -> NOS Configs + Linux JSONs -> Batfish Analysis
+```
+
+### Alcance inicial permitido
+
+- Diferenciar generacion de artefactos por tipo de activo (`NOS` vs `Linux`).
+- Plantillas Jinja2 para Arista cEOS (`nos.cfg.j2`).
+- Plantillas Jinja2 para hosts Linux (`host.json.j2`, `host.iptables.j2`).
+- Traduccion de `Conduits` (Capa 3) a reglas de filtrado persistentes.
+- Verificacion de sintaxis y conectividad logica en Batfish.
+
+### Avance actual dentro de Step 11
+
+- `pipeline_artifacts.py` actualizado para manejar `ProfileType.NOS` y `ProfileType.LINUX`.
+- Mapeo automatico: `ROUTER`, `SWITCH`, `FIREWALL` -> `NOS`. Resto -> `LINUX`.
+- Los `Conduits` entre zonas se traducen a reglas de firewall en los hosts para validacion de segmentacion.
+- Artefactos generados bajo `batfish/configs/` y `batfish/hosts/`.
+
+### Fuera de alcance de Step 11
+
+- No ejecutar el servidor de Batfish desde el API (solo generacion de configs).
+- No implementar auditoria OPA (Step 13).
+- No integrar observabilidad (Step 12).
+
+---
+
+## Estado Anterior: Step 10 - Ejecucion Controlada de Containerlab y Ansible
 
 ### Objetivo de este paso
 
@@ -721,9 +755,9 @@ curl http://localhost:8000/api/v1/health
 | **Step 6** | Endpoint de topologia (POST /api/v1/topology) | Completado |
 | **Step 7** | Seguridad transversal (rate limiting, error handlers) | Completado |
 | **Step 8** | UI Builder OT con React Flow | Completado |
-| **Step 9** | Generador Jinja2 de artefactos del pipeline | Completado |
-| **Step 10** | Ejecucion controlada de Containerlab y Ansible | En progreso |
-| **Step 11** | Validacion Batfish con perfiles NOS | Pendiente |
+| Step 9 | Generador Jinja2 de artefactos del pipeline | Completado |
+| **Step 10** | Ejecucion controlada de Containerlab y Ansible | Completado |
+| **Step 11** | Validacion Batfish con perfiles mixtos (NOS vs Linux) | Completado |
 | **Step 12** | Observabilidad LibreNMS/Oxidized | Pendiente |
 | **Step 13** | Auditoria de cumplimiento OPA | Pendiente |
 
