@@ -116,6 +116,7 @@ const edgeTypes = {
 }
 
 const PROJECT_NAME_STORAGE_KEY = 'gemerotic-current-project-v2'
+const PROJECT_DRAFT_STORAGE_PREFIX = 'gemerotic-project-draft-v2:'
 const criticalityOptions: Criticality[] = ['critical', 'high', 'medium', 'low']
 const securityLevelOptions: SecurityLevel[] = ['SL-0', 'SL-1', 'SL-2', 'SL-3', 'SL-4']
 const purdueOptions: PurdueLevel[] = [0, 1, 2, 3, 4, 5]
@@ -252,21 +253,27 @@ function createDrawingNode(
 }
 
 function App() {
-  const initialState = useMemo(() => createInitialBuilderState(), [])
-  const [settings, setSettings] = useState<TopologySettings>(initialState.settings)
-  const [nodes, setNodes, onNodesChange] = useNodesState<BuilderNode>(initialState.nodes)
+  const initialState = useMemo(() => createInitialAppState(), [])
+  const [settings, setSettings] = useState<TopologySettings>(
+    initialState.snapshot.settings,
+  )
+  const [nodes, setNodes, onNodesChange] = useNodesState<BuilderNode>(
+    initialState.snapshot.nodes,
+  )
   const [drawings, setDrawings, onDrawingsChange] =
-    useNodesState<DrawingNodeModel>(createInitialDrawingNodes())
-  const [edges, setEdges, onEdgesChange] = useEdgesState<BuilderEdge>(initialState.edges)
+    useNodesState<DrawingNodeModel>(initialState.snapshot.drawings)
+  const [edges, setEdges, onEdgesChange] = useEdgesState<BuilderEdge>(
+    initialState.snapshot.edges,
+  )
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(
-    initialState.nodes[0]?.id ?? null,
+    initialState.snapshot.nodes[0]?.id ?? null,
   )
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null)
   const [editorNodeId, setEditorNodeId] = useState<string | null>(null)
   const [drawingEditorId, setDrawingEditorId] = useState<string | null>(null)
   const [editorTab, setEditorTab] = useState<EditorTab>('equipment')
-  const [activeView, setActiveView] = useState<TopologyView>('physical')
+  const [activeView, setActiveView] = useState<TopologyView>(initialState.activeView)
   const [interactionMode, setInteractionMode] = useState<InteractionMode>('select')
   const [pendingLinkSource, setPendingLinkSource] = useState<LinkEndpoint | null>(null)
   const [portPicker, setPortPicker] = useState<PortPickerState | null>(null)
@@ -505,6 +512,11 @@ function App() {
           return
         }
         if (result.ok && result.data.data !== undefined) {
+          const localDraft = loadProjectDraft(storedProjectName)
+          if (isProjectStateNewer(localDraft, result.data.data)) {
+            appendConsole('Estado local conservado; servidor aun no tenia el ultimo cambio', 'idle')
+            return
+          }
           const restored = coerceProjectState(
             result.data.data,
             cloneSnapshot({ settings, nodes, edges, drawings }),
@@ -527,6 +539,7 @@ function App() {
           setHistoryPast([])
           setHistoryFuture([])
           window.localStorage.setItem(PROJECT_NAME_STORAGE_KEY, restored.projectName)
+          saveProjectDraft(result.data.data)
           setOperationStatus('success')
           setOperationMessage('Estado guardado cargado')
           appendConsole('Estado guardado cargado desde el API', 'success')
@@ -1495,16 +1508,20 @@ function App() {
         activeView,
         payload,
       )
+      saveProjectDraft(projectStatePayload)
       const result = await saveTopologyState(
         apiConfig,
         projectStatePayload.project_name,
         projectStatePayload,
       )
       if (!result.ok || result.data.data === undefined) {
-        const message = extractMessage(result.data, `HTTP ${result.status}`)
-        setOperationStatus('error')
+        const message = `Diseno guardado localmente; API pendiente: ${extractMessage(
+          result.data,
+          `HTTP ${result.status}`,
+        )}`
+        setOperationStatus('success')
         setOperationMessage(message)
-        appendConsole(message, 'error')
+        appendConsole(message, 'success')
         return null
       }
 
@@ -1516,10 +1533,11 @@ function App() {
       appendConsole(message, 'success')
       return saveResult
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Request failed'
-      setOperationStatus('error')
+      const detail = error instanceof Error ? error.message : 'Request failed'
+      const message = `Diseno guardado localmente; API pendiente: ${detail}`
+      setOperationStatus('success')
       setOperationMessage(message)
-      appendConsole(message, 'error')
+      appendConsole(message, 'success')
       return null
     }
   }
@@ -3925,6 +3943,7 @@ function buildProjectStatePayload(
   return {
     project_name: projectName,
     version: 1,
+    client_saved_at: new Date().toISOString(),
     settings: snapshot.settings,
     nodes: snapshot.nodes,
     edges: snapshot.edges,
@@ -3932,6 +3951,88 @@ function buildProjectStatePayload(
     active_view: activeView,
     topology,
   }
+}
+
+function createInitialAppState(): {
+  activeView: TopologyView
+  snapshot: CanvasHistoryState
+} {
+  const fallback = createDefaultSnapshot()
+  const projectName = window.localStorage.getItem(PROJECT_NAME_STORAGE_KEY)
+  const draft = projectName === null ? null : loadProjectDraft(projectName)
+  if (draft === null) {
+    return {
+      activeView: 'physical',
+      snapshot: fallback,
+    }
+  }
+
+  const restored = coerceProjectState(draft, fallback)
+  return {
+    activeView: restored.activeView,
+    snapshot: restored.snapshot,
+  }
+}
+
+function createDefaultSnapshot(): CanvasHistoryState {
+  const builderState = createInitialBuilderState()
+  return {
+    settings: builderState.settings,
+    nodes: builderState.nodes,
+    edges: builderState.edges,
+    drawings: createInitialDrawingNodes(),
+  }
+}
+
+function saveProjectDraft(projectState: TopologyProjectStatePayload): void {
+  try {
+    window.localStorage.setItem(PROJECT_NAME_STORAGE_KEY, projectState.project_name)
+    window.localStorage.setItem(
+      getProjectDraftStorageKey(projectState.project_name),
+      JSON.stringify(projectState),
+    )
+  } catch {
+    // El navegador puede bloquear localStorage; el API sigue siendo la fuente remota.
+  }
+}
+
+function loadProjectDraft(projectName: string): TopologyProjectStatePayload | null {
+  try {
+    const raw = window.localStorage.getItem(getProjectDraftStorageKey(projectName))
+    if (raw === null) {
+      return null
+    }
+    const parsed = JSON.parse(raw)
+    if (!isRecord(parsed) || parsed.project_name !== projectName) {
+      return null
+    }
+    return parsed as TopologyProjectStatePayload
+  } catch {
+    return null
+  }
+}
+
+function getProjectDraftStorageKey(projectName: string): string {
+  return `${PROJECT_DRAFT_STORAGE_PREFIX}${projectName}`
+}
+
+function isProjectStateNewer(
+  candidate: TopologyProjectStatePayload | null,
+  baseline: TopologyProjectStatePayload,
+): boolean {
+  if (candidate === null) {
+    return false
+  }
+  return getProjectStateTimestamp(candidate) > getProjectStateTimestamp(baseline)
+}
+
+function getProjectStateTimestamp(projectState: TopologyProjectStatePayload): number {
+  const timestamp = projectState.client_saved_at ?? projectState.saved_at
+  if (timestamp === undefined) {
+    return 0
+  }
+  const parsed = Date.parse(timestamp)
+  return Number.isFinite(parsed) ? parsed : 0
 }
 
 function coerceProjectState(

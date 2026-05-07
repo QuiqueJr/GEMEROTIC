@@ -64,6 +64,8 @@ export type TopologySaveResponse = {
 export type TopologyProjectStatePayload = {
   project_name: string
   version: number
+  client_saved_at?: string
+  saved_at?: string
   settings: unknown
   nodes: unknown[]
   edges: unknown[]

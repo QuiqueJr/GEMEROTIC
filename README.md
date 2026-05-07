@@ -140,6 +140,9 @@ TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
     `var/topologies/<project_name>/state.json`
   - `GET /api/v1/topology/state/{project_name}` recupera ese estado visual para
     rehidratar el canvas tras recargar el navegador
+  - la UI guarda además un draft local inmediato antes de llamar al API; si el
+    servidor devuelve un estado más antiguo o la red falla, el navegador no pisa
+    la topología recién editada
   - el estado visual se guarda aunque la topología esté incompleta o totalmente
     vacía; en ese caso no se generan artefactos desplegables hasta que exista
     un `TopologyCreate` válido

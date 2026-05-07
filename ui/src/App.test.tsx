@@ -139,6 +139,196 @@ describe('App', () => {
     expect(headers.has('X-API-Key')).toBe(false)
   })
 
+  it('guarda el estado actual del canvas desde el boton de persistir', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => ({
+        status: 'success',
+        message: 'Topology state saved successfully',
+        data: {
+          project_name: 'nuevo-proyecto-ot',
+          topology_name: 'nuevo-proyecto-ot',
+          saved_at: '2026-05-07T00:00:00+00:00',
+          store_dir: '/tmp/gemerotic-test',
+          topology_save: null,
+          topology_validation: { status: 'valid', detail: null },
+          netbox_sync: { status: 'synchronized', detail: null },
+        },
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Router Core/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Persistir topologia' }))
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://localhost:8000/api/v1/topology/state/nuevo-proyecto-ot',
+        expect.objectContaining({ method: 'PUT' }),
+      )
+    })
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body))
+    expect(body.nodes).toHaveLength(1)
+    expect(body.nodes[0].id).toBe('router-01')
+    expect(body.topology.devices).toHaveLength(1)
+    expect(window.localStorage.getItem('gemerotic-current-project-v2')).toBe(
+      'nuevo-proyecto-ot',
+    )
+  })
+
+  it('rehidrata el canvas guardado al recargar la interfaz', async () => {
+    window.localStorage.setItem('gemerotic-current-project-v2', 'demo-planta')
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: 'success',
+        message: 'Topology state loaded successfully',
+        data: {
+          project_name: 'demo-planta',
+          version: 1,
+          settings: {
+            name: 'demo-planta',
+            description: 'Topologia demo',
+            siteName: 'Planta Principal',
+            roomName: 'Cuarto Servidores',
+            rackName: 'Rack Red 01',
+          },
+          nodes: [
+            {
+              id: 'router-01',
+              type: 'asset',
+              position: { x: 120, y: 150 },
+              data: {
+                label: 'Router Core',
+                assetType: 'router',
+                criticality: 'high',
+                portCount: 4,
+                portPrefix: 'eth',
+                zoneId: 'zone-it',
+                zoneName: 'Zona IT',
+                purdueLevel: 4,
+                securityLevel: 'SL-2',
+                vlanId: 140,
+                vlanName: 'IT Planta',
+                mgmtOnly: false,
+                enabled: true,
+                portConfigs: [
+                  { enabled: true, mgmtOnly: false },
+                  { enabled: true, mgmtOnly: false },
+                  { enabled: true, mgmtOnly: false },
+                  { enabled: true, mgmtOnly: false },
+                ],
+                allowedProtocols: ['HTTPS', 'SSH', 'SNMP'],
+              },
+            },
+          ],
+          edges: [],
+          drawings: [],
+          active_view: 'physical',
+        },
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://localhost:8000/api/v1/topology/state/demo-planta',
+        expect.objectContaining({ method: 'GET' }),
+      )
+    })
+    expect((await screen.findAllByText('demo-planta')).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Router Core').length).toBeGreaterThan(1)
+  })
+
+  it('conserva el draft local si el servidor devuelve un estado mas antiguo', async () => {
+    window.localStorage.setItem('gemerotic-current-project-v2', 'local-planta')
+    window.localStorage.setItem(
+      'gemerotic-project-draft-v2:local-planta',
+      JSON.stringify({
+        project_name: 'local-planta',
+        version: 1,
+        client_saved_at: '2026-05-07T12:00:00.000Z',
+        settings: {
+          name: 'local-planta',
+          description: 'Draft local',
+          siteName: 'Planta Principal',
+          roomName: 'Cuarto Servidores',
+          rackName: 'Rack Red 01',
+        },
+        nodes: [
+          {
+            id: 'router-01',
+            type: 'asset',
+            position: { x: 120, y: 150 },
+            data: {
+              label: 'Router Core',
+              assetType: 'router',
+              criticality: 'high',
+              portCount: 4,
+              portPrefix: 'eth',
+              zoneId: 'zone-it',
+              zoneName: 'Zona IT',
+              purdueLevel: 4,
+              securityLevel: 'SL-2',
+              vlanId: 140,
+              vlanName: 'IT Planta',
+              mgmtOnly: false,
+              enabled: true,
+              portConfigs: [
+                { enabled: true, mgmtOnly: false },
+                { enabled: true, mgmtOnly: false },
+                { enabled: true, mgmtOnly: false },
+                { enabled: true, mgmtOnly: false },
+              ],
+              allowedProtocols: ['HTTPS', 'SSH', 'SNMP'],
+            },
+          },
+        ],
+        edges: [],
+        drawings: [],
+        active_view: 'physical',
+      }),
+    )
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: 'success',
+        message: 'Topology state loaded successfully',
+        data: {
+          project_name: 'local-planta',
+          version: 1,
+          client_saved_at: '2026-05-07T11:00:00.000Z',
+          settings: {
+            name: 'local-planta',
+            description: 'Estado antiguo',
+            siteName: 'Planta Principal',
+            roomName: 'Cuarto Servidores',
+            rackName: 'Rack Red 01',
+          },
+          nodes: [],
+          edges: [],
+          drawings: [],
+          active_view: 'physical',
+        },
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled()
+    })
+    expect(screen.getAllByText('Router Core').length).toBeGreaterThan(1)
+  })
+
   it('genera artefactos desde la toolbar cuando la conectividad esta configurada', async () => {
     const fetchMock = vi
       .fn()
