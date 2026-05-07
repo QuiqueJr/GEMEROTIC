@@ -169,7 +169,7 @@ Si quieres activar el asistente con Ollama local, añade también:
 ```env
 COMPLIANCE_ASSISTANT_PROVIDER=ollama
 OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=gemma3
+OLLAMA_MODEL=gemma3:1b
 OLLAMA_TIMEOUT_SECONDS=30.0
 OLLAMA_API_KEY=
 ```
@@ -372,15 +372,25 @@ CLI oficial expone:
 - `ollama serve` para arrancar el servicio local
 - `ollama pull <modelo>` para descargar un modelo
 
-Flujo mínimo:
+Flujo mínimo en Windows:
 
 ```powershell
 ollama serve
-ollama pull gemma3
+ollama pull gemma3:1b
+```
+
+Flujo mínimo en el servidor Linux:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y zstd
+curl -fsSL https://ollama.com/install.sh | sh
+sudo systemctl enable --now ollama
+ollama pull gemma3:1b
 ```
 
 Después arranca FastAPI con `COMPLIANCE_ASSISTANT_PROVIDER=ollama` y
-`OLLAMA_MODEL=gemma3`.
+`OLLAMA_MODEL=gemma3:1b`.
 
 El asistente seguirá respetando estas limitaciones:
 

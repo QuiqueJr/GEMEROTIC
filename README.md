@@ -192,6 +192,8 @@ TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
     topología
   - el asistente puede operar en modo local determinista o en modo
     `Ollama` como capa de explicación estructurada sobre el mismo informe
+  - para la demo en servidor se usa `gemma3:1b` en Ollama local por bajo peso;
+    el modelo no decide cumplimiento, solo redacta respuestas dentro de scope
   - la UI añade botón de evaluación, pestaña de compliance en el navegador de
     datos y modal de chat para revisar zonas, conduits, niveles Purdue y
     activos críticos
@@ -223,6 +225,37 @@ TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
   - la UI calcula por defecto la URL del API desde el host desde el que se
     sirve, por ejemplo `http://212.128.44.220:8000` al abrir el frontend del
     servidor
+- Handoff operativo para continuar desde esta rama (`enrique`) - 7 mayo 2026:
+  - la UI ya no se limita a persistir el canvas; el botón de guardado ejecuta
+    `PUT /api/v1/topology/state/{project_name}` y después refresca, en modo
+    best-effort, `GET /api/v1/health`, `GET /api/v1/pipeline/tools`,
+    `POST /api/v1/pipeline/artifacts/{topology_name}` y
+    `POST /api/v1/compliance/report`
+  - el despliegue real de Containerlab + Ansible no se ejecuta automáticamente
+    al guardar; sigue detrás del botón explícito de despliegue para evitar
+    cambios operativos involuntarios
+  - el servidor `/home/enrique/gemerotic-deploy-current` quedó con NetBox,
+    Redis rate limit, API y UI levantados; `GET /api/v1/health` respondió
+    `netbox_connected=true` y `rate_limit_backend_connected=true`
+  - en servidor se instaló Ollama `0.23.1`, se descargó `gemma3:1b` y el `.env`
+    operativo quedó con `COMPLIANCE_ASSISTANT_PROVIDER=ollama`,
+    `OLLAMA_BASE_URL=http://127.0.0.1:11434`,
+    `OLLAMA_MODEL=gemma3:1b` y `OLLAMA_TIMEOUT_SECONDS=60.0`
+  - se corrigió el cliente Ollama para enviar un schema JSON simple compatible
+    con Ollama `0.23.1`; la validación fuerte sigue haciéndose después con
+    Pydantic en `OllamaComplianceOutput`
+  - flujo de integración probado contra servidor con una topología demo:
+    guardado visual recuperable, `netbox_sync=synchronized`, 19 artefactos
+    generados y compliance `attention_required` con 0 fallos y 1 aviso
+  - próximo punto exacto para continuar: comprobar desde navegador que al
+    guardar una topología real aparecen estados en español como `NetBox
+    conectado`, `Pipeline 3/4`, artefactos generados y cumplimiento calculado;
+    después validar que `POST /api/v1/compliance/chat` devuelve
+    `mode=ollama_advisor` en el servidor y no cae a `local_advisor`
+  - si `mode=local_advisor` aparece de nuevo, revisar primero los logs de
+    Ollama con `sudo journalctl -u ollama -n 80 --no-pager`; el fallo anterior
+    era `grammar_init: failed to initialize grammar` por usar el schema Pydantic
+    completo como `format`
 
 ### Fuera de alcance de Step 10
 

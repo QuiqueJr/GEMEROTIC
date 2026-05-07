@@ -12,7 +12,10 @@ from app.schemas.compliance import ComplianceChatMessage
 from app.schemas.topology import TopologyCreate
 from app.services.compliance_assistant import ComplianceAssistant
 from app.services.compliance_engine import ComplianceEngine
-from app.services.ollama_client import OllamaComplianceClient
+from app.services.ollama_client import (
+    OLLAMA_COMPLIANCE_FORMAT_SCHEMA,
+    OllamaComplianceClient,
+)
 from tests.conftest import AllowAllRateLimiter
 from tests.test_schemas import _mvp_topology_payload
 
@@ -90,6 +93,9 @@ class TestComplianceAssistant:
         monkeypatch.setattr(settings, "COMPLIANCE_ASSISTANT_PROVIDER", "ollama")
 
         def fake_post(*args, **kwargs):
+            assert kwargs["json"]["format"] == OLLAMA_COMPLIANCE_FORMAT_SCHEMA
+            assert "maxLength" not in json.dumps(kwargs["json"]["format"])
+
             class FakeResponse:
                 def raise_for_status(self):
                     return None

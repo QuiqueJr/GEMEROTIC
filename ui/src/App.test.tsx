@@ -20,12 +20,12 @@ describe('App', () => {
     expect(screen.getByText('GEMEROTIC')).toBeInTheDocument()
     const menuBar = screen.getByRole('menubar', { name: 'Barra de proyecto' })
     expect(within(menuBar).getByRole('button', { name: 'Proyecto' })).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: 'Add Link' })).toHaveLength(2)
-    expect(screen.getByRole('button', { name: 'Fisica' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Logica' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Seguridad' })).toBeInTheDocument()
-    expect(screen.getByText('Topology Summary')).toBeInTheDocument()
-    expect(screen.getByText('Servers Summary')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Añadir enlace' })).toHaveLength(2)
+    expect(screen.getByRole('button', { name: 'Física' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Lógica' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Seguridad' }).length).toBeGreaterThan(0)
+    expect(screen.getByText('Resumen de topología')).toBeInTheDocument()
+    expect(screen.getByText('Resumen de servicios')).toBeInTheDocument()
     expect(screen.getByText('Router Core')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Añadir zona' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Añadir rectangulo' })).toBeInTheDocument()
@@ -40,7 +40,7 @@ describe('App', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Router Core/i }))
     fireEvent.click(screen.getByRole('button', { name: /Switch Acceso/i }))
-    fireEvent.click(screen.getAllByRole('button', { name: 'Add Link' })[0])
+    fireEvent.click(screen.getAllByRole('button', { name: 'Añadir enlace' })[0])
     fireEvent.click(within(workspace).getAllByText('Router Core')[0])
 
     const sourcePicker = screen.getByRole('dialog', {
@@ -81,7 +81,7 @@ describe('App', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Añadir rectangulo' }))
 
-    const editor = screen.getByRole('dialog', { name: 'Drawing editor' })
+    const editor = screen.getByRole('dialog', { name: 'Editor de dibujo' })
     expect(editor).toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText('Texto'), {
@@ -129,7 +129,7 @@ describe('App', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Bootstrap NetBox' })[0])
 
     expect(
-      screen.queryByRole('dialog', { name: 'Project settings' }),
+      screen.queryByRole('dialog', { name: 'Configuración del proyecto' }),
     ).not.toBeInTheDocument()
     expect(fetchMock).toHaveBeenCalledWith(
       'http://localhost:8000/api/v1/netbox/bootstrap',
@@ -140,23 +140,108 @@ describe('App', () => {
   })
 
   it('guarda el estado actual del canvas desde el boton de persistir', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 201,
-      json: async () => ({
-        status: 'success',
-        message: 'Topology state saved successfully',
-        data: {
-          project_name: 'nuevo-proyecto-ot',
-          topology_name: 'nuevo-proyecto-ot',
-          saved_at: '2026-05-07T00:00:00+00:00',
-          store_dir: '/tmp/gemerotic-test',
-          topology_save: null,
-          topology_validation: { status: 'valid', detail: null },
-          netbox_sync: { status: 'synchronized', detail: null },
-        },
-      }),
-    })
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => ({
+          status: 'success',
+          message: 'Topology state saved successfully',
+          data: {
+            project_name: 'nuevo-proyecto-ot',
+            topology_name: 'nuevo-proyecto-ot',
+            saved_at: '2026-05-07T00:00:00+00:00',
+            store_dir: '/tmp/gemerotic-test',
+            topology_save: null,
+            topology_validation: { status: 'valid', detail: null },
+            netbox_sync: { status: 'synchronized', detail: null },
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          status: 'ok',
+          app_name: 'GEMEROTIC',
+          version: '0.1.0',
+          checks: {
+            netbox_connected: true,
+            rate_limit_backend_connected: true,
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          status: 'success',
+          message: 'Pipeline tool status collected',
+          data: {
+            tools: [
+              { name: 'docker', installed: true, path: '/usr/bin/docker', version: 'ok', error: null },
+              {
+                name: 'containerlab',
+                installed: true,
+                path: '/usr/bin/containerlab',
+                version: 'ok',
+                error: null,
+              },
+              {
+                name: 'ansible-playbook',
+                installed: true,
+                path: '/usr/bin/ansible-playbook',
+                version: 'ok',
+                error: null,
+              },
+              { name: 'opa', installed: false, path: null, version: null, error: null },
+            ],
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          status: 'success',
+          message: 'Pipeline artifacts generated from saved topology',
+          data: {
+            topology_name: 'nuevo-proyecto-ot',
+            artifacts: [
+              {
+                path: 'containerlab/topology.clab.yml',
+                stage: 'containerlab',
+                content_type: 'text/yaml',
+                content: 'name: nuevo-proyecto-ot',
+              },
+            ],
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          status: 'success',
+          message: 'Compliance report generated successfully',
+          data: {
+            topology_name: 'nuevo-proyecto-ot',
+            baseline: ['IEC 62443', 'NIS2', 'ISO/IEC 27001'],
+            generated_at: '2026-05-07T00:00:00+00:00',
+            summary: {
+              overall_posture: 'strong',
+              assessed_controls: 4,
+              not_assessed_controls: 0,
+              passed_controls: 4,
+              warned_controls: 0,
+              failed_controls: 0,
+              coverage_percent: 100,
+            },
+            findings: [],
+          },
+        }),
+      })
     vi.stubGlobal('fetch', fetchMock)
 
     render(<App />)
@@ -177,6 +262,17 @@ describe('App', () => {
     expect(window.localStorage.getItem('gemerotic-current-project-v2')).toBe(
       'nuevo-proyecto-ot',
     )
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://localhost:8000/api/v1/compliance/report',
+        expect.objectContaining({ method: 'POST' }),
+      )
+    })
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:8000/api/v1/pipeline/artifacts/nuevo-proyecto-ot',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(screen.getAllByText(/Pipeline 3\/4/i).length).toBeGreaterThan(0)
   })
 
   it('rehidrata el canvas guardado al recargar la interfaz', async () => {
@@ -392,9 +488,9 @@ describe('App', () => {
     const headers = fetchMock.mock.calls[0][1]?.headers as Headers
     expect(headers.has('X-API-Key')).toBe(false)
     expect(
-      await screen.findByRole('dialog', { name: 'Data browser' }),
+      await screen.findByRole('dialog', { name: 'Navegador de datos' }),
     ).toBeInTheDocument()
-    expect(screen.getByText('Artifacts')).toBeInTheDocument()
+    expect(screen.getAllByText('Artefactos').length).toBeGreaterThan(0)
   })
 
   it('despliega el pipeline aunque OPA este ausente', async () => {

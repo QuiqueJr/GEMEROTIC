@@ -23,6 +23,24 @@ class OllamaComplianceOutput(BaseModel):
     suggested_actions: list[str] = Field(default_factory=list)
 
 
+OLLAMA_COMPLIANCE_FORMAT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "in_scope": {"type": "boolean"},
+        "answer": {"type": "string"},
+        "cited_controls": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "suggested_actions": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+    },
+    "required": ["answer"],
+}
+
+
 class OllamaComplianceClient:
     """Cliente HTTP sencillo contra `/api/chat` de Ollama."""
 
@@ -76,7 +94,7 @@ class OllamaComplianceClient:
         payload = {
             "model": self._model,
             "stream": False,
-            "format": OllamaComplianceOutput.model_json_schema(),
+            "format": OLLAMA_COMPLIANCE_FORMAT_SCHEMA,
             "options": {"temperature": 0},
             "messages": full_messages,
         }

@@ -138,6 +138,9 @@ type ConsoleEntry = {
   tone: OperationStatus
   text: string
 }
+type SaveCurrentTopologyOptions = {
+  refreshWorkflow?: boolean
+}
 type DeviceConsole = {
   nodeId: string
   label: string
@@ -170,17 +173,17 @@ const viewOptions: Array<{
   id: TopologyView
   label: string
 }> = [
-  { id: 'physical', label: 'Fisica' },
-  { id: 'logical', label: 'Logica' },
+  { id: 'physical', label: 'Física' },
+  { id: 'logical', label: 'Lógica' },
   { id: 'security', label: 'Seguridad' },
 ]
 
 const assetGroups = [
-  { id: 'network', label: 'Routers/Switches' },
+  { id: 'network', label: 'Red' },
   { id: 'ot', label: 'Control OT' },
-  { id: 'compute', label: 'End devices' },
-  { id: 'security', label: 'Security' },
-  { id: 'all', label: 'All devices' },
+  { id: 'compute', label: 'Terminales' },
+  { id: 'security', label: 'Seguridad' },
+  { id: 'all', label: 'Todos los dispositivos' },
 ]
 
 const defaultEdgeOptions: DefaultEdgeOptions = {
@@ -198,7 +201,7 @@ const purdueLabels: Record<PurdueLevel, string> = {
   2: 'Supervision',
   3: 'DMZ industrial',
   4: 'IT planta',
-  5: 'Enterprise',
+  5: 'Empresa',
 }
 
 const drawingPalette = ['#2563eb', '#0f766e', '#b45309', '#b91c1c', '#64748b']
@@ -302,7 +305,7 @@ function App() {
     {
       id: 'boot-console-entry',
       tone: 'success',
-      text: 'Proyecto cargado. Arrastra equipos al workspace o usa Add Link para crear enlaces.',
+      text: 'Proyecto cargado. Arrastra equipos al workspace o usa Añadir enlace para crear enlaces.',
     },
   ])
   const [health, setHealth] = useState<HealthResponse | null>(null)
@@ -553,7 +556,7 @@ function App() {
         }
       } catch (error) {
         if (!cancelled) {
-          const message = error instanceof Error ? error.message : 'Request failed'
+          const message = error instanceof Error ? error.message : 'Petición fallida'
           appendConsole(`No se pudo cargar estado guardado: ${message}`, 'error')
         }
       } finally {
@@ -1137,7 +1140,7 @@ function App() {
       setLinkDraft(null)
       appendConsole(
         nextMode === 'link'
-          ? 'Add Link activado: selecciona un equipo y despues un puerto de origen'
+          ? 'Añadir enlace activado: selecciona un equipo y despues un puerto de origen'
           : 'Modo seleccion activado',
         'success',
       )
@@ -1424,7 +1427,7 @@ function App() {
       setOperationMessage(successMessage)
       appendConsole(successMessage, 'success')
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Request failed'
+      const message = error instanceof Error ? error.message : 'Petición fallida'
       setOperationStatus('error')
       setOperationMessage(message)
       appendConsole(message, 'error')
@@ -1440,7 +1443,7 @@ function App() {
       const result = await getHealth(apiConfig)
       setHealth(result.data)
       const message = result.ok
-        ? `Health OK · NetBox ${result.data.checks.netbox_connected ? 'online' : 'offline'}`
+        ? `Health OK · NetBox ${result.data.checks.netbox_connected ? 'conectado' : 'desconectado'}`
         : `Health fallo · HTTP ${result.status}`
       setOperationStatus(result.ok ? 'success' : 'error')
       setOperationMessage(message)
@@ -1449,7 +1452,7 @@ function App() {
         void checkTools({ quiet: true })
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Request failed'
+      const message = error instanceof Error ? error.message : 'Petición fallida'
       setOperationStatus('error')
       setOperationMessage(message)
       appendConsole(message, 'error')
@@ -1481,7 +1484,7 @@ function App() {
       }
       return result.data.data
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Request failed'
+      const message = error instanceof Error ? error.message : 'Petición fallida'
       setOperationStatus('error')
       setOperationMessage(message)
       appendConsole(message, 'error')
@@ -1496,8 +1499,100 @@ function App() {
     return runOperation(() => bootstrapNetBox(apiConfig), 'Bootstrap de NetBox completado')
   }
 
+  const refreshWorkflowAfterSave = async (
+    savedTopology: TopologyProjectStateSaveResponse,
+  ): Promise<string[]> => {
+    const messages: string[] = []
+
+    try {
+      const healthResult = await getHealth(apiConfig)
+      if (healthResult.ok && healthResult.data.checks) {
+        setHealth(healthResult.data)
+        messages.push(
+          `NetBox ${
+            healthResult.data.checks.netbox_connected ? 'conectado' : 'desconectado'
+          }`,
+        )
+      } else {
+        messages.push(
+          `Health pendiente: ${extractMessage(healthResult.data, `HTTP ${healthResult.status}`)}`,
+        )
+      }
+    } catch (error) {
+      messages.push(`Health pendiente: ${error instanceof Error ? error.message : 'petición fallida'}`)
+    }
+
+    try {
+      const toolsResult = await getPipelineTools(apiConfig)
+      if (toolsResult.ok && toolsResult.data.data !== undefined) {
+        setToolReport(toolsResult.data.data)
+        messages.push(
+          `Pipeline ${
+            toolsResult.data.data.tools.filter((tool) => tool.installed).length
+          }/${toolsResult.data.data.tools.length}`,
+        )
+      } else {
+        messages.push(
+          `Pipeline pendiente: ${extractMessage(toolsResult.data, `HTTP ${toolsResult.status}`)}`,
+        )
+      }
+    } catch (error) {
+      messages.push(`Pipeline pendiente: ${error instanceof Error ? error.message : 'petición fallida'}`)
+    }
+
+    const deployableTopologyName = getDeployableTopologyName(savedTopology)
+    if (deployableTopologyName === null) {
+      setPipelineArtifacts(null)
+      setPipelineRun(null)
+      setLabStatus(null)
+      setComplianceReport(null)
+      messages.push('Artefactos y cumplimiento pendientes: topología incompleta')
+      return messages
+    }
+
+    try {
+      const artifactResult = await generateSavedPipelineArtifacts(
+        apiConfig,
+        deployableTopologyName,
+      )
+      if (artifactResult.ok && artifactResult.data.data !== undefined) {
+        setPipelineArtifacts(artifactResult.data.data)
+        setPipelineRun(null)
+        messages.push(`${artifactResult.data.data.artifacts.length} artefactos`)
+      } else {
+        messages.push(
+          `Artefactos pendientes: ${extractMessage(artifactResult.data, `HTTP ${artifactResult.status}`)}`,
+        )
+      }
+    } catch (error) {
+      messages.push(`Artefactos pendientes: ${error instanceof Error ? error.message : 'petición fallida'}`)
+    }
+
+    try {
+      const complianceResult = await generateComplianceReport(apiConfig, payload)
+      if (complianceResult.ok && complianceResult.data.data !== undefined) {
+        setComplianceReport(complianceResult.data.data)
+        messages.push(
+          `Cumplimiento ${getCompliancePostureLabel(
+            complianceResult.data.data.summary.overall_posture,
+          )}`,
+        )
+      } else {
+        messages.push(
+          `Cumplimiento pendiente: ${extractMessage(complianceResult.data, `HTTP ${complianceResult.status}`)}`,
+        )
+      }
+    } catch (error) {
+      messages.push(`Cumplimiento pendiente: ${error instanceof Error ? error.message : 'petición fallida'}`)
+    }
+
+    return messages
+  }
+
   const saveCurrentTopology =
-    async (): Promise<TopologyProjectStateSaveResponse | null> => {
+    async (
+      options: SaveCurrentTopologyOptions = {},
+    ): Promise<TopologyProjectStateSaveResponse | null> => {
     if (!ensureProtectedApiConfigured('Guardar topologia')) {
       return null
     }
@@ -1528,12 +1623,16 @@ function App() {
       const saveResult = result.data.data
       window.localStorage.setItem(PROJECT_NAME_STORAGE_KEY, saveResult.project_name)
       const message = buildSaveStatusMessage(saveResult)
+      const workflowMessages =
+        options.refreshWorkflow === false ? [] : await refreshWorkflowAfterSave(saveResult)
+      const fullMessage =
+        workflowMessages.length > 0 ? `${message} · ${workflowMessages.join(' · ')}` : message
       setOperationStatus('success')
-      setOperationMessage(message)
-      appendConsole(message, 'success')
+      setOperationMessage(fullMessage)
+      appendConsole(fullMessage, 'success')
       return saveResult
     } catch (error) {
-      const detail = error instanceof Error ? error.message : 'Request failed'
+      const detail = error instanceof Error ? error.message : 'Petición fallida'
       const message = `Diseno guardado localmente; API pendiente: ${detail}`
       setOperationStatus('success')
       setOperationMessage(message)
@@ -1547,7 +1646,7 @@ function App() {
   }
 
   const generateArtifacts = async () => {
-    const savedTopology = await saveCurrentTopology()
+    const savedTopology = await saveCurrentTopology({ refreshWorkflow: false })
     if (savedTopology === null) {
       return
     }
@@ -1584,7 +1683,7 @@ function App() {
         'success',
       )
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Request failed'
+      const message = error instanceof Error ? error.message : 'Petición fallida'
       setOperationStatus('error')
       setOperationMessage(message)
       appendConsole(message, 'error')
@@ -1614,7 +1713,7 @@ function App() {
       appendConsole(message, 'success')
       return result.data.data
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Request failed'
+      const message = error instanceof Error ? error.message : 'Petición fallida'
       setOperationStatus('error')
       setOperationMessage(message)
       appendConsole(message, 'error')
@@ -1623,7 +1722,7 @@ function App() {
   }
 
   const deployPipelineRun = async () => {
-    const savedTopology = await saveCurrentTopology()
+    const savedTopology = await saveCurrentTopology({ refreshWorkflow: false })
     if (savedTopology === null) {
       return
     }
@@ -1670,7 +1769,7 @@ function App() {
       appendConsole('Pipeline desplegado correctamente', 'success')
       await inspectRuntimeLab(result.data.data.topology_name)
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Request failed'
+      const message = error instanceof Error ? error.message : 'Petición fallida'
       setOperationStatus('error')
       setOperationMessage(message)
       appendConsole(message, 'error')
@@ -1716,7 +1815,7 @@ function App() {
           : `Comando con salida ${consoleResult.exit_code} en ${nodeId}`,
       )
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Request failed'
+      const message = error instanceof Error ? error.message : 'Petición fallida'
       appendDeviceConsole(nodeId, message, 'error')
       setOperationStatus('error')
       setOperationMessage(message)
@@ -1757,15 +1856,15 @@ function App() {
       }
       setOperationStatus('success')
       setOperationMessage(
-        `Compliance ${result.data.data.summary.overall_posture} · ${result.data.data.summary.failed_controls} fail · ${result.data.data.summary.warned_controls} warn`,
+        `Cumplimiento ${getCompliancePostureLabel(result.data.data.summary.overall_posture)} · ${result.data.data.summary.failed_controls} fallos · ${result.data.data.summary.warned_controls} avisos`,
       )
       appendConsole(
-        `Compliance ${result.data.data.summary.overall_posture} · cobertura ${result.data.data.summary.coverage_percent}%`,
+        `Cumplimiento ${getCompliancePostureLabel(result.data.data.summary.overall_posture)} · cobertura ${result.data.data.summary.coverage_percent}%`,
         'success',
       )
       return result.data.data
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Request failed'
+      const message = error instanceof Error ? error.message : 'Petición fallida'
       setOperationStatus('error')
       setOperationMessage(message)
       appendConsole(message, 'error')
@@ -1842,7 +1941,7 @@ function App() {
         'success',
       )
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Request failed'
+      const message = error instanceof Error ? error.message : 'Petición fallida'
       setOperationStatus('error')
       setOperationMessage(message)
       appendConsole(message, 'error')
@@ -1940,11 +2039,11 @@ function App() {
 
           <div className="toolbar-group">
             <button
-              aria-label="Add Link"
+              aria-label="Añadir enlace"
               className="toolbar-button toolbar-button--icon"
               data-active={interactionMode === 'link'}
               onClick={startLinkMode}
-              title="Add Link"
+              title="Añadir enlace"
               type="button"
             >
               <Cable size={16} />
@@ -2016,7 +2115,7 @@ function App() {
               aria-label="Comprobar health"
               className="toolbar-button toolbar-button--icon"
               onClick={checkHealth}
-              title="Health"
+              title="Comprobar estado"
               type="button"
             >
               <Activity size={16} />
@@ -2142,7 +2241,7 @@ function App() {
                     ? 'online'
                     : 'error'
               }
-              value={health?.checks.netbox_connected ? 'online' : 'sin verificar'}
+              value={health?.checks.netbox_connected ? 'conectado' : 'sin verificar'}
             />
             <WorkflowChip
               label="Pipeline"
@@ -2167,7 +2266,7 @@ function App() {
               value={labStatus === null ? 'sin runtime' : `${labStatus.nodes.length} nodos`}
             />
             <WorkflowChip
-              label="Compliance"
+              label="Cumplimiento"
               state={
                 complianceReport === null
                   ? 'unchecked'
@@ -2177,7 +2276,7 @@ function App() {
                       ? 'partial'
                       : 'ready'
               }
-              value={complianceReport?.summary.overall_posture ?? 'sin informe'}
+              value={getCompliancePostureLabel(complianceReport?.summary.overall_posture)}
             />
           </div>
           <p className="workflow-strip__message" data-tone={operationStatus}>
@@ -2187,7 +2286,7 @@ function App() {
       </header>
 
       <section className="workspace-grid">
-        <aside className="devices-pane" aria-label="Devices toolbar">
+        <aside className="devices-pane" aria-label="Barra de dispositivos">
           <div className="devices-categories">
             {assetGroups.map((group) => (
               <button
@@ -2205,7 +2304,7 @@ function App() {
               className="devices-category"
               data-active={interactionMode === 'link'}
               onClick={startLinkMode}
-              title="Add Link"
+              title="Añadir enlace"
               type="button"
             >
               <Cable size={18} />
@@ -2216,7 +2315,7 @@ function App() {
             <div className="devices-pane__header">
               <strong>
                 {assetGroups.find((group) => group.id === selectedDeviceGroup)?.label ??
-                  'All devices'}
+                  'Todos los dispositivos'}
               </strong>
               <small>Arrastra o haz clic para insertar</small>
             </div>
@@ -2259,7 +2358,7 @@ function App() {
           </div>
         </aside>
 
-        <section className="workspace-pane" aria-label="GNS3 style workspace">
+        <section className="workspace-pane" aria-label="Área de trabajo estilo GNS3">
           <div
             className="workspace-canvas"
             data-view={activeView}
@@ -2312,7 +2411,7 @@ function App() {
             </span>
             <span>
               <Cable size={13} />
-              {interactionMode === 'link' ? 'Add Link' : 'Seleccion'}
+              {interactionMode === 'link' ? 'Añadir enlace' : 'Seleccion'}
             </span>
             <strong>
               {pendingLinkSource
@@ -2328,22 +2427,22 @@ function App() {
           </div>
         </section>
 
-        <aside className="summary-pane" aria-label="Topology and server summary">
+        <aside className="summary-pane" aria-label="Resumen de topología y servicios">
           <section className="dock-panel">
             <div className="dock-panel__header">
-              <strong>Topology Summary</strong>
-              <span>{topologySummary.assets} nodes</span>
+              <strong>Resumen de topología</strong>
+              <span>{topologySummary.assets} nodos</span>
             </div>
             <div className="dock-panel__body">
               <div className="summary-metrics">
-                <Metric label="Devices" value={String(topologySummary.assets)} />
-                <Metric label="Links" value={String(topologySummary.links)} />
-                <Metric label="Zones" value={String(topologySummary.zones)} />
-                <Metric label="View" value={activeView} />
+                <Metric label="Dispositivos" value={String(topologySummary.assets)} />
+                <Metric label="Enlaces" value={String(topologySummary.links)} />
+                <Metric label="Zonas" value={String(topologySummary.zones)} />
+                <Metric label="Vista" value={getTopologyViewLabel(activeView)} />
               </div>
 
               <div className="summary-list">
-                <div className="summary-list__header">Nodes</div>
+                <div className="summary-list__header">Nodos</div>
                 {nodes.map((node) => (
                   <button
                     key={node.id}
@@ -2364,7 +2463,7 @@ function App() {
                     <div>
                       <strong>{node.data.label}</strong>
                       <small>
-                        {node.data.assetType.replace('_', ' ')} · VLAN {node.data.vlanId}
+                        {getAssetDefinition(node.data.assetType).label} · VLAN {node.data.vlanId}
                       </small>
                     </div>
                     <ChevronRight size={14} />
@@ -2373,7 +2472,7 @@ function App() {
               </div>
 
               <div className="summary-list">
-                <div className="summary-list__header">Links</div>
+                <div className="summary-list__header">Enlaces</div>
                 {edges.map((edge) => (
                   <button
                     key={edge.id}
@@ -2401,8 +2500,8 @@ function App() {
 
           <section className="dock-panel dock-panel--servers">
             <div className="dock-panel__header">
-              <strong>Servers Summary</strong>
-              <span>{deployToolsInstalled ? 'ready' : 'partial'}</span>
+              <strong>Resumen de servicios</strong>
+              <span>{deployToolsInstalled ? 'listo' : 'parcial'}</span>
             </div>
             <div className="dock-panel__body">
               <div className="server-summary__list">
@@ -2412,31 +2511,31 @@ function App() {
                 </div>
                 <div className="server-summary__row">
                   <span>NetBox</span>
-                  <strong>{health?.checks.netbox_connected ? 'online' : 'unchecked'}</strong>
+                  <strong>{health?.checks.netbox_connected ? 'conectado' : 'sin verificar'}</strong>
                 </div>
                 <div className="server-summary__row">
                   <span>Rate limit</span>
                   <strong>
-                    {health?.checks.rate_limit_backend_connected ? 'online' : 'unchecked'}
+                    {health?.checks.rate_limit_backend_connected ? 'conectado' : 'sin verificar'}
                   </strong>
                 </div>
                 <div className="server-summary__row">
                   <span>Pipeline</span>
                   <strong>
                     {toolReport === null
-                      ? 'unchecked'
+                      ? 'sin verificar'
                       : deployToolsInstalled
-                        ? 'ready'
-                      : 'partial'}
+                        ? 'listo'
+                      : 'parcial'}
                   </strong>
                 </div>
                 <div className="server-summary__row">
-                  <span>Lab runtime</span>
-                  <strong>{labStatus ? `${labStatus.nodes.length} nodes` : 'unchecked'}</strong>
+                  <span>Runtime del lab</span>
+                  <strong>{labStatus ? `${labStatus.nodes.length} nodos` : 'sin verificar'}</strong>
                 </div>
                 <div className="server-summary__row">
-                  <span>Compliance</span>
-                  <strong>{complianceReport?.summary.overall_posture ?? 'unchecked'}</strong>
+                  <span>Cumplimiento</span>
+                  <strong>{getCompliancePostureLabel(complianceReport?.summary.overall_posture)}</strong>
                 </div>
               </div>
 
@@ -2444,14 +2543,14 @@ function App() {
                 {(toolReport?.tools ?? []).map((tool) => (
                   <div className="tool-chip" data-installed={tool.installed} key={tool.name}>
                     <strong>{tool.name}</strong>
-                    <span>{tool.installed ? 'OK' : 'Missing'}</span>
-                    <small>{tool.path ?? tool.error ?? 'Not detected'}</small>
+                    <span>{tool.installed ? 'OK' : 'Falta'}</span>
+                    <small>{tool.path ?? tool.error ?? 'No detectado'}</small>
                   </div>
                 ))}
                 {toolReport === null ? (
                   <div className="tool-chip" data-installed="pending">
-                    <strong>Environment</strong>
-                    <span>Unchecked</span>
+                    <strong>Entorno</strong>
+                    <span>Sin verificar</span>
                     <small>Pulsa Entorno para inspeccionar el host</small>
                   </div>
                 ) : null}
@@ -2483,7 +2582,7 @@ function App() {
                   type="button"
                 >
                   <ShieldCheck size={16} />
-                  Compliance
+                  Cumplimiento
                 </button>
                 <button
                   className="secondary-button"
@@ -2499,7 +2598,7 @@ function App() {
         </aside>
       </section>
 
-      <section className="console-pane" aria-label="GNS3 style console">
+      <section className="console-pane" aria-label="Consola estilo GNS3">
         <div className="console-pane__header">
           <div className="console-tabs" role="tablist" aria-label="Pestañas de consola">
             <button
@@ -2510,7 +2609,7 @@ function App() {
               type="button"
             >
               <TerminalSquare size={14} />
-              Workspace
+              Consola
             </button>
             {Object.values(deviceConsoles).map((consoleTab) => (
               <button
@@ -2730,6 +2829,26 @@ function DataDrawer({
   )
 }
 
+function getTopologyViewLabel(view: TopologyView): string {
+  return viewOptions.find((option) => option.id === view)?.label ?? 'Vista'
+}
+
+function getCompliancePostureLabel(posture?: string): string {
+  if (posture === 'strong') {
+    return 'fuerte'
+  }
+  if (posture === 'attention_required') {
+    return 'requiere atención'
+  }
+  if (posture === 'non_compliant') {
+    return 'no conforme'
+  }
+  if (posture === 'partial') {
+    return 'parcial'
+  }
+  return 'sin informe'
+}
+
 function ProjectSettingsModal({
   apiBaseUrl,
   apiKey,
@@ -2748,7 +2867,7 @@ function ProjectSettingsModal({
   settings: TopologySettings
 }) {
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Project settings">
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Configuración del proyecto">
       <div className="modal-shell modal-shell--project">
         <div className="modal-header">
           <div className="modal-header__brand">
@@ -2766,7 +2885,7 @@ function ProjectSettingsModal({
         <div className="modal-body">
           <div className="modal-section">
             <div className="modal-section__header">
-              <strong>Workspace</strong>
+              <strong>Área de trabajo</strong>
               <span>Identidad del laboratorio</span>
             </div>
             <div className="field-grid">
@@ -2866,7 +2985,7 @@ function DataBrowserModal({
   pipelineRunText: string
 }) {
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Data browser">
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Navegador de datos">
       <div className="modal-shell modal-shell--data">
         <div className="modal-header">
           <div className="modal-header__brand">
@@ -2881,7 +3000,7 @@ function DataBrowserModal({
           </button>
         </div>
 
-        <div className="modal-tabs" role="tablist" aria-label="Data browser tabs">
+        <div className="modal-tabs" role="tablist" aria-label="Pestañas del navegador de datos">
           <button
             className="summary-tab"
             aria-selected={dataTab === 'topology'}
@@ -2907,7 +3026,7 @@ function DataBrowserModal({
             role="tab"
             type="button"
           >
-            <span>Ejecucion</span>
+            <span>Ejecución</span>
           </button>
           <button
             className="summary-tab"
@@ -2916,7 +3035,7 @@ function DataBrowserModal({
             role="tab"
             type="button"
           >
-            <span>Compliance</span>
+            <span>Cumplimiento</span>
           </button>
         </div>
 
@@ -2924,7 +3043,7 @@ function DataBrowserModal({
           {dataTab === 'topology' ? (
             <DataDrawer
               label="TopologyCreate"
-              meta={`${payload.devices.length} devices · ${payload.cables.length} cables`}
+              meta={`${payload.devices.length} dispositivos · ${payload.cables.length} cables`}
               value={payloadText}
             />
           ) : null}
@@ -2932,14 +3051,14 @@ function DataBrowserModal({
           {dataTab === 'artifacts' ? (
             pipelineArtifacts ? (
               <DataDrawer
-                label="Artifacts"
-                meta={`${pipelineArtifacts.artifacts.length} files`}
+                label="Artefactos"
+                meta={`${pipelineArtifacts.artifacts.length} archivos`}
                 value={artifactText}
               />
             ) : (
               <div className="empty-state">
                 <strong>Sin artefactos</strong>
-                <span>Genera artefactos desde la toolbar para revisarlos aqui.</span>
+                <span>Genera artefactos desde la barra para revisarlos aqui.</span>
               </div>
             )
           ) : null}
@@ -2947,13 +3066,13 @@ function DataBrowserModal({
           {dataTab === 'run' ? (
             pipelineRun ? (
               <DataDrawer
-                label="Run"
-                meta={`${pipelineRun.commands.length} commands`}
+                label="Ejecución"
+                meta={`${pipelineRun.commands.length} comandos`}
                 value={pipelineRunText}
               />
             ) : (
               <div className="empty-state">
-                <strong>Sin ejecucion</strong>
+                <strong>Sin ejecución</strong>
                 <span>El despliegue controlado aparecera aqui cuando el entorno este listo.</span>
               </div>
             )
@@ -2962,14 +3081,14 @@ function DataBrowserModal({
           {dataTab === 'compliance' ? (
             complianceReport ? (
               <DataDrawer
-                label="Compliance"
-                meta={`${complianceReport.summary.failed_controls} fail · ${complianceReport.summary.warned_controls} warn · ${complianceReport.summary.coverage_percent}% coverage`}
+                label="Cumplimiento"
+                meta={`${complianceReport.summary.failed_controls} fallos · ${complianceReport.summary.warned_controls} avisos · ${complianceReport.summary.coverage_percent}% cobertura`}
                 value={complianceText}
               />
             ) : (
               <div className="empty-state">
                 <strong>Sin informe</strong>
-                <span>Evalua compliance desde la toolbar para revisar findings y cobertura.</span>
+                <span>Evalua cumplimiento desde la barra para revisar hallazgos y cobertura.</span>
               </div>
             )
           ) : null}
@@ -3007,7 +3126,7 @@ function ComplianceAssistantModal({
       className="modal-backdrop"
       role="dialog"
       aria-modal="true"
-      aria-label="Compliance assistant"
+      aria-label="Asistente de cumplimiento"
     >
       <div className="modal-shell modal-shell--assistant">
         <div className="modal-header">
@@ -3037,12 +3156,12 @@ function ComplianceAssistantModal({
             {complianceReport ? (
               <div className="compliance-summary">
                 <div className="compliance-pill" data-tone={complianceReport.summary.overall_posture}>
-                  {complianceReport.summary.overall_posture}
+                  {getCompliancePostureLabel(complianceReport.summary.overall_posture)}
                 </div>
                 <div className="compliance-stats">
-                  <span>{complianceReport.summary.failed_controls} fail</span>
-                  <span>{complianceReport.summary.warned_controls} warn</span>
-                  <span>{complianceReport.summary.coverage_percent}% coverage</span>
+                  <span>{complianceReport.summary.failed_controls} fallos</span>
+                  <span>{complianceReport.summary.warned_controls} avisos</span>
+                  <span>{complianceReport.summary.coverage_percent}% cobertura</span>
                 </div>
               </div>
             ) : (
@@ -3089,7 +3208,7 @@ function ComplianceAssistantModal({
                   data-role={message.role}
                   key={`${message.role}-${index}`}
                 >
-                  <strong>{message.role === 'assistant' ? 'Advisor' : 'You'}</strong>
+                  <strong>{message.role === 'assistant' ? 'Asistente' : 'Tú'}</strong>
                   <p>{message.content}</p>
                 </div>
               ))}
@@ -3145,7 +3264,9 @@ function NodeConsolePane({
   return (
     <div className="node-console">
       <div className="node-console__meta">
-        <span>{activeNode?.data.assetType.replace('_', ' ') ?? consoleState.nodeId}</span>
+        <span>
+          {activeNode ? getAssetDefinition(activeNode.data.assetType).label : consoleState.nodeId}
+        </span>
         <strong>
           {runtimeNode
             ? `${runtimeNode.container_name} · ${runtimeNode.state || runtimeNode.status || 'runtime'}`
@@ -3206,7 +3327,7 @@ function NodeConsolePane({
           type="button"
         >
           <SendHorizonal size={16} />
-          {busy ? 'Ejecutando' : 'Run'}
+          {busy ? 'Ejecutando' : 'Ejecutar'}
         </button>
       </div>
     </div>
@@ -3249,14 +3370,14 @@ function NodeEditorModal({
   )
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Node editor">
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Editor de nodo">
       <div className="modal-shell">
         <div className="modal-header">
           <div className="modal-header__brand">
             <EquipmentGlyph assetType={editorNode.data.assetType} size={40} />
             <div>
               <strong>{editorNode.data.label}</strong>
-              <span>{editorNode.data.assetType.replace('_', ' ')}</span>
+              <span>{getAssetDefinition(editorNode.data.assetType).label}</span>
             </div>
           </div>
           <button className="icon-button" onClick={onClose} type="button">
@@ -3264,7 +3385,7 @@ function NodeEditorModal({
           </button>
         </div>
 
-        <div className="modal-tabs" role="tablist" aria-label="Node editor tabs">
+        <div className="modal-tabs" role="tablist" aria-label="Pestañas del editor de nodo">
           {[
             { id: 'equipment', label: 'Equipo' },
             { id: 'ports', label: 'Puertos' },
@@ -3677,7 +3798,7 @@ function DrawingEditorModal({
   onDelete: () => void
 }) {
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Drawing editor">
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Editor de dibujo">
       <div className="modal-shell modal-shell--drawing">
         <div className="modal-header">
           <div className="modal-header__brand">
@@ -3842,7 +3963,7 @@ function CableEditorModal({
   const targetOptions = buildPortOptions(targetNode, edges, draft.id, draft.targetPortIndex)
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Cable editor">
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Editor de cable">
       <div className="modal-shell modal-shell--cable">
         <div className="modal-header">
           <div className="modal-header__brand">
