@@ -26,14 +26,14 @@ write_file() {
   printf '%s\n' "${content}" > "${target_path}"
 }
 
-api_token_pepper="${API_TOKEN_PEPPER:-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}"
-secret_key="${NETBOX_SECRET_KEY:-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb}"
-postgres_password="${POSTGRES_PASSWORD:-netbox-postgres-password}"
-redis_password="${REDIS_PASSWORD:-netbox-redis-password}"
-redis_cache_password="${REDIS_CACHE_PASSWORD:-netbox-redis-cache-password}"
-rate_limit_password="${RATE_LIMIT_REDIS_PASSWORD:-gemerotic-rate-limit-password}"
-superuser_password="${SUPERUSER_PASSWORD:-netbox-admin-password}"
-superuser_api_token="${SUPERUSER_API_TOKEN:-ci-netbox-admin-token}"
+api_token_pepper="${API_TOKEN_PEPPER:?ERROR: API_TOKEN_PEPPER is required}"
+secret_key="${NETBOX_SECRET_KEY:?ERROR: NETBOX_SECRET_KEY is required}"
+postgres_password="${POSTGRES_PASSWORD:?ERROR: POSTGRES_PASSWORD is required}"
+redis_password="${REDIS_PASSWORD:?ERROR: REDIS_PASSWORD is required}"
+redis_cache_password="${REDIS_CACHE_PASSWORD:?ERROR: REDIS_CACHE_PASSWORD is required}"
+rate_limit_password="${RATE_LIMIT_REDIS_PASSWORD:?ERROR: RATE_LIMIT_REDIS_PASSWORD is required}"
+superuser_password="${SUPERUSER_PASSWORD:?ERROR: SUPERUSER_PASSWORD is required}"
+superuser_api_token="${SUPERUSER_API_TOKEN:?ERROR: SUPERUSER_API_TOKEN is required}"
 netbox_host_port="${NETBOX_HOST_PORT:-8080}"
 
 mkdir -p "${env_dir}"

@@ -20,7 +20,14 @@ from app.schemas.topology import TopologyCreate
 DEFAULT_LINUX_KIND = "linux"
 DEFAULT_LINUX_IMAGE = "alpine:3.20"
 DEFAULT_LINUX_CMD = "sleep infinity"
+DEFAULT_NOS_KIND = "ceos"
+DEFAULT_NOS_IMAGE = "ceos:4.32.0F"
 TEMPLATE_ROOT = Path(__file__).resolve().parent.parent / "templates"
+NOS_ASSET_TYPES = {
+    "router",
+    "switch",
+    "firewall",
+}
 
 
 class PipelineArtifactGenerator:
@@ -124,6 +131,38 @@ class PipelineArtifactGenerator:
                 context=context,
             ),
         ]
+
+        for node in context["nodes"]:
+            if node["profile"] == "nos":
+                artifacts.append(
+                    self._render_artifact(
+                        path=f"batfish/configs/{node['id']}.cfg",
+                        stage="batfish",
+                        content_type="text/plain",
+                        template_name="batfish/configs/nos.cfg.j2",
+                        context={**context, "node": node},
+                    )
+                )
+            else:
+                artifacts.append(
+                    self._render_artifact(
+                        path=f"batfish/hosts/{node['id']}.json",
+                        stage="batfish",
+                        content_type="application/json",
+                        template_name="batfish/hosts/host.json.j2",
+                        context={**context, "node": node},
+                    )
+                )
+                artifacts.append(
+                    self._render_artifact(
+                        path=f"batfish/iptables/{node['id']}.iptables",
+                        stage="batfish",
+                        content_type="text/plain",
+                        template_name="batfish/iptables/host.iptables.j2",
+                        context={**context, "node": node},
+                    )
+                )
+
         return PipelineArtifacts(
             topology_name=topology.name,
             artifacts=artifacts,
@@ -174,6 +213,8 @@ class PipelineArtifactGenerator:
         runtime_nodes = []
         for device in topology.devices:
             device_zone = zone_by_device.get(device.id)
+            asset_type_val = device.asset_type.value
+            is_nos = asset_type_val in NOS_ASSET_TYPES
             logical_interfaces = []
             for port in device.ports:
                 interface_payload = interface_by_port.get(port.id)
@@ -209,7 +250,8 @@ class PipelineArtifactGenerator:
             node = {
                 "id": device.id,
                 "name": device.name,
-                "asset_type": device.asset_type.value,
+                "asset_type": asset_type_val,
+                "profile": "nos" if is_nos else "linux",
                 "criticality": device.criticality.value,
                 "manufacturer": device.manufacturer,
                 "model": device.model,
@@ -229,6 +271,10 @@ class PipelineArtifactGenerator:
                     "kind": DEFAULT_LINUX_KIND,
                     "image": DEFAULT_LINUX_IMAGE,
                     "cmd": DEFAULT_LINUX_CMD,
+                },
+                "batfish": {
+                    "kind": DEFAULT_NOS_KIND if is_nos else DEFAULT_LINUX_KIND,
+                    "image": DEFAULT_NOS_IMAGE if is_nos else DEFAULT_LINUX_IMAGE,
                 },
                 "interfaces": logical_interfaces,
             }
@@ -281,7 +327,7 @@ class PipelineArtifactGenerator:
             "mgmt_network": f"gemerotic-{topology.name}-mgmt",
             "mgmt_ipv4_subnet": mgmt_ipv4_subnet,
             "mgmt_ipv6_subnet": mgmt_ipv6_subnet,
-            "nodes": runtime_nodes,
+            "nodes": nodes,
             "runtime_nodes": runtime_nodes,
             "links": links,
             "vlans": [

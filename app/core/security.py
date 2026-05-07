@@ -43,7 +43,7 @@ def require_api_key(
     if not settings.API_KEY_REQUIRED:
         return None
 
-    configured_api_key = settings.API_KEY.strip()
+    configured_api_key = _setting_secret(settings.API_KEY)
     if not configured_api_key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -133,13 +133,20 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return f"{identity}:{client_host}:{method}:{path}"
 
     def _client_host(self, request: Request) -> str:
-        forwarded_for = request.headers.get("X-Forwarded-For", "")
-        if forwarded_for.strip():
-            return forwarded_for.split(",")[0].strip()
+        client_ip = request.client.host if request.client is not None else ""
+        is_trusted = (
+            "*" in settings.TRUSTED_PROXIES
+            or client_ip in settings.TRUSTED_PROXIES
+        )
 
-        real_ip = request.headers.get("X-Real-IP", "").strip()
-        if real_ip:
-            return real_ip
+        if is_trusted:
+            forwarded_for = request.headers.get("X-Forwarded-For", "")
+            if forwarded_for.strip():
+                return forwarded_for.split(",")[0].strip()
+
+            real_ip = request.headers.get("X-Real-IP", "").strip()
+            if real_ip:
+                return real_ip
 
         if request.client is not None:
             return request.client.host
@@ -149,7 +156,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if not settings.API_KEY_REQUIRED:
             return "mvp"
 
-        configured_api_key = settings.API_KEY.strip()
+        configured_api_key = _setting_secret(settings.API_KEY)
         api_key = request.headers.get(API_KEY_HEADER_NAME, "").strip()
         if (
             not configured_api_key
@@ -160,3 +167,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         fingerprint = sha256(configured_api_key.encode("utf-8")).hexdigest()[:16]
         return f"api-key:{fingerprint}"
+
+
+def _setting_secret(value: object) -> str:
+    """Extraer secretos de Pydantic o strings parcheados en tests."""
+    if hasattr(value, "get_secret_value"):
+        return str(value.get_secret_value()).strip()
+    return str(value).strip()

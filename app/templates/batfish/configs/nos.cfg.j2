@@ -1,0 +1,16 @@
+! Arista cEOS Configuration for {{ node.id }}
+hostname {{ node.id }}
+!
+{% for interface in node.interfaces %}
+{% if interface.ipv4_address %}
+interface {{ interface.lab_interface }}
+   no switchport
+   ip address {{ interface.ipv4_address }}
+!
+{% endif %}
+{% endfor %}
+!
+management api http--v3
+   no shutdown
+!
+end
