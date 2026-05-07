@@ -1,6 +1,6 @@
 type APIConfig = {
   baseUrl: string
-  apiKey: string
+  apiKey?: string
 }
 
 type APIResult<T> = {
@@ -28,7 +28,16 @@ export type APIEnvelope<T = unknown> = {
 
 export type PipelineArtifact = {
   path: string
-  stage: 'containerlab' | 'ansible' | 'batfish' | 'opa' | 'metadata'
+  stage:
+    | 'topology'
+    | 'inventory'
+    | 'runtime'
+    | 'containerlab'
+    | 'ansible'
+    | 'ansible_vars'
+    | 'batfish'
+    | 'opa'
+    | 'metadata'
   content_type: string
   content: string
 }
@@ -36,6 +45,20 @@ export type PipelineArtifact = {
 export type PipelineArtifactsResponse = {
   topology_name: string
   artifacts: PipelineArtifact[]
+}
+
+export type NetBoxSyncStatus = {
+  status: 'synchronized' | 'failed'
+  detail: string | null
+  result?: unknown
+}
+
+export type TopologySaveResponse = {
+  topology_name: string
+  saved_at: string
+  store_dir: string
+  artifact_count: number
+  netbox_sync: NetBoxSyncStatus
 }
 
 export type PipelineCommandResult = {
@@ -172,8 +195,8 @@ export async function bootstrapNetBox(
 export async function createTopology(
   config: APIConfig,
   payload: unknown,
-): Promise<APIResult<APIEnvelope>> {
-  return requestJson<APIEnvelope>(config, '/api/v1/topology', {
+): Promise<APIResult<APIEnvelope<TopologySaveResponse>>> {
+  return requestJson<APIEnvelope<TopologySaveResponse>>(config, '/api/v1/topology', {
     method: 'POST',
     apiKeyRequired: true,
     body: payload,
@@ -191,6 +214,20 @@ export async function generatePipelineArtifacts(
       method: 'POST',
       apiKeyRequired: true,
       body: payload,
+    },
+  )
+}
+
+export async function generateSavedPipelineArtifacts(
+  config: APIConfig,
+  topologyName: string,
+): Promise<APIResult<APIEnvelope<PipelineArtifactsResponse>>> {
+  return requestJson<APIEnvelope<PipelineArtifactsResponse>>(
+    config,
+    `/api/v1/pipeline/artifacts/${encodeURIComponent(topologyName)}`,
+    {
+      method: 'POST',
+      apiKeyRequired: true,
     },
   )
 }
@@ -219,6 +256,20 @@ export async function deployPipeline(
       method: 'POST',
       apiKeyRequired: true,
       body: payload,
+    },
+  )
+}
+
+export async function deploySavedPipeline(
+  config: APIConfig,
+  topologyName: string,
+): Promise<APIResult<APIEnvelope<PipelineRunResponse>>> {
+  return requestJson<APIEnvelope<PipelineRunResponse>>(
+    config,
+    `/api/v1/pipeline/deploy/${encodeURIComponent(topologyName)}`,
+    {
+      method: 'POST',
+      apiKeyRequired: true,
     },
   )
 }
@@ -300,8 +351,9 @@ async function requestJson<T>(
   if (options.body !== undefined) {
     headers.set('Content-Type', 'application/json')
   }
-  if (options.apiKeyRequired) {
-    headers.set('X-API-Key', config.apiKey)
+  const apiKey = config.apiKey?.trim() ?? ''
+  if (options.apiKeyRequired && apiKey) {
+    headers.set('X-API-Key', apiKey)
   }
 
   const response = await fetch(`${config.baseUrl.replace(/\/$/, '')}${path}`, {

@@ -29,9 +29,10 @@ class Settings(BaseSettings):
     NETBOX_TIMEOUT_SECONDS: float = 10.0
     NETBOX_VERIFY_SSL: bool = True
 
-    # --- Seguridad MVP: API key estática ---
-    # FUTURO: reemplazar con autenticación por usuario (JWT / OAuth2)
+    # --- Seguridad MVP: API key opcional durante pruebas ---
+    # FUTURO: reactivar por entorno y reemplazar con usuario (JWT / OAuth2)
     #         para soportar multi-tenancy y tokens individuales de NetBox.
+    API_KEY_REQUIRED: bool = False
     API_KEY: str = ""
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_MAX_REQUESTS: int = 60

@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
+import { assetCatalog } from './assetCatalog'
 import {
   buildTopologyPayload,
   createBuilderEdge,
   createInitialBuilderState,
+  createNodeFromAsset,
   getNextAssetIndex,
   getPortName,
   getSuggestedPortIndex,
@@ -30,6 +32,16 @@ describe('topologyBuilder', () => {
     expect(payload.security_zones.length).toBeGreaterThan(1)
     expect(payload.conduits.length).toBeGreaterThan(0)
     expect(payload.conduits[0].allowed_protocols.length).toBeGreaterThan(0)
+    expect(payload.canvas.assets[0]).toMatchObject({
+      id: 'router-01',
+      asset_type: 'router',
+      position: { x: 120, y: 150 },
+    })
+    expect(payload.canvas.cables[0]).toMatchObject({
+      id: 'uplink-core',
+      source_device_id: 'router-01',
+      target_device_id: 'switch-01',
+    })
   })
 
   it('normaliza identificadores compatibles con el backend', () => {
@@ -116,6 +128,52 @@ describe('topologyBuilder', () => {
     expect(payload.devices.find((device) => device.id === 'switch-01')?.ports).toHaveLength(8)
   })
 
+  it('reasigna puertos repetidos antes de persistir cables nuevos', () => {
+    const state = createInitialBuilderState()
+    const extraNodes = [
+      createNodeFromAsset(assetCatalog[2], 0, { x: 120, y: 380 }),
+      createNodeFromAsset(assetCatalog[3], 0, { x: 300, y: 380 }),
+      createNodeFromAsset(assetCatalog[4], 0, { x: 480, y: 380 }),
+      createNodeFromAsset(assetCatalog[5], 0, { x: 660, y: 380 }),
+      createNodeFromAsset(assetCatalog[8], 0, { x: 840, y: 380 }),
+      createNodeFromAsset(assetCatalog[9], 0, { x: 1020, y: 380 }),
+    ]
+    state.nodes = [...state.nodes, ...extraNodes]
+    state.edges = [
+      ...state.edges,
+      ...extraNodes.map((node) =>
+        createBuilderEdge({
+          id: `edge-switch-${node.id}`,
+          source: 'switch-01',
+          target: node.id,
+        }),
+      ),
+    ]
+
+    const payload = buildTopologyPayload(state)
+    const portIds = payload.cables.flatMap((cable) =>
+      cable.terminations.map((termination) => termination.port_id),
+    )
+    const switchPorts = payload.cables
+      .flatMap((cable) => cable.terminations)
+      .map((termination) => termination.port_id)
+      .filter((portId) => portId.startsWith('switch-01:'))
+
+    expect(new Set(portIds).size).toBe(portIds.length)
+    expect(switchPorts).toEqual([
+      'switch-01:eth0',
+      'switch-01:eth1',
+      'switch-01:eth2',
+      'switch-01:eth3',
+      'switch-01:eth4',
+      'switch-01:eth5',
+      'switch-01:eth6',
+      'switch-01:eth7',
+      'switch-01:eth8',
+    ])
+    expect(payload.devices.find((device) => device.id === 'switch-01')?.ports).toHaveLength(9)
+  })
+
   it('sugiere el siguiente puerto libre por nodo', () => {
     const state = createInitialBuilderState()
 
@@ -136,6 +194,24 @@ describe('topologyBuilder', () => {
     expect(edge.label).toBe('backbone-a')
     expect(edge.data?.sourcePortIndex).toBe(2)
     expect(edge.data?.targetPortIndex).toBe(4)
+  })
+
+  it('descarta enlaces huerfanos antes de enviar al backend', () => {
+    const state = createInitialBuilderState()
+    state.edges = [
+      ...state.edges,
+      createBuilderEdge({
+        id: 'edge-orphan',
+        source: 'router-01',
+        target: 'missing-node',
+        label: 'orphan',
+      }),
+    ]
+
+    const payload = buildTopologyPayload(state)
+
+    expect(payload.cables.some((cable) => cable.id === 'orphan')).toBe(false)
+    expect(payload.canvas.cables.some((cable) => cable.id === 'orphan')).toBe(false)
   })
 
   it('permite configurar puertos individualmente antes de generar el payload', () => {

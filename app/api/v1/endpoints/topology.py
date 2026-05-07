@@ -2,14 +2,15 @@
 Endpoint principal de topología.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 
 from app.core.security import require_api_key
-from app.dependencies import get_netbox_client
+from app.dependencies import get_netbox_client, get_topology_store
 from app.schemas.responses import APIResponse
 from app.schemas.topology import TopologyCreate
 from app.services.netbox_client import NetBoxClient, NetBoxClientError
 from app.services.topology_importer import TopologyImportError
+from app.services.topology_store import TopologyStore
 
 router = APIRouter(prefix="/topology")
 
@@ -18,32 +19,40 @@ router = APIRouter(prefix="/topology")
     "",
     response_model=APIResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Crear una topología completa en NetBox",
+    summary="Guardar una topología completa",
     description=(
-        "Persistir las 3 capas del modelo GEMEROTIC: infraestructura física, "
-        "conectividad lógica y segmentación OT."
+        "Guardar las 3 capas del modelo GEMEROTIC como estado operativo local "
+        "y sincronizar NetBox como destino derivado de mejor esfuerzo."
     ),
 )
 async def create_topology(
     topology: TopologyCreate,
     _: None = Depends(require_api_key),
     netbox_client: NetBoxClient = Depends(get_netbox_client),
+    topology_store: TopologyStore = Depends(get_topology_store),
 ) -> APIResponse:
-    """Importar una topología validada al SSoT NetBox."""
+    """Guardar una topología validada y sincronizar NetBox sin bloquear el guardado."""
+    saved = topology_store.save(topology)
+    netbox_sync = {
+        "status": "synchronized",
+        "detail": None,
+        "result": None,
+    }
     try:
-        result = netbox_client.import_topology(topology)
+        netbox_sync["result"] = netbox_client.import_topology(topology)
     except TopologyImportError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
-        ) from exc
+        netbox_sync["status"] = "failed"
+        netbox_sync["detail"] = str(exc)
     except NetBoxClientError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
-        ) from exc
+        netbox_sync["status"] = "failed"
+        netbox_sync["detail"] = str(exc)
+
+    topology_store.update_netbox_sync(topology.name, netbox_sync)
 
     return APIResponse(
-        message="Topology created successfully",
-        data=result,
+        message="Topology saved successfully",
+        data={
+            **saved,
+            "netbox_sync": netbox_sync,
+        },
     )

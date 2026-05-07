@@ -6,7 +6,16 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-PipelineStage = Literal["containerlab", "ansible", "batfish", "opa", "metadata"]
+PipelineStage = Literal[
+    "topology",
+    "inventory",
+    "runtime",
+    "containerlab",
+    "ansible",
+    "batfish",
+    "opa",
+    "metadata",
+]
 
 
 class PipelineArtifact(BaseModel):

@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from app.api.v1.endpoints.pipeline import get_pipeline_runner
 from app.config import settings
+from app.dependencies import get_topology_store
 from app.main import create_app
 from app.schemas.pipeline import (
     PipelineArtifact,
@@ -112,6 +113,15 @@ class FakePipelineRunner:
         )
 
 
+class FakeTopologyStore:
+    """Store falso para cargar la última topología guardada."""
+
+    def load(self, topology_name: str) -> TopologyCreate:
+        payload = _mvp_topology_payload()
+        payload["name"] = topology_name
+        return TopologyCreate(**payload)
+
+
 def _tool_resolver(tool_name: str) -> str:
     """Resolver herramientas como instaladas para tests unitarios."""
     return f"C:/tools/{tool_name}.exe"
@@ -148,6 +158,7 @@ class TestPipelineRunner:
         assert [
             "containerlab",
             "deploy",
+            "--reconfigure",
             "--topo",
             "containerlab/topology.clab.yml",
         ] in deploy_commands
@@ -304,6 +315,26 @@ class TestPipelineRunnerEndpoint:
 
         assert response.status_code == 200
         assert response.json()["message"] == "Pipeline deployed successfully"
+
+    def test_deploy_saved_endpoint_uses_last_saved_topology(self, monkeypatch):
+        monkeypatch.setattr(settings, "API_KEY", "secret-key")
+        application = create_app(rate_limiter=AllowAllRateLimiter())
+        application.dependency_overrides[get_pipeline_runner] = (
+            lambda: FakePipelineRunner()
+        )
+        application.dependency_overrides[get_topology_store] = (
+            lambda: FakeTopologyStore()
+        )
+
+        with TestClient(application) as client:
+            response = client.post(
+                "/api/v1/pipeline/deploy/mvp-lab-01",
+                headers={"X-API-Key": "secret-key"},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["message"] == "Pipeline deployed from saved topology"
+        assert response.json()["data"]["topology_name"] == "mvp-lab-01"
 
     def test_inspect_lab_endpoint_returns_runtime_nodes(self, monkeypatch):
         monkeypatch.setattr(settings, "API_KEY", "secret-key")

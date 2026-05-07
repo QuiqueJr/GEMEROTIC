@@ -32,8 +32,13 @@ TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
 ### Alcance inicial permitido
 
 - Escribir bundles bajo `var/pipeline/<topology_name>`.
+- Guardar el último estado validado del gemelo bajo
+  `var/topologies/<topology_name>` para que el pipeline IaC no dependa de
+  NetBox en tiempo de edición.
 - Comprobar herramientas locales con `GET /api/v1/pipeline/tools`.
 - Ejecutar `POST /api/v1/pipeline/deploy` protegido por `X-API-Key`.
+- Ejecutar `POST /api/v1/pipeline/deploy/{topology_name}` desde la última
+  topología guardada.
 - Consultar labs desplegados con `GET /api/v1/pipeline/labs/{topology_name}`.
 - Ejecutar consola controlada por nodo con
   `POST /api/v1/pipeline/labs/{topology_name}/nodes/{node_id}/console`.
@@ -93,6 +98,41 @@ TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
     base de equipos de red/OT; Equinor Engineering Symbols y FUXA quedan como
     referencias permisivas, mientras que Cisco o packs sin licencia clara solo
     se usan como referencia visual
+- Se corrige el flujo de guardado para que el editor no pierda trabajo por un
+  fallo operativo de NetBox:
+  - `POST /api/v1/topology` guarda primero el `TopologyCreate` validado en el
+    store local del proyecto (`var/topologies/<topology_name>`)
+  - NetBox pasa a ser una sincronización derivada de mejor esfuerzo: si falla,
+    el guardado sigue devolviendo `201` y la respuesta incluye
+    `netbox_sync.status = failed` con el detalle del error
+  - los artefactos de Containerlab y Ansible se generan desde el último
+    guardado, no desde el estado efímero del navegador
+  - `POST /api/v1/pipeline/artifacts/{topology_name}` renderiza los artefactos
+    desde la última topología guardada
+  - `POST /api/v1/pipeline/deploy/{topology_name}` despliega con
+    Containerlab + Ansible desde la última topología guardada
+  - la UI ejecuta el flujo `guardar -> generar/desplegar desde guardado` para
+    que Ansible y Containerlab siempre trabajen con el último cambio persistido
+- Se elimina la fricción de `X-API-Key` durante el MVP:
+  - `API_KEY_REQUIRED=false` permite operar endpoints mutantes sin header en
+    entornos de prueba
+  - si en el futuro se reactiva `API_KEY_REQUIRED=true`, la validación de
+    `X-API-Key` se mantiene disponible
+- Se endurece la validación de cables y recableados:
+  - la UI reasigna automáticamente puertos repetidos cuando se crean varios
+    enlaces sin configuración completa de puertos
+  - el schema rechaza payloads externos donde un puerto físico aparece en más
+    de un cable, devolviendo `422` antes de llegar a NetBox
+  - el importador de NetBox elimina cables obsoletos de la topología y recrea
+    cables cuando cambian sus extremos, manteniendo la sincronización
+    idempotente
+- Se separan los artefactos JSON para escalar el pipeline:
+  - `topology/topology.json`
+  - `topology/canvas.json`
+  - `inventory/netbox_inventory.json`
+  - `runtime/containerlab_nodes.json`
+  - `runtime/containerlab_links.json`
+  - `ansible/vars.json`
 - Se incorporó una capa inicial de cumplimiento OT asistida:
   - `POST /api/v1/compliance/report` evalúa la topología contra una baseline
     GEMEROTIC trazable a `NIS2 + IEC 62443 + ISO/IEC 27001`

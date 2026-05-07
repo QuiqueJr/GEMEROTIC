@@ -37,8 +37,12 @@ def require_api_key(
     """
     Exigir API key para toda operación mutante del API.
 
-    El servicio falla en modo cerrado si la clave no está configurada.
+    En MVP queda desactivada por defecto para no bloquear pruebas de UI.
+    Si `API_KEY_REQUIRED=true`, mantiene el modo fail-closed anterior.
     """
+    if not settings.API_KEY_REQUIRED:
+        return None
+
     configured_api_key = settings.API_KEY.strip()
     if not configured_api_key:
         raise HTTPException(
@@ -142,6 +146,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return "unknown"
 
     def _client_identity(self, request: Request) -> str:
+        if not settings.API_KEY_REQUIRED:
+            return "mvp"
+
         configured_api_key = settings.API_KEY.strip()
         api_key = request.headers.get(API_KEY_HEADER_NAME, "").strip()
         if (

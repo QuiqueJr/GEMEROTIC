@@ -51,9 +51,9 @@ import {
   bootstrapNetBox,
   chatWithComplianceAssistant,
   createTopology,
-  deployPipeline,
+  deploySavedPipeline,
   generateComplianceReport,
-  generatePipelineArtifacts,
+  generateSavedPipelineArtifacts,
   getPipelineLabStatus,
   type ComplianceChatMessage,
   type ComplianceChatResponse,
@@ -66,6 +66,7 @@ import {
   type PipelineLabStatusResponse,
   type PipelineRunResponse,
   type PipelineToolReportResponse,
+  type TopologySaveResponse,
   runPipelineConsoleCommand,
 } from './api/gemeroticApi'
 import { AssetNode } from './components/AssetNode'
@@ -74,6 +75,8 @@ import { DrawingNode as DrawingCanvasNode } from './components/DrawingNode'
 import { EquipmentGlyph } from './components/EquipmentGlyph'
 import { getEdgeHandleIds, getSiblingOffsets } from './domain/edgeLayout'
 import { assetCatalog, getAssetDefinition } from './domain/assetCatalog'
+const DEPLOY_TOOL_NAMES = ['docker', 'containerlab', 'ansible-playbook'] as const
+
 import {
   buildTopologyPayload,
   createBuilderEdge,
@@ -307,8 +310,12 @@ function App() {
   const [linkDraft, setLinkDraft] = useState<CableDraft | null>(null)
   const [historyPast, setHistoryPast] = useState<CanvasHistoryState[]>([])
   const [historyFuture, setHistoryFuture] = useState<CanvasHistoryState[]>([])
-  const [apiBaseUrl, setApiBaseUrl] = useState(() => getDefaultApiBaseUrl())
-  const [apiKey, setApiKey] = useState('')
+  const [apiBaseUrl, setApiBaseUrl] = useState(() =>
+    window.localStorage.getItem('gemerotic-api-base-url') ?? getDefaultApiBaseUrl(),
+  )
+  const [apiKey, setApiKey] = useState(() =>
+    window.localStorage.getItem('gemerotic-api-key') ?? '',
+  )
   const [reactFlowInstance, setReactFlowInstance] =
     useState<ReactFlowInstance<CanvasNode, BuilderEdge> | null>(null)
   const [operationStatus, setOperationStatus] = useState<OperationStatus>('idle')
@@ -481,10 +488,11 @@ function App() {
       }),
     [activeView, edges, nodeById, selectedEdgeId, showInterfaceLabels, siblingOffsets],
   )
-  const allToolsInstalled =
+  const deployToolsInstalled =
     toolReport !== null &&
-    toolReport.tools.length > 0 &&
-    toolReport.tools.every((tool) => tool.installed)
+    DEPLOY_TOOL_NAMES.every((toolName) =>
+      toolReport.tools.some((tool) => tool.name === toolName && tool.installed),
+    )
   const activeDeviceConsole =
     activeConsoleTabId === 'app' ? null : deviceConsoles[activeConsoleTabId] ?? null
   const runtimeNodesById = useMemo(
@@ -495,7 +503,14 @@ function App() {
   const canRedo = historyFuture.length > 0
   const apiConfig = { baseUrl: apiBaseUrl, apiKey }
   const hasApiBaseUrl = apiBaseUrl.trim().length > 0
-  const hasApiKey = apiKey.trim().length > 0
+
+  useEffect(() => {
+    window.localStorage.setItem('gemerotic-api-base-url', apiBaseUrl)
+  }, [apiBaseUrl])
+
+  useEffect(() => {
+    window.localStorage.setItem('gemerotic-api-key', apiKey)
+  }, [apiKey])
 
   function appendConsole(text: string, tone: OperationStatus = 'idle') {
     setConsoleEntries((current) => [
@@ -563,7 +578,7 @@ function App() {
         },
     }))
     setActiveConsoleTabId(nodeId)
-    if (!runtimeNodesById.has(nodeId) && hasApiBaseUrl && hasApiKey) {
+    if (!runtimeNodesById.has(nodeId) && hasApiBaseUrl) {
       void inspectRuntimeLab()
     }
   }
@@ -620,14 +635,7 @@ function App() {
   }
 
   function ensureProtectedApiConfigured(actionLabel: string): boolean {
-    if (!ensureApiBaseUrlConfigured(actionLabel)) {
-      return false
-    }
-    if (hasApiKey) {
-      return true
-    }
-    showActionRequired(`Configura X-API-Key en Proyecto antes de ejecutar: ${actionLabel}.`)
-    return false
+    return ensureApiBaseUrlConfigured(actionLabel)
   }
 
   function pushHistorySnapshot() {
@@ -1368,7 +1376,7 @@ function App() {
       setOperationStatus(result.ok ? 'success' : 'error')
       setOperationMessage(message)
       appendConsole(message, result.ok ? 'success' : 'error')
-      if (result.ok && hasApiKey) {
+      if (result.ok) {
         void checkTools({ quiet: true })
       }
     } catch (error) {
@@ -1419,20 +1427,54 @@ function App() {
     return runOperation(() => bootstrapNetBox(apiConfig), 'Bootstrap de NetBox completado')
   }
 
-  const persistTopology = () => {
-    if (!ensureProtectedApiConfigured('Persistir topologia')) {
-      return
+  const saveCurrentTopology = async (): Promise<TopologySaveResponse | null> => {
+    if (!ensureProtectedApiConfigured('Guardar topologia')) {
+      return null
     }
-    return runOperation(() => createTopology(apiConfig, payload), 'Topologia enviada a NetBox')
+    setOperationStatus('running')
+    try {
+      const result = await createTopology(apiConfig, payload)
+      if (!result.ok || result.data.data === undefined) {
+        const message = extractMessage(result.data, `HTTP ${result.status}`)
+        setOperationStatus('error')
+        setOperationMessage(message)
+        appendConsole(message, 'error')
+        return null
+      }
+
+      const saveResult = result.data.data
+      const syncFailed = saveResult.netbox_sync.status === 'failed'
+      const message = syncFailed
+        ? `Topologia guardada; NetBox pendiente: ${saveResult.netbox_sync.detail ?? 'sync failed'}`
+        : 'Topologia guardada y NetBox sincronizado'
+      setOperationStatus('success')
+      setOperationMessage(message)
+      appendConsole(message, 'success')
+      return saveResult
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Request failed'
+      setOperationStatus('error')
+      setOperationMessage(message)
+      appendConsole(message, 'error')
+      return null
+    }
+  }
+
+  const persistTopology = () => {
+    return saveCurrentTopology()
   }
 
   const generateArtifacts = async () => {
-    if (!ensureProtectedApiConfigured('Generar artefactos')) {
+    const savedTopology = await saveCurrentTopology()
+    if (savedTopology === null) {
       return
     }
     setOperationStatus('running')
     try {
-      const result = await generatePipelineArtifacts(apiConfig, payload)
+      const result = await generateSavedPipelineArtifacts(
+        apiConfig,
+        savedTopology.topology_name,
+      )
       if (!result.ok || result.data.data === undefined) {
         const message = extractMessage(result.data, `HTTP ${result.status}`)
         setOperationStatus('error')
@@ -1445,8 +1487,13 @@ function App() {
       setDataTab('artifacts')
       setShowDataBrowser(true)
       setOperationStatus('success')
-      setOperationMessage(`${result.data.data.artifacts.length} artefactos generados`)
-      appendConsole(`${result.data.data.artifacts.length} artefactos generados`, 'success')
+      setOperationMessage(
+        `${result.data.data.artifacts.length} artefactos generados desde el guardado`,
+      )
+      appendConsole(
+        `${result.data.data.artifacts.length} artefactos generados desde el guardado`,
+        'success',
+      )
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Request failed'
       setOperationStatus('error')
@@ -1487,16 +1534,19 @@ function App() {
   }
 
   const deployPipelineRun = async () => {
-    if (!ensureProtectedApiConfigured('Desplegar pipeline')) {
+    const savedTopology = await saveCurrentTopology()
+    if (savedTopology === null) {
       return
     }
     const tools = await checkTools({ quiet: true })
     if (tools === null) {
       return
     }
-    const missingTools = tools.tools.filter((tool) => !tool.installed)
+    const missingTools = DEPLOY_TOOL_NAMES.filter(
+      (toolName) => !tools.tools.some((tool) => tool.name === toolName && tool.installed),
+    )
     if (missingTools.length > 0) {
-      const message = `Faltan herramientas del pipeline: ${missingTools.map((tool) => tool.name).join(', ')}`
+      const message = `Faltan herramientas del pipeline: ${missingTools.join(', ')}`
       setOperationStatus('error')
       setOperationMessage(message)
       appendConsole(message, 'error')
@@ -1504,7 +1554,7 @@ function App() {
     }
     setOperationStatus('running')
     try {
-      const result = await deployPipeline(apiConfig, payload)
+      const result = await deploySavedPipeline(apiConfig, savedTopology.topology_name)
       if (!result.ok || result.data.data === undefined) {
         const message = extractMessage(result.data, `HTTP ${result.status}`)
         setOperationStatus('error')
@@ -2003,7 +2053,7 @@ function App() {
               state={
                 toolReport === null
                   ? 'unchecked'
-                  : allToolsInstalled
+                  : deployToolsInstalled
                     ? 'ready'
                     : 'partial'
               }
@@ -2256,7 +2306,7 @@ function App() {
           <section className="dock-panel dock-panel--servers">
             <div className="dock-panel__header">
               <strong>Servers Summary</strong>
-              <span>{allToolsInstalled ? 'ready' : 'partial'}</span>
+              <span>{deployToolsInstalled ? 'ready' : 'partial'}</span>
             </div>
             <div className="dock-panel__body">
               <div className="server-summary__list">
@@ -2279,7 +2329,7 @@ function App() {
                   <strong>
                     {toolReport === null
                       ? 'unchecked'
-                      : allToolsInstalled
+                      : deployToolsInstalled
                         ? 'ready'
                       : 'partial'}
                   </strong>

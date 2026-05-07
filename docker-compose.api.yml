@@ -8,11 +8,13 @@ services:
     env_file:
       - .env
     network_mode: host
+    pid: host
     privileged: true
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - /run/netns:/run/netns
+      - /var/run/netns:/var/run/netns
+      - /var/lib/docker/containers:/var/lib/docker/containers
       - ./var:/app/var
 
   gemerotic-ui:

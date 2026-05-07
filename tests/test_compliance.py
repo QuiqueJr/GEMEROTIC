@@ -141,8 +141,9 @@ class TestComplianceAssistant:
 class TestComplianceEndpoints:
     """Tests HTTP de informe y chat."""
 
-    def test_report_requires_api_key(self, monkeypatch):
-        monkeypatch.setattr(settings, "API_KEY", "secret-key")
+    def test_report_allows_mvp_mode_without_api_key(self, monkeypatch):
+        monkeypatch.setattr(settings, "API_KEY_REQUIRED", False)
+        monkeypatch.setattr(settings, "API_KEY", "")
         application = create_app(rate_limiter=AllowAllRateLimiter())
 
         with TestClient(application) as client:
@@ -151,8 +152,8 @@ class TestComplianceEndpoints:
                 json=_mvp_topology_payload(),
             )
 
-        assert response.status_code == 401
-        assert response.json()["message"] == "Invalid API key"
+        assert response.status_code == 200
+        assert response.json()["data"]["topology_name"] == "mvp-lab-01"
 
     def test_report_returns_findings(self, monkeypatch):
         monkeypatch.setattr(settings, "API_KEY", "secret-key")

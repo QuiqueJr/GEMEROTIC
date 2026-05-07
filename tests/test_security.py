@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.config import settings
 from app.core.rate_limit import RateLimitBackendError, RateLimitDecision
-from app.dependencies import get_netbox_client
+from app.dependencies import get_netbox_client, get_topology_store
 from app.main import create_app
 from tests.test_schemas import _mvp_topology_payload
 
@@ -22,6 +22,21 @@ class ConnectedNetBoxClient:
 
     def import_topology(self, topology) -> dict:
         return {"topology_name": topology.name}
+
+
+class FakeTopologyStore:
+    """Store mínimo para no escribir disco en tests de seguridad."""
+
+    def save(self, topology) -> dict:
+        return {
+            "topology_name": topology.name,
+            "saved_at": "2026-05-07T00:00:00+00:00",
+            "store_dir": "/tmp/gemerotic-test",
+            "artifact_count": 13,
+        }
+
+    def update_netbox_sync(self, topology_name: str, sync_result: dict) -> None:
+        return None
 
 
 class AllowAllRateLimiter:
@@ -102,13 +117,25 @@ def _build_client(monkeypatch, rate_limiter) -> TestClient:
     application.dependency_overrides[get_netbox_client] = (
         lambda: ConnectedNetBoxClient()
     )
+    application.dependency_overrides[get_topology_store] = lambda: FakeTopologyStore()
     return TestClient(application)
 
 
 class TestAPIKeySecurity:
     """Tests de protección por API key."""
 
-    def test_write_endpoint_requires_configured_api_key(self, monkeypatch):
+    def test_write_endpoint_allows_mvp_mode_without_api_key(self, monkeypatch):
+        monkeypatch.setattr(settings, "API_KEY_REQUIRED", False)
+        monkeypatch.setattr(settings, "API_KEY", "")
+
+        with _build_client(monkeypatch, AllowAllRateLimiter()) as client:
+            response = client.post("/api/v1/netbox/bootstrap")
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "success"
+
+    def test_write_endpoint_requires_configured_api_key_when_enabled(self, monkeypatch):
+        monkeypatch.setattr(settings, "API_KEY_REQUIRED", True)
         monkeypatch.setattr(settings, "API_KEY", "")
 
         with _build_client(monkeypatch, AllowAllRateLimiter()) as client:
@@ -118,7 +145,8 @@ class TestAPIKeySecurity:
         assert response.json()["status"] == "error"
         assert response.json()["message"] == "API key protection is not configured"
 
-    def test_write_endpoint_rejects_invalid_api_key(self, monkeypatch):
+    def test_write_endpoint_rejects_invalid_api_key_when_enabled(self, monkeypatch):
+        monkeypatch.setattr(settings, "API_KEY_REQUIRED", True)
         monkeypatch.setattr(settings, "API_KEY", "secret-key")
 
         with _build_client(monkeypatch, AllowAllRateLimiter()) as client:
@@ -131,7 +159,8 @@ class TestAPIKeySecurity:
         assert response.json()["status"] == "error"
         assert response.json()["message"] == "Invalid API key"
 
-    def test_write_endpoint_accepts_valid_api_key(self, monkeypatch):
+    def test_write_endpoint_accepts_valid_api_key_when_enabled(self, monkeypatch):
+        monkeypatch.setattr(settings, "API_KEY_REQUIRED", True)
         monkeypatch.setattr(settings, "API_KEY", "secret-key")
 
         with _build_client(monkeypatch, AllowAllRateLimiter()) as client:

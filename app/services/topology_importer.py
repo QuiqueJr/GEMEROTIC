@@ -108,7 +108,9 @@ class TopologyImporter:
         except TopologyImportError:
             raise
         except (RequestError, requests.RequestException, ValueError) as exc:
-            raise NetBoxClientError("NetBox topology import failed") from exc
+            detail = str(exc).strip()
+            suffix = f": {detail}" if detail else ""
+            raise NetBoxClientError(f"NetBox topology import failed{suffix}") from exc
 
     def _import_topology(
         self,
@@ -257,6 +259,16 @@ class TopologyImporter:
                     for vlan_id in vlan_memberships.get(interface.port_id, [])
                 ],
             )
+
+        desired_cable_labels = {
+            self._scoped_token(
+                topology.name,
+                cable.id,
+                max_length=DEFAULT_SLUG_MAX_LENGTH,
+            )
+            for cable in topology.cables
+        }
+        self._delete_obsolete_cables(port_bindings, desired_cable_labels)
 
         for cable in topology.cables:
             record, created = self._ensure_cable(
@@ -550,12 +562,13 @@ class TopologyImporter:
             cable.id,
             max_length=DEFAULT_SLUG_MAX_LENGTH,
         )
-        record = self._api.dcim.cables.get(label=lookup_label)
-        if record is not None:
-            return record, False
-
         first = port_bindings[cable.terminations[0].port_id]
         second = port_bindings[cable.terminations[1].port_id]
+        record = self._api.dcim.cables.get(label=lookup_label)
+        if record is not None:
+            if self._cable_matches(record, first, second):
+                return record, False
+            self._delete_cable_record(record)
 
         payload: dict[str, Any] = {
             "label": lookup_label,
@@ -579,6 +592,80 @@ class TopologyImporter:
             payload["type"] = cable_type
 
         return self._api.dcim.cables.create(payload), True
+
+    def _delete_obsolete_cables(
+        self,
+        port_bindings: dict[str, PortBinding],
+        desired_labels: set[str],
+    ) -> None:
+        """Eliminar cables obsoletos conectados a puertos de esta topología."""
+        current_endpoint_keys = {
+            self._port_binding_key(binding) for binding in port_bindings.values()
+        }
+        for record in list(self._api.dcim.cables.all()):
+            label = getattr(record, "label", "")
+            if label in desired_labels:
+                continue
+            if self._cable_endpoint_keys(record) & current_endpoint_keys:
+                self._delete_cable_record(record)
+
+    def _cable_matches(
+        self,
+        record: Any,
+        first: PortBinding,
+        second: PortBinding,
+    ) -> bool:
+        """Comparar un cable NetBox con los extremos deseados."""
+        desired = {
+            self._port_binding_key(first),
+            self._port_binding_key(second),
+        }
+        return self._cable_endpoint_keys(record) == desired
+
+    def _port_binding_key(self, binding: PortBinding) -> tuple[str, int]:
+        """Normalizar un extremo de cable a `(object_type, object_id)`."""
+        return binding.object_type, int(binding.record.id)
+
+    def _cable_endpoint_keys(self, record: Any) -> set[tuple[str, int]]:
+        """Extraer extremos de cable desde records reales o fakes de NetBox."""
+        data: dict[str, Any] = {}
+        if hasattr(record, "serialize"):
+            data = record.serialize()
+
+        endpoint_keys: set[tuple[str, int]] = set()
+        for field_name in ("a_terminations", "b_terminations"):
+            terminations = data.get(field_name, getattr(record, field_name, []))
+            for termination in terminations or []:
+                key = self._termination_key(termination)
+                if key is not None:
+                    endpoint_keys.add(key)
+        return endpoint_keys
+
+    def _termination_key(self, termination: Any) -> tuple[str, int] | None:
+        """Normalizar una terminación de cable de pynetbox."""
+        if isinstance(termination, dict):
+            object_type = termination.get("object_type")
+            if isinstance(object_type, dict):
+                object_type = object_type.get("value")
+            object_id = (
+                termination.get("object_id")
+                or termination.get("id")
+                or (termination.get("object") or {}).get("id")
+            )
+        else:
+            object_type = getattr(termination, "object_type", None)
+            object_id = (
+                getattr(termination, "object_id", None)
+                or getattr(termination, "id", None)
+            )
+
+        if object_type is None or object_id is None:
+            return None
+        return str(object_type), int(object_id)
+
+    def _delete_cable_record(self, record: Any) -> None:
+        """Eliminar un cable existente de NetBox."""
+        record.delete()
 
     def _ensure_security_zone(
         self,

@@ -1,6 +1,8 @@
 name: {{ topology_name | json_string }}
 mgmt:
   network: {{ mgmt_network | json_string }}
+  ipv4-subnet: {{ mgmt_ipv4_subnet | json_string }}
+  ipv6-subnet: {{ mgmt_ipv6_subnet | json_string }}
 topology:
   nodes:
 {% for node in nodes %}
