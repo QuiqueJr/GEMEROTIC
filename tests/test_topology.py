@@ -163,6 +163,12 @@ class ConnectedTopologyClient:
             },
         }
 
+    def clean_topology(self, topology_name: str) -> dict:
+        return {
+            "topology_name": topology_name,
+            "summary": {"devices": 0, "cables": 0},
+        }
+
 
 class FailingTopologyClient:
     """Stub que simula un error de traducción del payload."""
@@ -173,6 +179,12 @@ class FailingTopologyClient:
             "has multiple sites"
         )
 
+    def clean_topology(self, topology_name: str) -> dict:
+        return {
+            "topology_name": topology_name,
+            "summary": {"devices": 0, "cables": 0},
+        }
+
 
 class BrokenNetBoxTopologyClient:
     """Stub que simula un error operativo al hablar con NetBox."""
@@ -180,12 +192,16 @@ class BrokenNetBoxTopologyClient:
     def import_topology(self, topology: TopologyCreate) -> dict:
         raise NetBoxClientError("NetBox topology import failed")
 
+    def clean_topology(self, topology_name: str) -> dict:
+        raise NetBoxClientError("NetBox topology cleanup failed")
+
 
 class FakeTopologyStore:
     """Store mínimo en memoria para tests de endpoints."""
 
     def __init__(self):
         self.saved: dict[str, TopologyCreate] = {}
+        self.project_states: dict[str, dict] = {}
         self.sync_results: dict[str, dict] = {}
 
     def save(self, topology: TopologyCreate) -> dict:
@@ -199,6 +215,17 @@ class FakeTopologyStore:
 
     def load(self, topology_name: str) -> TopologyCreate:
         return self.saved[topology_name]
+
+    def save_project_state(self, project_name: str, state: dict) -> dict:
+        self.project_states[project_name] = state
+        return {
+            "project_name": project_name,
+            "saved_at": "2026-05-07T00:00:00+00:00",
+            "store_dir": "/tmp/gemerotic-test",
+        }
+
+    def load_project_state(self, project_name: str) -> dict:
+        return self.project_states[project_name]
 
     def update_netbox_sync(self, topology_name: str, sync_result: dict) -> None:
         self.sync_results[topology_name] = sync_result
@@ -333,6 +360,49 @@ class TestTopologyImporter:
         assert len(importer._api.dcim.cables.all()) == 3
         assert result["summary"]["cables"]["created"] == 1
 
+    def test_importer_deletes_stale_devices_for_same_topology(self):
+        first_payload = TopologyCreate(**_mvp_topology_payload())
+        second_dict = _mvp_topology_payload()
+        second_dict["devices"] = [
+            device for device in second_dict["devices"] if device["id"] != "host-02"
+        ]
+        second_dict["cables"] = [
+            cable
+            for cable in second_dict["cables"]
+            if all(
+                termination["port_id"].split(":")[0] != "host-02"
+                for termination in cable["terminations"]
+            )
+        ]
+        for zone in second_dict["security_zones"]:
+            zone["device_ids"] = [
+                device_id for device_id in zone["device_ids"] if device_id != "host-02"
+            ]
+        second_payload = TopologyCreate(**second_dict)
+        importer = TopologyImporter(FakeTopologyClient())
+
+        importer.import_topology(first_payload)
+        result = importer.import_topology(second_payload)
+
+        asset_tags = [record.asset_tag for record in importer._api.dcim.devices.all()]
+        cable_labels = [record.label for record in importer._api.dcim.cables.all()]
+        assert "mvp-lab-01-host-02" not in asset_tags
+        assert len(asset_tags) == 3
+        assert len(cable_labels) == 2
+        assert result["summary"]["cleanup"]["devices"] == 1
+
+    def test_importer_can_clean_topology_namespace(self):
+        payload = TopologyCreate(**_mvp_topology_payload())
+        importer = TopologyImporter(FakeTopologyClient())
+
+        importer.import_topology(payload)
+        result = importer.clean_topology("mvp-lab-01")
+
+        assert len(importer._api.dcim.devices.all()) == 0
+        assert len(importer._api.dcim.cables.all()) == 0
+        assert len(importer._api.dcim.sites.all()) == 0
+        assert result["summary"]["devices"] == 4
+
     def test_importer_rejects_unplaced_device_in_multisite_topology(self):
         payload = _mvp_topology_payload()
         payload["sites"].append({"id": "site-remote", "name": "Planta Remota"})
@@ -419,3 +489,136 @@ class TestTopologyEndpoint:
             response.json()["data"]["netbox_sync"]["detail"]
             == "NetBox topology import failed"
         )
+
+    def test_save_state_persists_valid_builder_state(self, monkeypatch):
+        payload = _mvp_topology_payload()
+        topology_store = FakeTopologyStore()
+        state_payload = {
+            "project_name": "mvp-lab-01",
+            "version": 1,
+            "settings": {"name": "mvp-lab-01"},
+            "nodes": [{"id": "router-01"}],
+            "edges": [],
+            "drawings": [],
+            "active_view": "physical",
+            "topology": payload,
+        }
+
+        with _build_client_with_override(
+            ConnectedTopologyClient(),
+            monkeypatch,
+            topology_store=topology_store,
+        ) as client:
+            response = client.put(
+                "/api/v1/topology/state/mvp-lab-01",
+                json=state_payload,
+                headers={"X-API-Key": "test-api-key"},
+            )
+
+        data = response.json()["data"]
+        assert response.status_code == 201
+        assert data["project_name"] == "mvp-lab-01"
+        assert data["topology_validation"]["status"] == "valid"
+        assert data["netbox_sync"]["status"] == "synchronized"
+        assert topology_store.project_states["mvp-lab-01"]["settings"]["name"] == (
+            "mvp-lab-01"
+        )
+        assert "mvp-lab-01" in topology_store.saved
+
+    def test_save_state_survives_invalid_topology_payload(self, monkeypatch):
+        payload = _mvp_topology_payload()
+        payload["cables"][0]["terminations"][0]["port_id"] = "missing-port"
+        topology_store = FakeTopologyStore()
+        state_payload = {
+            "project_name": "mvp-lab-01",
+            "version": 1,
+            "settings": {"name": "mvp-lab-01"},
+            "nodes": [{"id": "router-01"}],
+            "edges": [],
+            "drawings": [],
+            "active_view": "physical",
+            "topology": payload,
+        }
+
+        with _build_client_with_override(
+            ConnectedTopologyClient(),
+            monkeypatch,
+            topology_store=topology_store,
+        ) as client:
+            response = client.put(
+                "/api/v1/topology/state/mvp-lab-01",
+                json=state_payload,
+                headers={"X-API-Key": "test-api-key"},
+            )
+
+        data = response.json()["data"]
+        assert response.status_code == 201
+        assert data["project_name"] == "mvp-lab-01"
+        assert data["topology_validation"]["status"] == "failed"
+        assert data["netbox_sync"]["status"] == "skipped"
+        assert "mvp-lab-01" in topology_store.project_states
+        assert topology_store.saved == {}
+
+    def test_save_blank_state_cleans_netbox_without_rejecting_payload(
+        self, monkeypatch
+    ):
+        topology_store = FakeTopologyStore()
+        state_payload = {
+            "project_name": "mvp-lab-01",
+            "version": 1,
+            "settings": {"name": "mvp-lab-01"},
+            "nodes": [],
+            "edges": [],
+            "drawings": [],
+            "active_view": "physical",
+            "topology": {
+                "name": "mvp-lab-01",
+                "sites": [{"id": "site-main", "name": "Planta Principal"}],
+                "rooms": [],
+                "racks": [],
+                "devices": [],
+                "cables": [],
+            },
+        }
+
+        with _build_client_with_override(
+            ConnectedTopologyClient(),
+            monkeypatch,
+            topology_store=topology_store,
+        ) as client:
+            response = client.put(
+                "/api/v1/topology/state/mvp-lab-01",
+                json=state_payload,
+                headers={"X-API-Key": "test-api-key"},
+            )
+
+        data = response.json()["data"]
+        assert response.status_code == 201
+        assert data["topology_validation"]["status"] == "failed"
+        assert data["netbox_sync"]["status"] == "synchronized"
+        assert data["netbox_sync"]["detail"] == "Topology cleared from NetBox"
+        assert topology_store.saved == {}
+
+    def test_get_state_returns_saved_builder_state(self, monkeypatch):
+        topology_store = FakeTopologyStore()
+        topology_store.project_states["mvp-lab-01"] = {
+            "project_name": "mvp-lab-01",
+            "settings": {"name": "mvp-lab-01"},
+            "nodes": [],
+            "edges": [],
+            "drawings": [],
+            "active_view": "logical",
+        }
+
+        with _build_client_with_override(
+            ConnectedTopologyClient(),
+            monkeypatch,
+            topology_store=topology_store,
+        ) as client:
+            response = client.get(
+                "/api/v1/topology/state/mvp-lab-01",
+                headers={"X-API-Key": "test-api-key"},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["data"]["active_view"] == "logical"

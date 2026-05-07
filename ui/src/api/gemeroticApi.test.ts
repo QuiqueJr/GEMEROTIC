@@ -12,7 +12,9 @@ import {
   getHealth,
   getPipelineLabStatus,
   getPipelineTools,
+  getTopologyState,
   runPipelineConsoleCommand,
+  saveTopologyState,
 } from './gemeroticApi'
 
 const config = {
@@ -84,6 +86,68 @@ describe('gemeroticApi', () => {
     await createTopology(config, { name: 'mvp-lab-01' })
 
     expect(fetchMock.mock.calls[0][1]?.body).toBe('{"name":"mvp-lab-01"}')
+  })
+
+  it('guarda estado visual del builder con PUT', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: 'success',
+          message: 'Topology state saved successfully',
+          data: {
+            project_name: 'mvp-lab-01',
+            topology_validation: { status: 'valid', detail: null },
+            netbox_sync: { status: 'skipped', detail: null },
+          },
+        }),
+      ),
+    )
+
+    await saveTopologyState(config, 'mvp-lab-01', {
+      project_name: 'mvp-lab-01',
+      version: 1,
+      settings: { name: 'MVP Lab 01' },
+      nodes: [],
+      edges: [],
+      drawings: [],
+      active_view: 'physical',
+      topology: { name: 'mvp-lab-01' },
+    })
+    const headers = fetchMock.mock.calls[0][1]?.headers as Headers
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'http://localhost:8000/api/v1/topology/state/mvp-lab-01',
+    )
+    expect(fetchMock.mock.calls[0][1]?.method).toBe('PUT')
+    expect(headers.get('X-API-Key')).toBe('test-key')
+    expect(fetchMock.mock.calls[0][1]?.body).toContain('"project_name":"mvp-lab-01"')
+  })
+
+  it('carga estado visual del builder', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: 'success',
+          message: 'Topology state loaded successfully',
+          data: {
+            project_name: 'mvp-lab-01',
+            version: 1,
+            settings: { name: 'MVP Lab 01' },
+            nodes: [],
+            edges: [],
+            drawings: [],
+            active_view: 'logical',
+          },
+        }),
+      ),
+    )
+
+    await getTopologyState(config, 'mvp-lab-01')
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'http://localhost:8000/api/v1/topology/state/mvp-lab-01',
+    )
+    expect(fetchMock.mock.calls[0][1]?.method).toBe('GET')
   })
 
   it('genera artefactos del pipeline con API key', async () => {

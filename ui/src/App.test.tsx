@@ -1,7 +1,11 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import App from './App'
+
+beforeEach(() => {
+  window.localStorage.clear()
+})
 
 afterEach(() => {
   cleanup()
@@ -22,7 +26,7 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Seguridad' })).toBeInTheDocument()
     expect(screen.getByText('Topology Summary')).toBeInTheDocument()
     expect(screen.getByText('Servers Summary')).toBeInTheDocument()
-    expect(screen.getByText(/Celda OT/i)).toBeInTheDocument()
+    expect(screen.getByText('Router Core')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Añadir zona' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Añadir rectangulo' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Añadir circulo' })).toBeInTheDocument()
@@ -34,6 +38,8 @@ describe('App', () => {
     render(<App />)
     const workspace = screen.getAllByRole('application')[0]
 
+    fireEvent.click(screen.getByRole('button', { name: /Router Core/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Switch Acceso/i }))
     fireEvent.click(screen.getAllByRole('button', { name: 'Add Link' })[0])
     fireEvent.click(within(workspace).getAllByText('Router Core')[0])
 
@@ -57,6 +63,7 @@ describe('App', () => {
   it('abre una consola dedicada por nodo seleccionado', () => {
     render(<App />)
 
+    fireEvent.click(screen.getByRole('button', { name: /Router Core/i }))
     const openConsoleButton = screen
       .getAllByRole('button', { name: 'Abrir consola del nodo' })
       .find((button) => !button.hasAttribute('disabled'))
@@ -100,6 +107,7 @@ describe('App', () => {
   it('muestra una pestaña de puertos en el editor del dispositivo', () => {
     render(<App />)
 
+    fireEvent.click(screen.getByRole('button', { name: /Router Core/i }))
     fireEvent.doubleClick(screen.getAllByRole('button', { name: /Router Corerouter/i })[0])
     fireEvent.click(screen.getAllByRole('tab', { name: 'Puertos' })[0])
 
@@ -139,12 +147,20 @@ describe('App', () => {
         status: 201,
         json: async () => ({
           status: 'success',
-          message: 'Topology saved successfully',
+          message: 'Topology state saved successfully',
           data: {
+            project_name: 'mvp-lab-01',
             topology_name: 'mvp-lab-01',
             saved_at: '2026-05-07T00:00:00+00:00',
             store_dir: '/tmp/gemerotic-test',
-            artifact_count: 13,
+            topology_save: {
+              topology_name: 'mvp-lab-01',
+              saved_at: '2026-05-07T00:00:00+00:00',
+              store_dir: '/tmp/gemerotic-test',
+              artifact_count: 13,
+              netbox_sync: { status: 'synchronized', detail: null },
+            },
+            topology_validation: { status: 'valid', detail: null },
             netbox_sync: { status: 'synchronized', detail: null },
           },
         }),
@@ -172,6 +188,7 @@ describe('App', () => {
 
     render(<App />)
 
+    fireEvent.click(screen.getByRole('button', { name: /Router Core/i }))
     fireEvent.click(screen.getAllByRole('button', { name: 'Generar artefactos' })[0])
 
     await waitFor(() => {
@@ -198,12 +215,20 @@ describe('App', () => {
         status: 201,
         json: async () => ({
           status: 'success',
-          message: 'Topology saved successfully',
+          message: 'Topology state saved successfully',
           data: {
+            project_name: 'mvp-lab-01',
             topology_name: 'mvp-lab-01',
             saved_at: '2026-05-07T00:00:00+00:00',
             store_dir: '/tmp/gemerotic-test',
-            artifact_count: 13,
+            topology_save: {
+              topology_name: 'mvp-lab-01',
+              saved_at: '2026-05-07T00:00:00+00:00',
+              store_dir: '/tmp/gemerotic-test',
+              artifact_count: 13,
+              netbox_sync: { status: 'synchronized', detail: null },
+            },
+            topology_validation: { status: 'valid', detail: null },
             netbox_sync: { status: 'synchronized', detail: null },
           },
         }),
@@ -276,6 +301,7 @@ describe('App', () => {
 
     render(<App />)
 
+    fireEvent.click(screen.getByRole('button', { name: /Router Core/i }))
     fireEvent.click(screen.getAllByRole('button', { name: 'Desplegar pipeline' })[0])
 
     await waitFor(() => {

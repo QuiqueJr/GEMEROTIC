@@ -134,11 +134,23 @@ TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
     se usan como referencia visual
 - Se corrige el flujo de guardado para que el editor no pierda trabajo por un
   fallo operativo de NetBox:
+  - `PUT /api/v1/topology/state/{project_name}` guarda primero el estado
+    visual completo del builder (`settings`, `nodes`, `edges`, `drawings`,
+    vista activa y `topology` derivada) en
+    `var/topologies/<project_name>/state.json`
+  - `GET /api/v1/topology/state/{project_name}` recupera ese estado visual para
+    rehidratar el canvas tras recargar el navegador
+  - el estado visual se guarda aunque la topología esté incompleta o totalmente
+    vacía; en ese caso no se generan artefactos desplegables hasta que exista
+    un `TopologyCreate` válido
   - `POST /api/v1/topology` guarda primero el `TopologyCreate` validado en el
     store local del proyecto (`var/topologies/<topology_name>`)
   - NetBox pasa a ser una sincronización derivada de mejor esfuerzo: si falla,
     el guardado sigue devolviendo `201` y la respuesta incluye
     `netbox_sync.status = failed` con el detalle del error
+  - si el canvas se guarda vacío, el backend limpia en NetBox los objetos
+    gestionados bajo ese `project_name` para evitar que reaparezcan dispositivos
+    o cables de pruebas anteriores
   - los artefactos de Containerlab y Ansible se generan desde el último
     guardado, no desde el estado efímero del navegador
   - `POST /api/v1/pipeline/artifacts/{topology_name}` renderiza los artefactos
@@ -157,9 +169,9 @@ TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
     enlaces sin configuración completa de puertos
   - el schema rechaza payloads externos donde un puerto físico aparece en más
     de un cable, devolviendo `422` antes de llegar a NetBox
-  - el importador de NetBox elimina cables obsoletos de la topología y recrea
-    cables cuando cambian sus extremos, manteniendo la sincronización
-    idempotente
+  - el importador de NetBox elimina cables, dispositivos, interfaces y objetos
+    físicos/OT obsoletos dentro del namespace de la topología, y recrea cables
+    cuando cambian sus extremos
 - Se separan los artefactos JSON para escalar el pipeline:
   - `topology/topology.json`
   - `topology/canvas.json`

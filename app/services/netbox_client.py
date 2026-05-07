@@ -396,6 +396,13 @@ class NetBoxClient:
         importer = TopologyImporter(self)
         return importer.import_topology(topology)
 
+    def clean_topology(self, topology_name: str) -> dict[str, Any]:
+        """Eliminar de NetBox los objetos gestionados para una topología."""
+        from app.services.topology_importer import TopologyImporter
+
+        importer = TopologyImporter(self)
+        return importer.clean_topology(topology_name)
+
     def _authorization_header(self) -> str:
         """Construir el header correcto para tokens NetBox v1/v2."""
         if self.token.startswith("nbt_"):

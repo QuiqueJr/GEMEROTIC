@@ -45,6 +45,24 @@ class TestTopologyStore:
         )
         assert "NetBox unavailable" in metadata
 
+    def test_save_project_state_persists_raw_builder_state(self, tmp_path):
+        store = TopologyStore(root=tmp_path)
+        state = {
+            "project_name": "mvp-lab-01",
+            "settings": {"name": "MVP Lab 01"},
+            "nodes": [{"id": "router-01"}],
+            "edges": [],
+            "drawings": [],
+            "active_view": "physical",
+        }
+
+        result = store.save_project_state("mvp-lab-01", state)
+        loaded = store.load_project_state("mvp-lab-01")
+
+        assert result["project_name"] == "mvp-lab-01"
+        assert loaded["settings"]["name"] == "MVP Lab 01"
+        assert (tmp_path / "mvp-lab-01" / "state.json").exists()
+
     def test_load_missing_topology_raises_clear_error(self, tmp_path):
         store = TopologyStore(root=tmp_path)
 

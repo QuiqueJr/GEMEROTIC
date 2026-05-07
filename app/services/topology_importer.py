@@ -112,6 +112,23 @@ class TopologyImporter:
             suffix = f": {detail}" if detail else ""
             raise NetBoxClientError(f"NetBox topology import failed{suffix}") from exc
 
+    def clean_topology(self, topology_name: str) -> dict[str, Any]:
+        """Eliminar todos los objetos de NetBox gestionados para una topología."""
+        if not self._client.is_configured():
+            raise NetBoxClientError("NetBox token is not configured")
+
+        try:
+            cleanup = self._delete_scoped_records(topology_name, desired={})
+        except (RequestError, requests.RequestException, ValueError) as exc:
+            detail = str(exc).strip()
+            suffix = f": {detail}" if detail else ""
+            raise NetBoxClientError(f"NetBox topology cleanup failed{suffix}") from exc
+
+        return {
+            "topology_name": topology_name,
+            "summary": cleanup,
+        }
+
     def _import_topology(
         self,
         topology: TopologyCreate,
@@ -136,6 +153,7 @@ class TopologyImporter:
         device_records: dict[str, Any] = {}
         patch_panel_records: dict[str, Any] = {}
         port_bindings: dict[str, PortBinding] = {}
+        cleanup_summary = self._delete_obsolete_topology_records(topology)
 
         for site in topology.sites:
             record, created = self._ensure_site(
@@ -308,6 +326,7 @@ class TopologyImporter:
                 "custom_fields": foundation.get("custom_fields"),
             },
             "summary": {
+                "cleanup": cleanup_summary,
                 "sites": self._serialize_summary(summaries["sites"]),
                 "rooms": self._serialize_summary(summaries["rooms"]),
                 "racks": self._serialize_summary(summaries["racks"]),
@@ -320,6 +339,239 @@ class TopologyImporter:
                 "conduits": self._serialize_summary(summaries["conduits"]),
             },
         }
+
+    def _delete_obsolete_topology_records(
+        self,
+        topology: TopologyCreate,
+    ) -> dict[str, int]:
+        """Eliminar objetos de NetBox que ya no existen en el payload actual."""
+        desired = {
+            "sites": {
+                self._scoped_slug(topology.name, site.id) for site in topology.sites
+            },
+            "rooms": {
+                self._scoped_slug(topology.name, room.id) for room in topology.rooms
+            },
+            "racks": {
+                self._scoped_token(topology.name, rack.id) for rack in topology.racks
+            },
+            "devices": {
+                self._scoped_token(topology.name, device.id)
+                for device in topology.devices
+            }
+            | {
+                self._scoped_token(topology.name, panel.id)
+                for panel in topology.patch_panels
+            },
+            "vlans": {
+                self._scoped_name(
+                    topology.name,
+                    vlan.name,
+                    max_length=DEFAULT_VLAN_NAME_MAX_LENGTH,
+                )
+                for vlan in topology.vlans
+            },
+            "cables": {
+                self._scoped_token(
+                    topology.name,
+                    cable.id,
+                    max_length=DEFAULT_SLUG_MAX_LENGTH,
+                )
+                for cable in topology.cables
+            },
+            "security_zones": {
+                self._scoped_slug(topology.name, zone.id)
+                for zone in topology.security_zones
+            },
+            "conduits": {
+                self._scoped_slug(topology.name, conduit.id)
+                for conduit in topology.conduits
+            },
+        }
+        return self._delete_scoped_records(topology.name, desired)
+
+    def _delete_scoped_records(
+        self,
+        topology_name: str,
+        desired: dict[str, set[str]],
+    ) -> dict[str, int]:
+        """Borrar registros gestionados por GEMEROTIC que no estén deseados."""
+        summary = {
+            "cables": 0,
+            "conduits": 0,
+            "security_zones": 0,
+            "devices": 0,
+            "interfaces": 0,
+            "vlans": 0,
+            "racks": 0,
+            "rooms": 0,
+            "sites": 0,
+        }
+
+        desired_devices = desired.get("devices", set())
+        scoped_devices = [
+            record
+            for record in self._api.dcim.devices.all()
+            if self._is_scoped_asset_record(topology_name, record)
+        ]
+        stale_devices = [
+            record
+            for record in scoped_devices
+            if getattr(record, "asset_tag", "") not in desired_devices
+        ]
+        stale_endpoint_keys = self._collect_device_endpoint_keys(stale_devices)
+
+        desired_cables = desired.get("cables", set())
+        for record in list(self._api.dcim.cables.all()):
+            label = getattr(record, "label", "")
+            is_scoped_cable = self._is_scoped_token(topology_name, label)
+            uses_stale_endpoint = bool(
+                self._cable_endpoint_keys(record) & stale_endpoint_keys
+            )
+            if (is_scoped_cable and label not in desired_cables) or uses_stale_endpoint:
+                self._delete_cable_record(record)
+                summary["cables"] += 1
+
+        summary["conduits"] += self._delete_scoped_slug_records(
+            self._api.plugins.ot_security.conduits,
+            topology_name,
+            desired.get("conduits", set()),
+        )
+        summary["security_zones"] += self._delete_scoped_slug_records(
+            self._api.plugins.ot_security.security_zones,
+            topology_name,
+            desired.get("security_zones", set()),
+        )
+
+        for record in stale_devices:
+            summary["interfaces"] += self._delete_device_ports(record)
+            record.delete()
+            summary["devices"] += 1
+
+        desired_vlans = desired.get("vlans", set())
+        for record in list(self._api.ipam.vlans.all()):
+            name = getattr(record, "name", "")
+            if self._is_scoped_name(topology_name, name) and name not in desired_vlans:
+                record.delete()
+                summary["vlans"] += 1
+
+        summary["racks"] += self._delete_scoped_asset_records(
+            self._api.dcim.racks,
+            topology_name,
+            desired.get("racks", set()),
+        )
+        summary["rooms"] += self._delete_scoped_slug_records(
+            self._api.dcim.locations,
+            topology_name,
+            desired.get("rooms", set()),
+        )
+        summary["sites"] += self._delete_scoped_slug_records(
+            self._api.dcim.sites,
+            topology_name,
+            desired.get("sites", set()),
+        )
+        return summary
+
+    def _delete_scoped_asset_records(
+        self,
+        endpoint: Any,
+        topology_name: str,
+        desired_tokens: set[str],
+    ) -> int:
+        """Eliminar registros con asset_tag de la topología."""
+        deleted = 0
+        for record in list(endpoint.all()):
+            token = getattr(record, "asset_tag", "")
+            if (
+                self._is_scoped_token(topology_name, token)
+                and token not in desired_tokens
+            ):
+                record.delete()
+                deleted += 1
+        return deleted
+
+    def _delete_scoped_slug_records(
+        self,
+        endpoint: Any,
+        topology_name: str,
+        desired_slugs: set[str],
+    ) -> int:
+        """Eliminar registros con slug de la topología."""
+        deleted = 0
+        for record in list(endpoint.all()):
+            slug = getattr(record, "slug", "")
+            if self._is_scoped_token(topology_name, slug) and slug not in desired_slugs:
+                record.delete()
+                deleted += 1
+        return deleted
+
+    def _delete_device_ports(self, device_record: Any) -> int:
+        """Eliminar interfaces y puertos de un dispositivo antes de borrarlo."""
+        deleted = 0
+        for endpoint in (
+            self._api.dcim.interfaces,
+            self._api.dcim.front_ports,
+            self._api.dcim.rear_ports,
+        ):
+            for record in list(endpoint.all()):
+                if self._record_belongs_to_device(record, int(device_record.id)):
+                    record.delete()
+                    deleted += 1
+        return deleted
+
+    def _collect_device_endpoint_keys(
+        self,
+        device_records: list[Any],
+    ) -> set[tuple[str, int]]:
+        """Recoger extremos físicos asociados a dispositivos gestionados."""
+        device_ids = {int(record.id) for record in device_records}
+        endpoint_keys: set[tuple[str, int]] = set()
+        endpoint_specs = (
+            (self._api.dcim.interfaces, DEFAULT_INTERFACE_OBJECT_TYPE),
+            (self._api.dcim.front_ports, DEFAULT_FRONT_PORT_OBJECT_TYPE),
+            (self._api.dcim.rear_ports, DEFAULT_REAR_PORT_OBJECT_TYPE),
+        )
+        for endpoint, object_type in endpoint_specs:
+            for record in endpoint.all():
+                if self._record_belongs_to_device(record, device_ids):
+                    endpoint_keys.add((object_type, int(record.id)))
+        return endpoint_keys
+
+    def _record_belongs_to_device(
+        self,
+        record: Any,
+        device_id: int | set[int],
+    ) -> bool:
+        """Comprobar si un record de puerto pertenece a un dispositivo."""
+        raw_device = getattr(record, "device", None)
+        raw_device_id = getattr(record, "device_id", None)
+        if hasattr(raw_device, "id"):
+            current_id = int(raw_device.id)
+        elif isinstance(raw_device, dict) and "id" in raw_device:
+            current_id = int(raw_device["id"])
+        elif raw_device is not None:
+            current_id = int(raw_device)
+        elif raw_device_id is not None:
+            current_id = int(raw_device_id)
+        else:
+            return False
+
+        if isinstance(device_id, set):
+            return current_id in device_id
+        return current_id == device_id
+
+    def _is_scoped_asset_record(self, topology_name: str, record: Any) -> bool:
+        """Comprobar si un record con asset_tag pertenece a la topología."""
+        return self._is_scoped_token(topology_name, getattr(record, "asset_tag", ""))
+
+    def _is_scoped_token(self, topology_name: str, token: str) -> bool:
+        """Comprobar prefijo GEMEROTIC usado para aislar topologías."""
+        prefix = self._slugify(topology_name)
+        return token == prefix or token.startswith(f"{prefix}-")
+
+    def _is_scoped_name(self, topology_name: str, name: str) -> bool:
+        """Comprobar sufijo de nombre usado para aislar VLANs."""
+        return name.endswith(f" [{topology_name}]")
 
     def _ensure_site(
         self,
@@ -675,10 +927,6 @@ class TopologyImporter:
     ) -> tuple[Any, bool]:
         endpoint = self._api.plugins.ot_security.security_zones
         scoped_zone_id = self._scoped_slug(topology_name, zone.id)
-        record = endpoint.get(slug=scoped_zone_id)
-        if record is not None:
-            return record, False
-
         payload = {
             "name": self._scoped_name(topology_name, zone.name),
             "slug": scoped_zone_id,
@@ -689,6 +937,11 @@ class TopologyImporter:
             payload["description"] = zone.description
         if zone.purdue_level is not None:
             payload["purdue_level"] = int(zone.purdue_level.value)
+
+        record = endpoint.get(slug=scoped_zone_id)
+        if record is not None:
+            self._update_record(record, payload)
+            return record, False
 
         return endpoint.create(payload), True
 
@@ -701,10 +954,6 @@ class TopologyImporter:
     ) -> tuple[Any, bool]:
         endpoint = self._api.plugins.ot_security.conduits
         scoped_conduit_id = self._scoped_slug(topology_name, conduit.id)
-        record = endpoint.get(slug=scoped_conduit_id)
-        if record is not None:
-            return record, False
-
         payload = {
             "name": self._scoped_name(topology_name, conduit.name),
             "slug": scoped_conduit_id,
@@ -715,6 +964,11 @@ class TopologyImporter:
         }
         if conduit.description:
             payload["description"] = conduit.description
+
+        record = endpoint.get(slug=scoped_conduit_id)
+        if record is not None:
+            self._update_record(record, payload)
+            return record, False
 
         return endpoint.create(payload), True
 

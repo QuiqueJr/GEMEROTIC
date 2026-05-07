@@ -50,11 +50,11 @@ import './App.css'
 import {
   bootstrapNetBox,
   chatWithComplianceAssistant,
-  createTopology,
   deploySavedPipeline,
   generateComplianceReport,
   generateSavedPipelineArtifacts,
   getPipelineLabStatus,
+  getTopologyState,
   type ComplianceChatMessage,
   type ComplianceChatResponse,
   type ComplianceReportResponse,
@@ -66,8 +66,10 @@ import {
   type PipelineLabStatusResponse,
   type PipelineRunResponse,
   type PipelineToolReportResponse,
-  type TopologySaveResponse,
+  type TopologyProjectStatePayload,
+  type TopologyProjectStateSaveResponse,
   runPipelineConsoleCommand,
+  saveTopologyState,
 } from './api/gemeroticApi'
 import { AssetNode } from './components/AssetNode'
 import { CableEdge } from './components/CableEdge'
@@ -113,6 +115,7 @@ const edgeTypes = {
   cable: CableEdge,
 }
 
+const PROJECT_NAME_STORAGE_KEY = 'gemerotic-current-project-v2'
 const criticalityOptions: Criticality[] = ['critical', 'high', 'medium', 'low']
 const securityLevelOptions: SecurityLevel[] = ['SL-0', 'SL-1', 'SL-2', 'SL-3', 'SL-4']
 const purdueOptions: PurdueLevel[] = [0, 1, 2, 3, 4, 5]
@@ -207,42 +210,7 @@ const drawingKindLabels: Record<DrawingKind, string> = {
 }
 
 function createInitialDrawingNodes(): DrawingNodeModel[] {
-  return [
-    createDrawingNode('drawing-room', 'rectangle', 'Cuarto de servidores', 'physical', {
-      color: '#64748b',
-      height: 230,
-      position: { x: 70, y: 58 },
-      width: 360,
-    }),
-    createDrawingNode('drawing-cell', 'rectangle', 'Celda OT / Linea A', 'physical', {
-      color: '#0f766e',
-      height: 250,
-      position: { x: 520, y: 160 },
-      width: 360,
-    }),
-    createDrawingNode('drawing-dmz', 'zone', 'Zona DMZ industrial', 'security', {
-      color: '#b45309',
-      height: 250,
-      position: { x: 260, y: 110 },
-      purdueLevel: 3,
-      securityLevel: 'SL-3',
-      width: 300,
-    }),
-    createDrawingNode('drawing-control', 'zone', 'Zona OT Control', 'security', {
-      color: '#0f766e',
-      height: 270,
-      position: { x: 600, y: 155 },
-      purdueLevel: 1,
-      securityLevel: 'SL-3',
-      width: 300,
-    }),
-    createDrawingNode('drawing-note', 'text', 'Doble clic para editar texto o zona', 'physical', {
-      color: '#2563eb',
-      height: 56,
-      position: { x: 88, y: 328 },
-      width: 280,
-    }),
-  ]
+  return []
 }
 
 function createDrawingNode(
@@ -315,6 +283,9 @@ function App() {
   )
   const [apiKey, setApiKey] = useState(() =>
     window.localStorage.getItem('gemerotic-api-key') ?? '',
+  )
+  const [remoteStateLoaded, setRemoteStateLoaded] = useState(
+    () => window.localStorage.getItem(PROJECT_NAME_STORAGE_KEY) === null,
   )
   const [reactFlowInstance, setReactFlowInstance] =
     useState<ReactFlowInstance<CanvasNode, BuilderEdge> | null>(null)
@@ -511,6 +482,91 @@ function App() {
   useEffect(() => {
     window.localStorage.setItem('gemerotic-api-key', apiKey)
   }, [apiKey])
+
+  useEffect(() => {
+    if (remoteStateLoaded || !hasApiBaseUrl) {
+      return
+    }
+
+    let cancelled = false
+    const projectName = window.localStorage.getItem(PROJECT_NAME_STORAGE_KEY)
+    if (projectName === null) {
+      return
+    }
+    const storedProjectName = projectName
+
+    async function hydrateProjectState() {
+      try {
+        const result = await getTopologyState(
+          { baseUrl: apiBaseUrl, apiKey },
+          storedProjectName,
+        )
+        if (cancelled) {
+          return
+        }
+        if (result.ok && result.data.data !== undefined) {
+          const restored = coerceProjectState(
+            result.data.data,
+            cloneSnapshot({ settings, nodes, edges, drawings }),
+          )
+          const cloned = cloneSnapshot(restored.snapshot)
+          setSettings(cloned.settings)
+          setNodes(cloned.nodes)
+          setEdges(cloned.edges)
+          setDrawings(cloned.drawings)
+          setSelectedNodeId(null)
+          setSelectedEdgeId(null)
+          setSelectedDrawingId(null)
+          setEditorNodeId(null)
+          setDrawingEditorId(null)
+          setPendingLinkSource(null)
+          setPortPicker(null)
+          setLinkDraft(null)
+          setInteractionMode('select')
+          setActiveView(restored.activeView)
+          setHistoryPast([])
+          setHistoryFuture([])
+          window.localStorage.setItem(PROJECT_NAME_STORAGE_KEY, restored.projectName)
+          setOperationStatus('success')
+          setOperationMessage('Estado guardado cargado')
+          appendConsole('Estado guardado cargado desde el API', 'success')
+          return
+        }
+        if (result.status !== 404) {
+          const message = extractMessage(result.data, `HTTP ${result.status}`)
+          setOperationStatus('error')
+          setOperationMessage(message)
+          appendConsole(message, 'error')
+        }
+      } catch (error) {
+        if (!cancelled) {
+          const message = error instanceof Error ? error.message : 'Request failed'
+          appendConsole(`No se pudo cargar estado guardado: ${message}`, 'error')
+        }
+      } finally {
+        if (!cancelled) {
+          setRemoteStateLoaded(true)
+        }
+      }
+    }
+
+    void hydrateProjectState()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    apiBaseUrl,
+    apiKey,
+    drawings,
+    edges,
+    hasApiBaseUrl,
+    nodes,
+    remoteStateLoaded,
+    setDrawings,
+    setEdges,
+    setNodes,
+    settings,
+  ])
 
   function appendConsole(text: string, tone: OperationStatus = 'idle') {
     setConsoleEntries((current) => [
@@ -1427,13 +1483,23 @@ function App() {
     return runOperation(() => bootstrapNetBox(apiConfig), 'Bootstrap de NetBox completado')
   }
 
-  const saveCurrentTopology = async (): Promise<TopologySaveResponse | null> => {
+  const saveCurrentTopology =
+    async (): Promise<TopologyProjectStateSaveResponse | null> => {
     if (!ensureProtectedApiConfigured('Guardar topologia')) {
       return null
     }
     setOperationStatus('running')
     try {
-      const result = await createTopology(apiConfig, payload)
+      const projectStatePayload = buildProjectStatePayload(
+        cloneSnapshot({ settings, nodes, edges, drawings }),
+        activeView,
+        payload,
+      )
+      const result = await saveTopologyState(
+        apiConfig,
+        projectStatePayload.project_name,
+        projectStatePayload,
+      )
       if (!result.ok || result.data.data === undefined) {
         const message = extractMessage(result.data, `HTTP ${result.status}`)
         setOperationStatus('error')
@@ -1443,10 +1509,8 @@ function App() {
       }
 
       const saveResult = result.data.data
-      const syncFailed = saveResult.netbox_sync.status === 'failed'
-      const message = syncFailed
-        ? `Topologia guardada; NetBox pendiente: ${saveResult.netbox_sync.detail ?? 'sync failed'}`
-        : 'Topologia guardada y NetBox sincronizado'
+      window.localStorage.setItem(PROJECT_NAME_STORAGE_KEY, saveResult.project_name)
+      const message = buildSaveStatusMessage(saveResult)
       setOperationStatus('success')
       setOperationMessage(message)
       appendConsole(message, 'success')
@@ -1469,11 +1533,18 @@ function App() {
     if (savedTopology === null) {
       return
     }
+    const deployableTopologyName = getDeployableTopologyName(savedTopology)
+    if (deployableTopologyName === null) {
+      showActionRequired(
+        'Diseno guardado, pero faltan datos validos para generar artefactos.',
+      )
+      return
+    }
     setOperationStatus('running')
     try {
       const result = await generateSavedPipelineArtifacts(
         apiConfig,
-        savedTopology.topology_name,
+        deployableTopologyName,
       )
       if (!result.ok || result.data.data === undefined) {
         const message = extractMessage(result.data, `HTTP ${result.status}`)
@@ -1538,6 +1609,13 @@ function App() {
     if (savedTopology === null) {
       return
     }
+    const deployableTopologyName = getDeployableTopologyName(savedTopology)
+    if (deployableTopologyName === null) {
+      showActionRequired(
+        'Diseno guardado, pero faltan datos validos para desplegar el pipeline.',
+      )
+      return
+    }
     const tools = await checkTools({ quiet: true })
     if (tools === null) {
       return
@@ -1554,7 +1632,7 @@ function App() {
     }
     setOperationStatus('running')
     try {
-      const result = await deploySavedPipeline(apiConfig, savedTopology.topology_name)
+      const result = await deploySavedPipeline(apiConfig, deployableTopologyName)
       if (!result.ok || result.data.data === undefined) {
         const message = extractMessage(result.data, `HTTP ${result.status}`)
         setOperationStatus('error')
@@ -3836,6 +3914,134 @@ function CableEditorModal({
       </div>
     </div>
   )
+}
+
+function buildProjectStatePayload(
+  snapshot: CanvasHistoryState,
+  activeView: TopologyView,
+  topology: unknown,
+): TopologyProjectStatePayload {
+  const projectName = slugify(snapshot.settings.name)
+  return {
+    project_name: projectName,
+    version: 1,
+    settings: snapshot.settings,
+    nodes: snapshot.nodes,
+    edges: snapshot.edges,
+    drawings: snapshot.drawings,
+    active_view: activeView,
+    topology,
+  }
+}
+
+function coerceProjectState(
+  projectState: TopologyProjectStatePayload,
+  fallback: CanvasHistoryState,
+): {
+  activeView: TopologyView
+  projectName: string
+  snapshot: CanvasHistoryState
+} {
+  const settings = coerceTopologySettings(projectState.settings, fallback.settings)
+  const candidate: CanvasHistoryState = {
+    settings,
+    nodes: Array.isArray(projectState.nodes)
+      ? (projectState.nodes as BuilderNode[])
+      : fallback.nodes,
+    edges: Array.isArray(projectState.edges)
+      ? (projectState.edges as BuilderEdge[])
+      : fallback.edges,
+    drawings: Array.isArray(projectState.drawings)
+      ? (projectState.drawings as DrawingNodeModel[])
+      : fallback.drawings,
+  }
+
+  try {
+    return {
+      activeView: isTopologyView(projectState.active_view)
+        ? projectState.active_view
+        : 'physical',
+      projectName: slugify(settings.name || projectState.project_name),
+      snapshot: cloneSnapshot(candidate),
+    }
+  } catch {
+    return {
+      activeView: 'physical',
+      projectName: slugify(fallback.settings.name),
+      snapshot: cloneSnapshot(fallback),
+    }
+  }
+}
+
+function coerceTopologySettings(
+  rawSettings: unknown,
+  fallback: TopologySettings,
+): TopologySettings {
+  if (!isRecord(rawSettings)) {
+    return { ...fallback }
+  }
+
+  return {
+    name: typeof rawSettings.name === 'string' ? rawSettings.name : fallback.name,
+    description:
+      typeof rawSettings.description === 'string'
+        ? rawSettings.description
+        : fallback.description,
+    siteName:
+      typeof rawSettings.siteName === 'string' ? rawSettings.siteName : fallback.siteName,
+    roomName:
+      typeof rawSettings.roomName === 'string' ? rawSettings.roomName : fallback.roomName,
+    rackName:
+      typeof rawSettings.rackName === 'string' ? rawSettings.rackName : fallback.rackName,
+  }
+}
+
+function buildSaveStatusMessage(result: TopologyProjectStateSaveResponse): string {
+  if (
+    result.topology_validation.status === 'failed' &&
+    result.netbox_sync.status === 'synchronized' &&
+    result.netbox_sync.detail === 'Topology cleared from NetBox'
+  ) {
+    return 'Diseno vacio guardado; NetBox limpiado para esta topologia'
+  }
+  if (result.topology_validation.status === 'failed') {
+    return `Diseno guardado; topologia pendiente: ${compactDetail(
+      result.topology_validation.detail,
+      'validation failed',
+    )}`
+  }
+  if (result.netbox_sync.status === 'failed') {
+    return `Diseno guardado; NetBox pendiente: ${compactDetail(
+      result.netbox_sync.detail,
+      'sync failed',
+    )}`
+  }
+  if (result.netbox_sync.status === 'skipped') {
+    return 'Diseno guardado; NetBox omitido hasta tener topologia valida'
+  }
+  return 'Diseno guardado y NetBox sincronizado'
+}
+
+function getDeployableTopologyName(
+  result: TopologyProjectStateSaveResponse,
+): string | null {
+  if (result.topology_validation.status !== 'valid') {
+    return null
+  }
+  return result.topology_name
+}
+
+function compactDetail(detail: string | null, fallback: string): string {
+  const value = detail?.replace(/\s+/g, ' ').trim() || fallback
+  return value.length > 180 ? `${value.slice(0, 177)}...` : value
+}
+
+function isTopologyView(value: unknown): value is TopologyView {
+  return value === 'physical' || value === 'logical' || value === 'security'
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
 }
 
 function cloneSnapshot(snapshot: CanvasHistoryState): CanvasHistoryState {

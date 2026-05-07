@@ -11,7 +11,6 @@ import type {
   PurdueLevel,
   SecurityLevel,
 } from './topologyTypes'
-import { assetCatalog } from './assetCatalog'
 
 type DevicePortPayload = {
   id: string
@@ -95,46 +94,16 @@ type TopologyPayload = {
 }
 
 const initialSettings = {
-  name: 'mvp-lab-01',
+  name: 'nuevo-proyecto-ot',
   description: 'Topologia creada desde GEMEROTIC UI',
   siteName: 'Planta Principal',
   roomName: 'Cuarto Servidores',
   rackName: 'Rack Red 01',
 }
 
-const initialNodes: BuilderNode[] = [
-  createNodeFromAsset(assetCatalog[0], 0, { x: 120, y: 150 }),
-  createNodeFromAsset(assetCatalog[1], 0, { x: 400, y: 150 }),
-  createNodeFromAsset(assetCatalog[6], 0, { x: 680, y: 80 }),
-  createNodeFromAsset(assetCatalog[7], 0, { x: 680, y: 230 }),
-]
+const initialNodes: BuilderNode[] = []
 
-const initialEdges: BuilderEdge[] = [
-  createBuilderEdge({
-    id: 'edge-router-switch',
-    source: 'router-01',
-    target: 'switch-01',
-    label: 'uplink-core',
-    sourcePortIndex: 0,
-    targetPortIndex: 0,
-  }),
-  createBuilderEdge({
-    id: 'edge-switch-plc',
-    source: 'switch-01',
-    target: 'plc-01',
-    label: 'plc-a',
-    sourcePortIndex: 1,
-    targetPortIndex: 0,
-  }),
-  createBuilderEdge({
-    id: 'edge-switch-hmi',
-    source: 'switch-01',
-    target: 'hmi-01',
-    label: 'hmi-a',
-    sourcePortIndex: 2,
-    targetPortIndex: 0,
-  }),
-]
+const initialEdges: BuilderEdge[] = []
 
 export function createInitialBuilderState(): BuilderState {
   return {

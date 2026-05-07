@@ -13,15 +13,67 @@ import {
   updateEdgeData,
   updatePortConfig,
 } from './topologyBuilder'
+import type { BuilderState } from './topologyTypes'
+
+function createDemoBuilderState(): BuilderState {
+  const state = createInitialBuilderState()
+  state.nodes = [
+    createNodeFromAsset(assetCatalog[0], 0, { x: 120, y: 150 }),
+    createNodeFromAsset(assetCatalog[1], 0, { x: 400, y: 150 }),
+    createNodeFromAsset(assetCatalog[6], 0, { x: 680, y: 80 }),
+    createNodeFromAsset(assetCatalog[7], 0, { x: 680, y: 230 }),
+  ]
+  state.edges = [
+    createBuilderEdge({
+      id: 'edge-router-switch',
+      source: 'router-01',
+      target: 'switch-01',
+      label: 'uplink-core',
+      sourcePortIndex: 0,
+      targetPortIndex: 0,
+    }),
+    createBuilderEdge({
+      id: 'edge-switch-plc',
+      source: 'switch-01',
+      target: 'plc-01',
+      label: 'plc-a',
+      sourcePortIndex: 1,
+      targetPortIndex: 0,
+    }),
+    createBuilderEdge({
+      id: 'edge-switch-hmi',
+      source: 'switch-01',
+      target: 'hmi-01',
+      label: 'hmi-a',
+      sourcePortIndex: 2,
+      targetPortIndex: 0,
+    }),
+  ]
+  return state
+}
 
 describe('topologyBuilder', () => {
-  it('convierte el estado visual inicial a TopologyCreate', () => {
+  it('crea un estado inicial vacio para no imponer una topologia demo', () => {
     const payload = buildTopologyPayload(createInitialBuilderState())
 
-    expect(payload.name).toBe('mvp-lab-01')
+    expect(payload.name).toBe('nuevo-proyecto-ot')
     expect(payload.sites).toHaveLength(1)
     expect(payload.rooms[0].site_id).toBe('site-main')
     expect(payload.racks[0].room_id).toBe('room-main')
+    expect(payload.devices).toHaveLength(0)
+    expect(payload.interfaces).toHaveLength(0)
+    expect(payload.vlans).toHaveLength(0)
+    expect(payload.cables).toHaveLength(0)
+    expect(payload.security_zones).toHaveLength(0)
+    expect(payload.conduits).toHaveLength(0)
+    expect(payload.canvas.assets).toHaveLength(0)
+    expect(payload.canvas.cables).toHaveLength(0)
+  })
+
+  it('convierte un estado visual con equipos a TopologyCreate', () => {
+    const payload = buildTopologyPayload(createDemoBuilderState())
+
+    expect(payload.name).toBe('nuevo-proyecto-ot')
     expect(payload.devices).toHaveLength(4)
     expect(payload.devices[0].ports[0].id).toBe('router-01:eth0')
     expect(payload.devices[0].ports).toHaveLength(4)
@@ -49,7 +101,7 @@ describe('topologyBuilder', () => {
   })
 
   it('calcula el siguiente indice disponible por tipo de activo', () => {
-    const state = createInitialBuilderState()
+    const state = createDemoBuilderState()
 
     expect(getNextAssetIndex(state.nodes, 'router')).toBe(1)
     expect(getNextAssetIndex(state.nodes, 'plc')).toBe(1)
@@ -57,7 +109,7 @@ describe('topologyBuilder', () => {
   })
 
   it('incluye configuracion fisica y logica editable en el payload', () => {
-    const state = createInitialBuilderState()
+    const state = createDemoBuilderState()
     state.nodes[0] = {
       ...state.nodes[0],
       data: {
@@ -88,7 +140,7 @@ describe('topologyBuilder', () => {
   })
 
   it('normaliza rangos numericos antes de enviar al backend', () => {
-    const state = createInitialBuilderState()
+    const state = createDemoBuilderState()
     state.nodes[0] = {
       ...state.nodes[0],
       data: {
@@ -113,7 +165,7 @@ describe('topologyBuilder', () => {
   })
 
   it('usa puertos explicitos del cable y expande puertos si hace falta', () => {
-    const state = createInitialBuilderState()
+    const state = createDemoBuilderState()
     state.edges[0] = updateEdgeData(state.edges, 'edge-router-switch', {
       sourcePortIndex: 3,
       targetPortIndex: 5,
@@ -129,7 +181,7 @@ describe('topologyBuilder', () => {
   })
 
   it('reasigna puertos repetidos antes de persistir cables nuevos', () => {
-    const state = createInitialBuilderState()
+    const state = createDemoBuilderState()
     const extraNodes = [
       createNodeFromAsset(assetCatalog[2], 0, { x: 120, y: 380 }),
       createNodeFromAsset(assetCatalog[3], 0, { x: 300, y: 380 }),
@@ -175,7 +227,7 @@ describe('topologyBuilder', () => {
   })
 
   it('sugiere el siguiente puerto libre por nodo', () => {
-    const state = createInitialBuilderState()
+    const state = createDemoBuilderState()
 
     expect(getSuggestedPortIndex(state.nodes[0], state.edges)).toBe(1)
     expect(getPortName(state.nodes[0], 0)).toBe('eth0')
@@ -197,7 +249,7 @@ describe('topologyBuilder', () => {
   })
 
   it('descarta enlaces huerfanos antes de enviar al backend', () => {
-    const state = createInitialBuilderState()
+    const state = createDemoBuilderState()
     state.edges = [
       ...state.edges,
       createBuilderEdge({
@@ -215,7 +267,7 @@ describe('topologyBuilder', () => {
   })
 
   it('permite configurar puertos individualmente antes de generar el payload', () => {
-    const state = createInitialBuilderState()
+    const state = createDemoBuilderState()
     state.nodes = updatePortConfig(state.nodes, 'router-01', 1, {
       enabled: false,
       mgmtOnly: true,

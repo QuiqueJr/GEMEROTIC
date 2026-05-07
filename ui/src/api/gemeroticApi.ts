@@ -48,7 +48,7 @@ export type PipelineArtifactsResponse = {
 }
 
 export type NetBoxSyncStatus = {
-  status: 'synchronized' | 'failed'
+  status: 'synchronized' | 'failed' | 'skipped'
   detail: string | null
   result?: unknown
 }
@@ -59,6 +59,31 @@ export type TopologySaveResponse = {
   store_dir: string
   artifact_count: number
   netbox_sync: NetBoxSyncStatus
+}
+
+export type TopologyProjectStatePayload = {
+  project_name: string
+  version: number
+  settings: unknown
+  nodes: unknown[]
+  edges: unknown[]
+  drawings: unknown[]
+  active_view: 'physical' | 'logical' | 'security'
+  topology?: unknown
+}
+
+export type TopologyProjectStateSaveResponse = {
+  project_name: string
+  saved_at: string
+  store_dir: string
+  topology_name: string | null
+  topology_save: TopologySaveResponse | null
+  topology_validation: {
+    status: 'valid' | 'failed' | 'skipped'
+    detail: string | null
+  }
+  netbox_sync: NetBoxSyncStatus
+  netbox_cleanup?: NetBoxSyncStatus
 }
 
 export type PipelineCommandResult = {
@@ -203,6 +228,36 @@ export async function createTopology(
   })
 }
 
+export async function getTopologyState(
+  config: APIConfig,
+  projectName: string,
+): Promise<APIResult<APIEnvelope<TopologyProjectStatePayload>>> {
+  return requestJson<APIEnvelope<TopologyProjectStatePayload>>(
+    config,
+    `/api/v1/topology/state/${encodeURIComponent(projectName)}`,
+    {
+      method: 'GET',
+      apiKeyRequired: true,
+    },
+  )
+}
+
+export async function saveTopologyState(
+  config: APIConfig,
+  projectName: string,
+  payload: TopologyProjectStatePayload,
+): Promise<APIResult<APIEnvelope<TopologyProjectStateSaveResponse>>> {
+  return requestJson<APIEnvelope<TopologyProjectStateSaveResponse>>(
+    config,
+    `/api/v1/topology/state/${encodeURIComponent(projectName)}`,
+    {
+      method: 'PUT',
+      apiKeyRequired: true,
+      body: payload,
+    },
+  )
+}
+
 export async function generatePipelineArtifacts(
   config: APIConfig,
   payload: unknown,
@@ -342,7 +397,7 @@ async function requestJson<T>(
   config: APIConfig,
   path: string,
   options: {
-    method?: 'GET' | 'POST'
+    method?: 'GET' | 'POST' | 'PUT'
     apiKeyRequired?: boolean
     body?: unknown
   } = {},

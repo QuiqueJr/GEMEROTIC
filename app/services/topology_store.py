@@ -65,6 +65,36 @@ class TopologyStore:
             "artifact_count": len(artifacts.artifacts),
         }
 
+    def save_project_state(
+        self,
+        project_name: str,
+        state: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Persistir el estado editable del builder aunque aun no sea desplegable."""
+        topology_dir = self._topology_dir(project_name)
+        topology_dir.mkdir(parents=True, exist_ok=True)
+        saved_at = datetime.now(UTC).isoformat()
+        payload = {
+            **state,
+            "project_name": validate_slug(project_name, "Project name"),
+            "saved_at": saved_at,
+        }
+
+        self._write_json_atomic(topology_dir / "state.json", payload)
+        self._merge_metadata(
+            topology_dir / "metadata.json",
+            {
+                "project_name": payload["project_name"],
+                "state_saved_at": saved_at,
+                "state_version": payload.get("version", 1),
+            },
+        )
+        return {
+            "project_name": payload["project_name"],
+            "saved_at": saved_at,
+            "store_dir": str(topology_dir),
+        }
+
     def load(self, topology_name: str) -> TopologyCreate:
         """Cargar la última topología guardada por nombre."""
         topology_dir = self._topology_dir(topology_name)
@@ -80,6 +110,27 @@ class TopologyStore:
             ) from exc
         return TopologyCreate(**payload)
 
+    def load_project_state(self, project_name: str) -> dict[str, Any]:
+        """Cargar el ultimo estado editable guardado por proyecto."""
+        topology_dir = self._topology_dir(project_name)
+        state_file = topology_dir / "state.json"
+        if not state_file.exists():
+            raise TopologyNotFoundError(
+                f"Saved project state not found: {project_name}"
+            )
+
+        try:
+            payload = json.loads(state_file.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise TopologyStoreError(
+                f"Saved project state file is invalid: {project_name}"
+            ) from exc
+        if not isinstance(payload, dict):
+            raise TopologyStoreError(
+                f"Saved project state file is invalid: {project_name}"
+            )
+        return payload
+
     def update_netbox_sync(
         self,
         topology_name: str,
@@ -88,17 +139,14 @@ class TopologyStore:
         """Anotar el resultado de sincronización con NetBox en metadata."""
         topology_dir = self._topology_dir(topology_name)
         metadata_file = topology_dir / "metadata.json"
-        metadata: dict[str, Any] = {}
-        if metadata_file.exists():
-            try:
-                metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                metadata = {}
-
-        metadata["topology_name"] = topology_name
-        metadata["netbox_sync"] = sync_result
-        metadata["updated_at"] = datetime.now(UTC).isoformat()
-        self._write_json_atomic(metadata_file, metadata)
+        self._merge_metadata(
+            metadata_file,
+            {
+                "topology_name": topology_name,
+                "netbox_sync": sync_result,
+                "updated_at": datetime.now(UTC).isoformat(),
+            },
+        )
 
     def _topology_dir(self, topology_name: str) -> Path:
         """Resolver un directorio seguro dentro del store."""
@@ -140,3 +188,16 @@ class TopologyStore:
             encoding="utf-8",
         )
         temporary_path.replace(path)
+
+    def _merge_metadata(self, path: Path, patch: dict[str, Any]) -> None:
+        """Actualizar metadata conservando claves previas validas."""
+        metadata: dict[str, Any] = {}
+        if path.exists():
+            try:
+                loaded = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    metadata = loaded
+            except json.JSONDecodeError:
+                metadata = {}
+        metadata.update(patch)
+        self._write_json_atomic(path, metadata)
