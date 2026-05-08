@@ -5,12 +5,16 @@ import {
   chatWithComplianceAssistant,
   createTopology,
   deployPipeline,
+  deploySavedPipeline,
   generateComplianceReport,
   generatePipelineArtifacts,
+  generateSavedPipelineArtifacts,
   getHealth,
   getPipelineLabStatus,
   getPipelineTools,
+  getTopologyState,
   runPipelineConsoleCommand,
+  saveTopologyState,
 } from './gemeroticApi'
 
 const config = {
@@ -46,7 +50,21 @@ describe('gemeroticApi', () => {
     expect(headers.has('X-API-Key')).toBe(false)
   })
 
-  it('envia API key en endpoints mutantes', async () => {
+  it('omite API key en endpoints mutantes cuando no esta configurada', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ status: 'success', message: 'OK' })),
+    )
+
+    await bootstrapNetBox({ baseUrl: 'http://localhost:8000' })
+    const headers = fetchMock.mock.calls[0][1]?.headers as Headers
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'http://localhost:8000/api/v1/netbox/bootstrap',
+    )
+    expect(headers.has('X-API-Key')).toBe(false)
+  })
+
+  it('envia API key en endpoints mutantes cuando existe', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ status: 'success', message: 'OK' })),
     )
@@ -70,6 +88,68 @@ describe('gemeroticApi', () => {
     expect(fetchMock.mock.calls[0][1]?.body).toBe('{"name":"mvp-lab-01"}')
   })
 
+  it('guarda estado visual del builder con PUT', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: 'success',
+          message: 'Topology state saved successfully',
+          data: {
+            project_name: 'mvp-lab-01',
+            topology_validation: { status: 'valid', detail: null },
+            netbox_sync: { status: 'skipped', detail: null },
+          },
+        }),
+      ),
+    )
+
+    await saveTopologyState(config, 'mvp-lab-01', {
+      project_name: 'mvp-lab-01',
+      version: 1,
+      settings: { name: 'MVP Lab 01' },
+      nodes: [],
+      edges: [],
+      drawings: [],
+      active_view: 'physical',
+      topology: { name: 'mvp-lab-01' },
+    })
+    const headers = fetchMock.mock.calls[0][1]?.headers as Headers
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'http://localhost:8000/api/v1/topology/state/mvp-lab-01',
+    )
+    expect(fetchMock.mock.calls[0][1]?.method).toBe('PUT')
+    expect(headers.get('X-API-Key')).toBe('test-key')
+    expect(fetchMock.mock.calls[0][1]?.body).toContain('"project_name":"mvp-lab-01"')
+  })
+
+  it('carga estado visual del builder', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: 'success',
+          message: 'Topology state loaded successfully',
+          data: {
+            project_name: 'mvp-lab-01',
+            version: 1,
+            settings: { name: 'MVP Lab 01' },
+            nodes: [],
+            edges: [],
+            drawings: [],
+            active_view: 'logical',
+          },
+        }),
+      ),
+    )
+
+    await getTopologyState(config, 'mvp-lab-01')
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'http://localhost:8000/api/v1/topology/state/mvp-lab-01',
+    )
+    expect(fetchMock.mock.calls[0][1]?.method).toBe('GET')
+  })
+
   it('genera artefactos del pipeline con API key', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(
@@ -90,6 +170,26 @@ describe('gemeroticApi', () => {
     expect(headers.get('X-API-Key')).toBe('test-key')
   })
 
+  it('genera artefactos desde topologia guardada con API key', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: 'success',
+          message: 'Pipeline artifacts generated from saved topology',
+          data: { topology_name: 'mvp-lab-01', artifacts: [] },
+        }),
+      ),
+    )
+
+    await generateSavedPipelineArtifacts(config, 'mvp-lab-01')
+    const headers = fetchMock.mock.calls[0][1]?.headers as Headers
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'http://localhost:8000/api/v1/pipeline/artifacts/mvp-lab-01',
+    )
+    expect(headers.get('X-API-Key')).toBe('test-key')
+  })
+
   it('despliega pipeline con API key', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(
@@ -106,6 +206,26 @@ describe('gemeroticApi', () => {
 
     expect(fetchMock.mock.calls[0][0]).toBe(
       'http://localhost:8000/api/v1/pipeline/deploy',
+    )
+    expect(headers.get('X-API-Key')).toBe('test-key')
+  })
+
+  it('despliega la topologia guardada con API key', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: 'success',
+          message: 'Pipeline deployed from saved topology',
+          data: { topology_name: 'mvp-lab-01', artifacts: [], commands: [] },
+        }),
+      ),
+    )
+
+    await deploySavedPipeline(config, 'mvp-lab-01')
+    const headers = fetchMock.mock.calls[0][1]?.headers as Headers
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'http://localhost:8000/api/v1/pipeline/deploy/mvp-lab-01',
     )
     expect(headers.get('X-API-Key')).toBe('test-key')
   })

@@ -5,6 +5,7 @@ Endpoints de generación de artefactos del pipeline.
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.security import require_api_key
+from app.dependencies import get_topology_store
 from app.schemas.pipeline import PipelineConsoleRequest
 from app.schemas.responses import APIResponse
 from app.schemas.topology import TopologyCreate
@@ -16,6 +17,11 @@ from app.services.pipeline_runner import (
     PipelineRunner,
     PipelineRuntimeCommandError,
     PipelineToolError,
+)
+from app.services.topology_store import (
+    TopologyNotFoundError,
+    TopologyStore,
+    TopologyStoreError,
 )
 
 router = APIRouter(prefix="/pipeline")
@@ -44,6 +50,26 @@ async def generate_pipeline_artifacts(
     artifacts = PipelineArtifactGenerator().generate(topology)
     return APIResponse(
         message="Pipeline artifacts generated successfully",
+        data=artifacts.model_dump(),
+    )
+
+
+@router.post(
+    "/artifacts/{topology_name}",
+    response_model=APIResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Generar artefactos desde la última topología guardada",
+)
+async def generate_saved_pipeline_artifacts(
+    topology_name: str,
+    _: None = Depends(require_api_key),
+    topology_store: TopologyStore = Depends(get_topology_store),
+) -> APIResponse:
+    """Generar artefactos desde el estado guardado, no desde NetBox."""
+    topology = _load_saved_topology(topology_name, topology_store)
+    artifacts = PipelineArtifactGenerator().generate(topology)
+    return APIResponse(
+        message="Pipeline artifacts generated from saved topology",
         data=artifacts.model_dump(),
     )
 
@@ -93,6 +119,39 @@ async def deploy_pipeline(
 
     return APIResponse(
         message="Pipeline deployed successfully",
+        data=result.model_dump(),
+    )
+
+
+@router.post(
+    "/deploy/{topology_name}",
+    response_model=APIResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Desplegar la última topología guardada",
+)
+async def deploy_saved_pipeline(
+    topology_name: str,
+    _: None = Depends(require_api_key),
+    runner: PipelineRunner = Depends(get_pipeline_runner),
+    topology_store: TopologyStore = Depends(get_topology_store),
+) -> APIResponse:
+    """Ejecutar despliegue controlado desde el último guardado local."""
+    topology = _load_saved_topology(topology_name, topology_store)
+    try:
+        result = runner.deploy(topology)
+    except PipelineToolError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    except PipelineExecutionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+    return APIResponse(
+        message="Pipeline deployed from saved topology",
         data=result.model_dump(),
     )
 
@@ -183,3 +242,27 @@ async def run_pipeline_node_console(
         message="Pipeline console command executed",
         data=result.model_dump(),
     )
+
+
+def _load_saved_topology(
+    topology_name: str,
+    topology_store: TopologyStore,
+) -> TopologyCreate:
+    """Cargar una topología guardada y mapear errores HTTP."""
+    try:
+        return topology_store.load(topology_name)
+    except TopologyNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except TopologyStoreError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc

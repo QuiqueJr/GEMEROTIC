@@ -85,6 +85,22 @@ Consultar siempre la tabla de roadmap en `README.md` para el estado actualizado.
 
 ---
 
+## 3.1. Limpieza y Mantenimiento (NUEVA)
+
+- **Archivos Temporales:** Prohibido dejar archivos `.json`, `.py`, `.log` o `.txt` de prueba en la raiz.
+- **Directorios de Skills:** Directorios como `.superpowers/` o `.github/commands/` deben ser eliminados tras su uso si no forman parte del entregable.
+- **Sincronizacion:** Mantener el workspace local limpio antes de sincronizar con el servidor remoto.
+
+---
+
+## 3.2. Consistencia de Entorno (OS) (NUEVA)
+
+- **Local (PC Usuario):** Entorno **Windows (PowerShell)**. Usar comandos como `Remove-Item`, `Test-Path`, `ls`, `mkdir` (alias de PS) y evitar operadores de bash como `&&` (usar `;` o `if`).
+- **Remoto (Servidor):** Entorno **Linux (Ubuntu/Bash)** accesible via SSH. Usar comandos estándar de Linux (`rm -rf`, `mkdir -p`, `&&`).
+- **Validacion:** Antes de ejecutar comandos de sistema, verificar el contexto (`CWD Local` vs `CWD Remoto` en snapshot) para evitar fallos de sintaxis.
+
+---
+
 ## 4. Regla de Idioma
 
 ### Regla estricta de idioma dual

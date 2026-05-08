@@ -11,7 +11,6 @@ import type {
   PurdueLevel,
   SecurityLevel,
 } from './topologyTypes'
-import { assetCatalog } from './assetCatalog'
 
 type DevicePortPayload = {
   id: string
@@ -75,49 +74,36 @@ type TopologyPayload = {
     allowed_protocols: string[]
     description?: string
   }>
+  canvas: {
+    assets: Array<{
+      id: string
+      asset_type: AssetType
+      label: string
+      position: { x: number; y: number }
+      width?: number
+      height?: number
+    }>
+    cables: Array<{
+      id: string
+      source_device_id: string
+      target_device_id: string
+      source_port_id?: string
+      target_port_id?: string
+    }>
+  }
 }
 
 const initialSettings = {
-  name: 'mvp-lab-01',
+  name: 'nuevo-proyecto-ot',
   description: 'Topologia creada desde GEMEROTIC UI',
   siteName: 'Planta Principal',
   roomName: 'Cuarto Servidores',
   rackName: 'Rack Red 01',
 }
 
-const initialNodes: BuilderNode[] = [
-  createNodeFromAsset(assetCatalog[0], 0, { x: 120, y: 150 }),
-  createNodeFromAsset(assetCatalog[1], 0, { x: 400, y: 150 }),
-  createNodeFromAsset(assetCatalog[5], 0, { x: 680, y: 80 }),
-  createNodeFromAsset(assetCatalog[6], 0, { x: 680, y: 230 }),
-]
+const initialNodes: BuilderNode[] = []
 
-const initialEdges: BuilderEdge[] = [
-  createBuilderEdge({
-    id: 'edge-router-switch',
-    source: 'router-01',
-    target: 'switch-01',
-    label: 'uplink-core',
-    sourcePortIndex: 0,
-    targetPortIndex: 0,
-  }),
-  createBuilderEdge({
-    id: 'edge-switch-plc',
-    source: 'switch-01',
-    target: 'plc-01',
-    label: 'plc-a',
-    sourcePortIndex: 1,
-    targetPortIndex: 0,
-  }),
-  createBuilderEdge({
-    id: 'edge-switch-hmi',
-    source: 'switch-01',
-    target: 'hmi-01',
-    label: 'hmi-a',
-    sourcePortIndex: 2,
-    targetPortIndex: 0,
-  }),
-]
+const initialEdges: BuilderEdge[] = []
 
 export function createInitialBuilderState(): BuilderState {
   return {
@@ -211,8 +197,11 @@ export function buildTopologyPayload(state: BuilderState): TopologyPayload {
   const siteId = 'site-main'
   const roomId = 'room-main'
   const rackId = 'rack-main'
-  const portMap = assignPorts(state.nodes, state.edges)
-  const edgeTerminations = assignCableTerminations(state.edges, portMap)
+  const validEdges = assignUniqueEdgePorts(
+    buildValidEdges(state.edges, state.nodes),
+  )
+  const portMap = assignPorts(state.nodes, validEdges)
+  const edgeTerminations = assignCableTerminations(validEdges, portMap)
   const zones = buildSecurityZones(state.nodes)
   const cableIds = new Set<string>()
 
@@ -256,8 +245,83 @@ export function buildTopologyPayload(state: BuilderState): TopologyPayload {
     interfaces: buildInterfaces(portMap, state.nodes),
     vlans: buildVlans(Array.from(portMap.values()).flat(), state.nodes),
     security_zones: zones,
-    conduits: buildConduits(state.edges, state.nodes),
+    conduits: buildConduits(validEdges, state.nodes),
+    canvas: buildCanvas(state.nodes, edgeTerminations),
   }
+}
+
+function buildValidEdges(edges: BuilderEdge[], nodes: BuilderNode[]): BuilderEdge[] {
+  const nodeIds = new Set(nodes.map((node) => node.id))
+  const usedLinks = new Set<string>()
+
+  return edges.filter((edge) => {
+    if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) {
+      return false
+    }
+    if (edge.source === edge.target) {
+      return false
+    }
+
+    const sourcePortIndex = normalizePortIndex(edge.data?.sourcePortIndex)
+    const targetPortIndex = normalizePortIndex(edge.data?.targetPortIndex)
+    const linkKey = `${edge.source}:${sourcePortIndex}->${edge.target}:${targetPortIndex}`
+    const reverseLinkKey = `${edge.target}:${targetPortIndex}->${edge.source}:${sourcePortIndex}`
+    if (usedLinks.has(linkKey) || usedLinks.has(reverseLinkKey)) {
+      return false
+    }
+
+    usedLinks.add(linkKey)
+    return true
+  })
+}
+
+function assignUniqueEdgePorts(edges: BuilderEdge[]): BuilderEdge[] {
+  const usedPortsByNode = new Map<string, Set<number>>()
+
+  return edges.map((edge) => {
+    const sourcePortIndex = claimPortIndex(
+      usedPortsByNode,
+      edge.source,
+      normalizePortIndex(edge.data?.sourcePortIndex),
+    )
+    const targetPortIndex = claimPortIndex(
+      usedPortsByNode,
+      edge.target,
+      normalizePortIndex(edge.data?.targetPortIndex),
+    )
+    const label = normalizeCableLabel(
+      edge.data?.label ?? String(edge.label ?? ''),
+      edge.id,
+    )
+
+    return {
+      ...edge,
+      label,
+      data: {
+        ...edge.data,
+        label,
+        sourcePortIndex,
+        targetPortIndex,
+      },
+    }
+  })
+}
+
+function claimPortIndex(
+  usedPortsByNode: Map<string, Set<number>>,
+  nodeId: string,
+  requestedIndex: number,
+): number {
+  const usedPorts = usedPortsByNode.get(nodeId) ?? new Set<number>()
+  let portIndex = requestedIndex
+
+  while (usedPorts.has(portIndex)) {
+    portIndex += 1
+  }
+
+  usedPorts.add(portIndex)
+  usedPortsByNode.set(nodeId, usedPorts)
+  return portIndex
 }
 
 function buildDevicePayload(
@@ -271,7 +335,7 @@ function buildDevicePayload(
     asset_type: node.data.assetType,
     rack_id: rackId,
     criticality: node.data.criticality,
-    ports: portMap.get(node.id) ?? [{ id: `${node.id}:eth0`, name: 'eth0' }],
+    ports: portMap.get(node.id) ?? [{ id: `${slugify(node.id)}:eth0`, name: 'eth0' }],
   }
 
   if (node.data.manufacturer) {
@@ -369,14 +433,18 @@ function buildInterfaces(
           ),
       }
 
-      const macAddress = portConfig.macAddress ?? (index === 0 ? node.data.macAddress : undefined)
-      const ipv4Address =
-        portConfig.ipv4Address ?? (index === 0 ? node.data.ipv4Address : undefined)
-      const ipv6Address =
-        portConfig.ipv6Address ?? (index === 0 ? node.data.ipv6Address : undefined)
+      const macAddress = normalizeOptionalNetworkValue(
+        portConfig.macAddress ?? (index === 0 ? node.data.macAddress : undefined),
+      )
+      const ipv4Address = normalizeOptionalNetworkValue(
+        portConfig.ipv4Address ?? (index === 0 ? node.data.ipv4Address : undefined),
+      )
+      const ipv6Address = normalizeOptionalNetworkValue(
+        portConfig.ipv6Address ?? (index === 0 ? node.data.ipv6Address : undefined),
+      )
 
       if (macAddress) {
-        payload.mac_address = macAddress
+        payload.mac_address = normalizeMacAddress(macAddress)
       }
       if (ipv4Address) {
         payload.ipv4_address = ipv4Address
@@ -400,7 +468,7 @@ function buildVlans(
 
   for (const node of nodes) {
     const vlanId = normalizeVlanId(node.data.vlanId)
-    const nodePorts = ports.filter((port) => port.id.startsWith(`${node.id}:`))
+    const nodePorts = ports.filter((port) => port.id.startsWith(`${slugify(node.id)}:`))
     const assigned = portsByVlan.get(vlanId) ?? []
     assigned.push(...nodePorts.map((port) => port.id))
     portsByVlan.set(vlanId, assigned)
@@ -436,6 +504,36 @@ function buildSecurityZones(nodes: BuilderNode[]): TopologyPayload['security_zon
   }
 
   return Array.from(zoneMap.values())
+}
+
+function buildCanvas(
+  nodes: BuilderNode[],
+  edgeTerminations: Array<{ edge: BuilderEdge; sourcePortId: string; targetPortId: string }>,
+): TopologyPayload['canvas'] {
+  return {
+    assets: nodes.map((node) => ({
+      id: slugify(node.id),
+      asset_type: node.data.assetType,
+      label: normalizeLabel(node.data.label, node.id),
+      position: {
+        x: Math.round(node.position.x),
+        y: Math.round(node.position.y),
+      },
+      ...(typeof node.measured?.width === 'number'
+        ? { width: Math.round(node.measured.width) }
+        : {}),
+      ...(typeof node.measured?.height === 'number'
+        ? { height: Math.round(node.measured.height) }
+        : {}),
+    })),
+    cables: edgeTerminations.map(({ edge, sourcePortId, targetPortId }) => ({
+      id: slugify(normalizeCableLabel(edge.data?.label, edge.id)),
+      source_device_id: slugify(edge.source),
+      target_device_id: slugify(edge.target),
+      source_port_id: sourcePortId || undefined,
+      target_port_id: targetPortId || undefined,
+    })),
+  }
 }
 
 function buildConduits(
@@ -667,6 +765,15 @@ function normalizePortIndex(value: number | undefined): number {
     return 0
   }
   return Math.max(0, Math.trunc(value))
+}
+
+function normalizeOptionalNetworkValue(value: string | undefined): string | undefined {
+  const normalized = value?.trim() ?? ''
+  return normalized || undefined
+}
+
+function normalizeMacAddress(value: string): string {
+  return value.toUpperCase().replace(/-/g, ':')
 }
 
 function sanitizeProtocol(value: string): string {

@@ -12,7 +12,10 @@ from app.schemas.compliance import ComplianceChatMessage
 from app.schemas.topology import TopologyCreate
 from app.services.compliance_assistant import ComplianceAssistant
 from app.services.compliance_engine import ComplianceEngine
-from app.services.ollama_client import OllamaComplianceClient
+from app.services.ollama_client import (
+    OLLAMA_COMPLIANCE_FORMAT_SCHEMA,
+    OllamaComplianceClient,
+)
 from tests.conftest import AllowAllRateLimiter
 from tests.test_schemas import _mvp_topology_payload
 
@@ -90,6 +93,9 @@ class TestComplianceAssistant:
         monkeypatch.setattr(settings, "COMPLIANCE_ASSISTANT_PROVIDER", "ollama")
 
         def fake_post(*args, **kwargs):
+            assert kwargs["json"]["format"] == OLLAMA_COMPLIANCE_FORMAT_SCHEMA
+            assert "maxLength" not in json.dumps(kwargs["json"]["format"])
+
             class FakeResponse:
                 def raise_for_status(self):
                     return None
@@ -141,8 +147,9 @@ class TestComplianceAssistant:
 class TestComplianceEndpoints:
     """Tests HTTP de informe y chat."""
 
-    def test_report_requires_api_key(self, monkeypatch):
-        monkeypatch.setattr(settings, "API_KEY", "secret-key")
+    def test_report_allows_mvp_mode_without_api_key(self, monkeypatch):
+        monkeypatch.setattr(settings, "API_KEY_REQUIRED", False)
+        monkeypatch.setattr(settings, "API_KEY", "")
         application = create_app(rate_limiter=AllowAllRateLimiter())
 
         with TestClient(application) as client:
@@ -151,8 +158,8 @@ class TestComplianceEndpoints:
                 json=_mvp_topology_payload(),
             )
 
-        assert response.status_code == 401
-        assert response.json()["message"] == "Invalid API key"
+        assert response.status_code == 200
+        assert response.json()["data"]["topology_name"] == "mvp-lab-01"
 
     def test_report_returns_findings(self, monkeypatch):
         monkeypatch.setattr(settings, "API_KEY", "secret-key")

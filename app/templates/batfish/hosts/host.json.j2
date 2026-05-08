@@ -1,0 +1,12 @@
+{
+  "hostname": "{{ node.id }}",
+  "hostInterfaces": {
+    {% for interface in node.interfaces if interface.ipv4_address %}
+    "{{ interface.lab_interface }}": {
+      "name": "{{ interface.lab_interface }}",
+      "prefix": "{{ interface.ipv4_address }}"
+    }{{ "," if not loop.last }}
+    {% endfor %}
+  },
+  "iptablesFile": "iptables/{{ node.id }}.iptables"
+}

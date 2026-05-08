@@ -20,7 +20,14 @@ from app.schemas.topology import TopologyCreate
 DEFAULT_LINUX_KIND = "linux"
 DEFAULT_LINUX_IMAGE = "alpine:3.20"
 DEFAULT_LINUX_CMD = "sleep infinity"
+DEFAULT_NOS_KIND = "ceos"
+DEFAULT_NOS_IMAGE = "ceos:4.32.0F"
 TEMPLATE_ROOT = Path(__file__).resolve().parent.parent / "templates"
+NOS_ASSET_TYPES = {
+    "router",
+    "switch",
+    "firewall",
+}
 
 
 class PipelineArtifactGenerator:
@@ -40,7 +47,48 @@ class PipelineArtifactGenerator:
     def generate(self, topology: TopologyCreate) -> PipelineArtifacts:
         """Generar todos los artefactos soportados para la topología."""
         context = self._build_context(topology)
+        split_artifacts = [
+            self._json_artifact(
+                path="topology/topology.json",
+                stage="topology",
+                payload=context["topology_payload"],
+            ),
+            self._json_artifact(
+                path="topology/canvas.json",
+                stage="topology",
+                payload=context["canvas"],
+            ),
+            self._json_artifact(
+                path="inventory/netbox_inventory.json",
+                stage="inventory",
+                payload=context["netbox_inventory"],
+            ),
+            self._json_artifact(
+                path="runtime/containerlab_nodes.json",
+                stage="runtime",
+                payload=context["containerlab_runtime"]["nodes"],
+            ),
+            self._json_artifact(
+                path="runtime/containerlab_links.json",
+                stage="runtime",
+                payload=context["containerlab_runtime"]["links"],
+            ),
+            self._json_artifact(
+                path="ansible/vars.json",
+                stage="ansible",
+                payload=context["ansible_variables"],
+            ),
+            *[
+                self._json_artifact(
+                    path=f"configs/assets/{node['id']}.json",
+                    stage="ansible_vars",
+                    payload=node,
+                )
+                for node in context["nodes"]
+            ],
+        ]
         artifacts = [
+            *split_artifacts,
             self._render_artifact(
                 path="containerlab/topology.clab.yml",
                 stage="containerlab",
@@ -91,6 +139,38 @@ class PipelineArtifactGenerator:
                 context=context,
             ),
         ]
+
+        for node in context["nodes"]:
+            if node["profile"] == "nos":
+                artifacts.append(
+                    self._render_artifact(
+                        path=f"batfish/configs/{node['id']}.cfg",
+                        stage="batfish",
+                        content_type="text/plain",
+                        template_name="batfish/configs/nos.cfg.j2",
+                        context={**context, "node": node},
+                    )
+                )
+            else:
+                artifacts.append(
+                    self._render_artifact(
+                        path=f"batfish/hosts/{node['id']}.json",
+                        stage="batfish",
+                        content_type="application/json",
+                        template_name="batfish/hosts/host.json.j2",
+                        context={**context, "node": node},
+                    )
+                )
+                artifacts.append(
+                    self._render_artifact(
+                        path=f"batfish/iptables/{node['id']}.iptables",
+                        stage="batfish",
+                        content_type="text/plain",
+                        template_name="batfish/iptables/host.iptables.j2",
+                        context={**context, "node": node},
+                    )
+                )
+
         return PipelineArtifacts(
             topology_name=topology.name,
             artifacts=artifacts,
@@ -113,6 +193,20 @@ class PipelineArtifactGenerator:
             content=content,
         )
 
+    def _json_artifact(
+        self,
+        path: str,
+        stage: str,
+        payload: dict[str, Any] | list[Any],
+    ) -> PipelineArtifact:
+        """Crear artefacto JSON estructurado sin plantilla intermedia."""
+        return PipelineArtifact(
+            path=path,
+            stage=stage,
+            content_type="application/json",
+            content=to_pretty_json(payload) + "\n",
+        )
+
     def _build_context(self, topology: TopologyCreate) -> dict[str, Any]:
         vlan_by_port = _build_vlan_memberships(topology)
         interface_by_port = {
@@ -121,10 +215,14 @@ class PipelineArtifactGenerator:
         zone_by_device = _build_zone_memberships(topology)
         zone_by_id = {zone.id: zone for zone in topology.security_zones}
         lab_interface_by_port = _build_lab_interface_map(topology)
+        connected_port_ids = _build_connected_port_ids(topology)
 
         nodes = []
+        runtime_nodes = []
         for device in topology.devices:
             device_zone = zone_by_device.get(device.id)
+            asset_type_val = device.asset_type.value
+            is_nos = asset_type_val in NOS_ASSET_TYPES
             logical_interfaces = []
             for port in device.ports:
                 interface_payload = interface_by_port.get(port.id)
@@ -157,32 +255,46 @@ class PipelineArtifactGenerator:
                     }
                 )
 
-            nodes.append(
+            node = {
+                "id": device.id,
+                "name": device.name,
+                "asset_type": asset_type_val,
+                "profile": "nos" if is_nos else "linux",
+                "criticality": device.criticality.value,
+                "manufacturer": device.manufacturer,
+                "model": device.model,
+                "zone_id": device_zone.id if device_zone is not None else None,
+                "zone_name": device_zone.name if device_zone is not None else None,
+                "purdue_level": (
+                    device_zone.purdue_level.value
+                    if device_zone is not None
+                    else None
+                ),
+                "security_level": (
+                    device_zone.security_level.value
+                    if device_zone is not None
+                    else None
+                ),
+                "containerlab": {
+                    "kind": DEFAULT_LINUX_KIND,
+                    "image": DEFAULT_LINUX_IMAGE,
+                    "cmd": DEFAULT_LINUX_CMD,
+                },
+                "batfish": {
+                    "kind": DEFAULT_NOS_KIND if is_nos else DEFAULT_LINUX_KIND,
+                    "image": DEFAULT_NOS_IMAGE if is_nos else DEFAULT_LINUX_IMAGE,
+                },
+                "interfaces": logical_interfaces,
+            }
+            nodes.append(node)
+            runtime_nodes.append(
                 {
-                    "id": device.id,
-                    "name": device.name,
-                    "asset_type": device.asset_type.value,
-                    "criticality": device.criticality.value,
-                    "manufacturer": device.manufacturer,
-                    "model": device.model,
-                    "zone_id": device_zone.id if device_zone is not None else None,
-                    "zone_name": device_zone.name if device_zone is not None else None,
-                    "purdue_level": (
-                        device_zone.purdue_level.value
-                        if device_zone is not None
-                        else None
-                    ),
-                    "security_level": (
-                        device_zone.security_level.value
-                        if device_zone is not None
-                        else None
-                    ),
-                    "containerlab": {
-                        "kind": DEFAULT_LINUX_KIND,
-                        "image": DEFAULT_LINUX_IMAGE,
-                        "cmd": DEFAULT_LINUX_CMD,
-                    },
-                    "interfaces": logical_interfaces,
+                    **node,
+                    "interfaces": [
+                        interface
+                        for interface in logical_interfaces
+                        if interface["port_id"] in connected_port_ids
+                    ],
                 }
             )
 
@@ -216,11 +328,15 @@ class PipelineArtifactGenerator:
                 }
             )
 
-        return {
+        mgmt_ipv4_subnet, mgmt_ipv6_subnet = _build_mgmt_subnets(topology.name)
+        context = {
             "topology": topology,
             "topology_name": topology.name,
             "mgmt_network": f"gemerotic-{topology.name}-mgmt",
+            "mgmt_ipv4_subnet": mgmt_ipv4_subnet,
+            "mgmt_ipv6_subnet": mgmt_ipv6_subnet,
             "nodes": nodes,
+            "runtime_nodes": runtime_nodes,
             "links": links,
             "vlans": [
                 {
@@ -243,6 +359,65 @@ class PipelineArtifactGenerator:
             ],
             "conduits": conduits,
         }
+        context["topology_payload"] = topology.model_dump(mode="json")
+        context["canvas"] = (
+            topology.canvas.model_dump(mode="json")
+            if topology.canvas is not None
+            else {"assets": [], "cables": []}
+        )
+        context["netbox_inventory"] = _build_netbox_inventory(topology)
+        context["containerlab_runtime"] = {
+            "topology_name": topology.name,
+            "mgmt_network": context["mgmt_network"],
+            "mgmt_ipv4_subnet": context["mgmt_ipv4_subnet"],
+            "mgmt_ipv6_subnet": context["mgmt_ipv6_subnet"],
+            "nodes": runtime_nodes,
+            "links": links,
+        }
+        context["ansible_variables"] = {
+            "gemerotic_topology": topology.name,
+            "gemerotic_containerlab_prefix": f"clab-{topology.name}-",
+            "gemerotic_nodes": runtime_nodes,
+        }
+        return context
+
+
+def _build_mgmt_subnets(topology_name: str) -> tuple[str, str]:
+    """Generar subredes de management estables sin pisar rangos Docker comunes."""
+    stable_value = sum(
+        (index + 1) * ord(char)
+        for index, char in enumerate(topology_name)
+    )
+    third_octet = 100 + (stable_value % 100)
+    return (
+        f"10.254.{third_octet}.0/24",
+        f"3fff:10:254:{third_octet}::/80",
+    )
+
+
+def _build_netbox_inventory(topology: TopologyCreate) -> dict[str, Any]:
+    """Separar inventario SSoT de los artefactos de runtime."""
+    return {
+        "topology_name": topology.name,
+        "sites": [site.model_dump(mode="json") for site in topology.sites],
+        "rooms": [room.model_dump(mode="json") for room in topology.rooms],
+        "racks": [rack.model_dump(mode="json") for rack in topology.racks],
+        "devices": [device.model_dump(mode="json") for device in topology.devices],
+        "patch_panels": [
+            panel.model_dump(mode="json") for panel in topology.patch_panels
+        ],
+        "cables": [cable.model_dump(mode="json") for cable in topology.cables],
+        "interfaces": [
+            interface.model_dump(mode="json") for interface in topology.interfaces
+        ],
+        "vlans": [vlan.model_dump(mode="json") for vlan in topology.vlans],
+        "security_zones": [
+            zone.model_dump(mode="json") for zone in topology.security_zones
+        ],
+        "conduits": [
+            conduit.model_dump(mode="json") for conduit in topology.conduits
+        ],
+    }
 
 
 def _build_vlan_memberships(
@@ -267,6 +442,15 @@ def _build_zone_memberships(topology: TopologyCreate) -> dict[str, Any]:
         for device_id in zone.device_ids:
             zone_by_device[device_id] = zone
     return zone_by_device
+
+
+def _build_connected_port_ids(topology: TopologyCreate) -> set[str]:
+    """Calcular los puertos que existen como interfaces reales en Containerlab."""
+    return {
+        termination.port_id
+        for cable in topology.cables
+        for termination in cable.terminations
+    }
 
 
 def _build_lab_interface_map(topology: TopologyCreate) -> dict[str, str]:

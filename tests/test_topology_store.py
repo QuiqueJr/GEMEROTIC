@@ -1,0 +1,89 @@
+"""
+Tests del store local de topologías guardadas.
+"""
+
+import pytest
+
+from app.schemas.topology import TopologyCreate
+from app.services.topology_store import TopologyNotFoundError, TopologyStore
+from tests.test_schemas import _mvp_topology_payload
+
+
+class TestTopologyStore:
+    """Tests de persistencia local del gemelo digital."""
+
+    def test_save_persists_topology_and_artifacts(self, tmp_path):
+        topology = TopologyCreate(**_mvp_topology_payload())
+        store = TopologyStore(root=tmp_path)
+
+        result = store.save(topology)
+        loaded = store.load("mvp-lab-01")
+
+        assert result["topology_name"] == "mvp-lab-01"
+        assert loaded.name == topology.name
+        assert (tmp_path / "mvp-lab-01" / "topology.json").exists()
+        assert (
+            tmp_path
+            / "mvp-lab-01"
+            / "artifacts"
+            / "containerlab"
+            / "topology.clab.yml"
+        ).exists()
+
+    def test_update_netbox_sync_writes_metadata(self, tmp_path):
+        topology = TopologyCreate(**_mvp_topology_payload())
+        store = TopologyStore(root=tmp_path)
+
+        store.save(topology)
+        store.update_netbox_sync(
+            "mvp-lab-01",
+            {"status": "failed", "detail": "NetBox unavailable"},
+        )
+
+        metadata = (tmp_path / "mvp-lab-01" / "metadata.json").read_text(
+            encoding="utf-8"
+        )
+        assert "NetBox unavailable" in metadata
+
+    def test_save_project_state_persists_raw_builder_state(self, tmp_path):
+        store = TopologyStore(root=tmp_path)
+        state = {
+            "project_name": "mvp-lab-01",
+            "settings": {"name": "MVP Lab 01"},
+            "nodes": [{"id": "router-01"}],
+            "edges": [],
+            "drawings": [],
+            "active_view": "physical",
+        }
+
+        result = store.save_project_state("mvp-lab-01", state)
+        loaded = store.load_project_state("mvp-lab-01")
+
+        assert result["project_name"] == "mvp-lab-01"
+        assert loaded["settings"]["name"] == "MVP Lab 01"
+        assert (tmp_path / "mvp-lab-01" / "state.json").exists()
+
+    def test_load_missing_topology_raises_clear_error(self, tmp_path):
+        store = TopologyStore(root=tmp_path)
+
+        with pytest.raises(TopologyNotFoundError, match="Saved topology not found"):
+            store.load("missing-lab")
+
+    def test_list_project_names_returns_saved_state_and_topology_dirs(self, tmp_path):
+        topology = TopologyCreate(**_mvp_topology_payload())
+        store = TopologyStore(root=tmp_path)
+
+        store.save(topology)
+        store.save_project_state(
+            "draft-lab",
+            {
+                "project_name": "draft-lab",
+                "settings": {},
+                "nodes": [],
+                "edges": [],
+                "drawings": [],
+                "active_view": "physical",
+            },
+        )
+
+        assert store.list_project_names() == ["draft-lab", "mvp-lab-01"]

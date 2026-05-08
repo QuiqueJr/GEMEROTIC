@@ -103,6 +103,7 @@ class PipelineRunner:
                 command=[
                     "containerlab",
                     "deploy",
+                    "--reconfigure",
                     "--topo",
                     "containerlab/topology.clab.yml",
                 ],
@@ -269,8 +270,10 @@ class PipelineRunner:
             stderr_tail=_tail(completed.stderr or "", 4000),
         )
         if completed.returncode != 0:
+            command_output = _tail(completed.stderr or completed.stdout or "", 1200)
+            suffix = f": {command_output}" if command_output else ""
             raise PipelineExecutionError(
-                f"Pipeline command returned non-zero exit code: {name}"
+                f"Pipeline command returned non-zero exit code: {name}{suffix}"
             )
         return result
 

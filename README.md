@@ -18,7 +18,41 @@ UI (React Flow) -> Core API (FastAPI) -> SSoT (NetBox) -> Generador de Configura
 
 ---
 
-## Estado Actual: Step 10 - Ejecucion Controlada de Containerlab y Ansible
+## Estado Actual: Step 11 - Validacion Batfish con Perfiles Mixtos
+
+### Objetivo de este paso
+
+Implementar una arquitectura de validacion hibrida en Batfish que permita analizar
+redes industriales con planos de control mixtos (Network OS y Linux/Host):
+
+```
+TopologyCreate -> Mixed Pipeline -> NOS Configs + Linux JSONs -> Batfish Analysis
+```
+
+### Alcance inicial permitido
+
+- Diferenciar generacion de artefactos por tipo de activo (`NOS` vs `Linux`).
+- Plantillas Jinja2 para Arista cEOS (`nos.cfg.j2`).
+- Plantillas Jinja2 para hosts Linux (`host.json.j2`, `host.iptables.j2`).
+- Traduccion de `Conduits` (Capa 3) a reglas de filtrado persistentes.
+- Verificacion de sintaxis y conectividad logica en Batfish.
+
+### Avance actual dentro de Step 11
+
+- `pipeline_artifacts.py` actualizado para manejar `ProfileType.NOS` y `ProfileType.LINUX`.
+- Mapeo automatico: `ROUTER`, `SWITCH`, `FIREWALL` -> `NOS`. Resto -> `LINUX`.
+- Los `Conduits` entre zonas se traducen a reglas de firewall en los hosts para validacion de segmentacion.
+- Artefactos generados bajo `batfish/configs/` y `batfish/hosts/`.
+
+### Fuera de alcance de Step 11
+
+- No ejecutar el servidor de Batfish desde el API (solo generacion de configs).
+- No implementar auditoria OPA (Step 13).
+- No integrar observabilidad (Step 12).
+
+---
+
+## Estado Anterior: Step 10 - Ejecucion Controlada de Containerlab y Ansible
 
 ### Objetivo de este paso
 
@@ -32,8 +66,13 @@ TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
 ### Alcance inicial permitido
 
 - Escribir bundles bajo `var/pipeline/<topology_name>`.
+- Guardar el último estado validado del gemelo bajo
+  `var/topologies/<topology_name>` para que el pipeline IaC no dependa de
+  NetBox en tiempo de edición.
 - Comprobar herramientas locales con `GET /api/v1/pipeline/tools`.
 - Ejecutar `POST /api/v1/pipeline/deploy` protegido por `X-API-Key`.
+- Ejecutar `POST /api/v1/pipeline/deploy/{topology_name}` desde la última
+  topología guardada.
 - Consultar labs desplegados con `GET /api/v1/pipeline/labs/{topology_name}`.
 - Ejecutar consola controlada por nodo con
   `POST /api/v1/pipeline/labs/{topology_name}/nodes/{node_id}/console`.
@@ -93,6 +132,70 @@ TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
     base de equipos de red/OT; Equinor Engineering Symbols y FUXA quedan como
     referencias permisivas, mientras que Cisco o packs sin licencia clara solo
     se usan como referencia visual
+- Se corrige el flujo de guardado para que el editor no pierda trabajo por un
+  fallo operativo de NetBox:
+  - `PUT /api/v1/topology/state/{project_name}` guarda primero el estado
+    visual completo del builder (`settings`, `nodes`, `edges`, `drawings`,
+    vista activa y `topology` derivada) en
+    `var/topologies/<project_name>/state.json`
+  - `GET /api/v1/topology/state/{project_name}` recupera ese estado visual para
+    rehidratar el canvas tras recargar el navegador
+  - la UI guarda además un draft local inmediato antes de llamar al API; si el
+    servidor devuelve un estado más antiguo o la red falla, el navegador no pisa
+    la topología recién editada
+  - el estado visual se guarda aunque la topología esté incompleta o totalmente
+    vacía; en ese caso no se generan artefactos desplegables hasta que exista
+    un `TopologyCreate` válido
+  - `POST /api/v1/topology` guarda primero el `TopologyCreate` validado en el
+    store local del proyecto (`var/topologies/<topology_name>`)
+  - NetBox pasa a ser una sincronización derivada de mejor esfuerzo y en
+    segundo plano: el guardado sigue devolviendo `201` aunque NetBox tarde o
+    falle, la respuesta inmediata usa `netbox_sync.status = queued` y la
+    metadata del proyecto registra después `synchronized`, `draft_synchronized`
+    o `failed`
+  - NetBox también recibe el estado visual incompleto como inventario
+    `draft`: los nodos y cables resolubles de `state.json` se reflejan como
+    objetos planificados aunque todavía no exista un `TopologyCreate`
+    desplegable
+  - en modo MVP monoprojecto (`NETBOX_SINGLE_PROJECT_MODE=true`), al guardar un
+    proyecto se limpian los objetos gestionados por GEMEROTIC de otros
+    proyectos locales y de namespaces detectables en NetBox para que el
+    inventario visible represente el proyecto activo
+  - los dispositivos existentes en NetBox se actualizan de forma idempotente
+    cuando cambian nombre, tipo, ubicación, estado, criticidad, firmware,
+    posición de canvas o datos de sincronización
+  - si el canvas se guarda vacío, el backend limpia en NetBox los objetos
+    gestionados bajo ese `project_name` para evitar que reaparezcan dispositivos
+    o cables de pruebas anteriores
+  - los artefactos de Containerlab y Ansible se generan desde el último
+    guardado, no desde el estado efímero del navegador
+  - `POST /api/v1/pipeline/artifacts/{topology_name}` renderiza los artefactos
+    desde la última topología guardada
+  - `POST /api/v1/pipeline/deploy/{topology_name}` despliega con
+    Containerlab + Ansible desde la última topología guardada
+  - la UI ejecuta el flujo `guardar -> generar/desplegar desde guardado` para
+    que Ansible y Containerlab siempre trabajen con el último cambio persistido
+- Se elimina la fricción de `X-API-Key` durante el MVP:
+  - `API_KEY_REQUIRED=false` permite operar endpoints mutantes sin header en
+    entornos de prueba
+  - si en el futuro se reactiva `API_KEY_REQUIRED=true`, la validación de
+    `X-API-Key` se mantiene disponible
+- Se endurece la validación de cables y recableados:
+  - la UI reasigna automáticamente puertos repetidos cuando se crean varios
+    enlaces sin configuración completa de puertos
+  - el schema rechaza payloads externos donde un puerto físico aparece en más
+    de un cable, devolviendo `422` antes de llegar a NetBox
+  - el importador de NetBox elimina cables, dispositivos, interfaces y objetos
+    físicos/OT obsoletos dentro del namespace de la topología, y recrea cables
+    cuando cambian sus extremos
+- Se separan los artefactos JSON para escalar el pipeline:
+  - `topology/topology.json`
+  - `topology/canvas.json`
+  - `inventory/netbox_inventory.json`
+  - `runtime/containerlab_nodes.json`
+  - `runtime/containerlab_links.json`
+  - `ansible/vars.json`
+  - `configs/assets/<asset_id>.json`
 - Se incorporó una capa inicial de cumplimiento OT asistida:
   - `POST /api/v1/compliance/report` evalúa la topología contra una baseline
     GEMEROTIC trazable a `NIS2 + IEC 62443 + ISO/IEC 27001`
@@ -103,6 +206,8 @@ TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
     topología
   - el asistente puede operar en modo local determinista o en modo
     `Ollama` como capa de explicación estructurada sobre el mismo informe
+  - para la demo en servidor se usa `gemma3:1b` en Ollama local por bajo peso;
+    el modelo no decide cumplimiento, solo redacta respuestas dentro de scope
   - la UI añade botón de evaluación, pestaña de compliance en el navegador de
     datos y modal de chat para revisar zonas, conduits, niveles Purdue y
     activos críticos
@@ -134,6 +239,37 @@ TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
   - la UI calcula por defecto la URL del API desde el host desde el que se
     sirve, por ejemplo `http://212.128.44.220:8000` al abrir el frontend del
     servidor
+- Handoff operativo para continuar desde esta rama (`enrique`) - 7 mayo 2026:
+  - la UI ya no se limita a persistir el canvas; el botón de guardado ejecuta
+    `PUT /api/v1/topology/state/{project_name}` y después refresca, en modo
+    best-effort, `GET /api/v1/health`, `GET /api/v1/pipeline/tools`,
+    `POST /api/v1/pipeline/artifacts/{topology_name}` y
+    `POST /api/v1/compliance/report`
+  - el despliegue real de Containerlab + Ansible no se ejecuta automáticamente
+    al guardar; sigue detrás del botón explícito de despliegue para evitar
+    cambios operativos involuntarios
+  - el servidor `/home/enrique/gemerotic-deploy-current` quedó con NetBox,
+    Redis rate limit, API y UI levantados; `GET /api/v1/health` respondió
+    `netbox_connected=true` y `rate_limit_backend_connected=true`
+  - en servidor se instaló Ollama `0.23.1`, se descargó `gemma3:1b` y el `.env`
+    operativo quedó con `COMPLIANCE_ASSISTANT_PROVIDER=ollama`,
+    `OLLAMA_BASE_URL=http://127.0.0.1:11434`,
+    `OLLAMA_MODEL=gemma3:1b` y `OLLAMA_TIMEOUT_SECONDS=60.0`
+  - se corrigió el cliente Ollama para enviar un schema JSON simple compatible
+    con Ollama `0.23.1`; la validación fuerte sigue haciéndose después con
+    Pydantic en `OllamaComplianceOutput`
+  - flujo de integración probado contra servidor con una topología demo:
+    guardado visual recuperable, `netbox_sync=synchronized`, artefactos
+    generados y compliance `attention_required` con 0 fallos y 1 aviso
+  - próximo punto exacto para continuar: comprobar desde navegador que al
+    guardar una topología real aparecen estados en español como `NetBox
+    conectado`, `Pipeline 3/4`, artefactos generados y cumplimiento calculado;
+    después validar que `POST /api/v1/compliance/chat` devuelve
+    `mode=ollama_advisor` en el servidor y no cae a `local_advisor`
+  - si `mode=local_advisor` aparece de nuevo, revisar primero los logs de
+    Ollama con `sudo journalctl -u ollama -n 80 --no-pager`; el fallo anterior
+    era `grammar_init: failed to initialize grammar` por usar el schema Pydantic
+    completo como `format`
 
 ### Fuera de alcance de Step 10
 
@@ -746,9 +882,9 @@ curl http://localhost:8000/api/v1/health
 | **Step 6** | Endpoint de topologia (POST /api/v1/topology) | Completado |
 | **Step 7** | Seguridad transversal (rate limiting, error handlers) | Completado |
 | **Step 8** | UI Builder OT con React Flow | Completado |
-| **Step 9** | Generador Jinja2 de artefactos del pipeline | Completado |
-| **Step 10** | Ejecucion controlada de Containerlab y Ansible | En progreso |
-| **Step 11** | Validacion Batfish con perfiles NOS | Pendiente |
+| Step 9 | Generador Jinja2 de artefactos del pipeline | Completado |
+| **Step 10** | Ejecucion controlada de Containerlab y Ansible | Completado |
+| **Step 11** | Validacion Batfish con perfiles mixtos (NOS vs Linux) | Completado |
 | **Step 12** | Observabilidad LibreNMS/Oxidized | Pendiente |
 | **Step 13** | Auditoria de cumplimiento OPA | Pendiente |
 

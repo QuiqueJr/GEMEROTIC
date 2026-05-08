@@ -6,7 +6,7 @@ all:
     gemerotic_topology: {{ topology_name | json_string }}
     gemerotic_containerlab_prefix: {{ ("clab-" ~ topology_name ~ "-") | json_string }}
     gemerotic_nodes:
-{% for node in nodes %}
+{% for node in runtime_nodes %}
       - id: {{ node.id | json_string }}
         container_name: {{ ("clab-" ~ topology_name ~ "-" ~ node.id) | json_string }}
         asset_type: {{ node.asset_type | json_string }}

@@ -66,9 +66,61 @@ __all__ = [
     # Layer 3
     "SecurityZoneSchema",
     "ConduitSchema",
+    # UI canvas
+    "CanvasPositionSchema",
+    "CanvasAssetSchema",
+    "CanvasCableSchema",
+    "CanvasTopologySchema",
     # Root
     "TopologyCreate",
 ]
+
+
+class CanvasPositionSchema(BaseModel):
+    """Coordenadas visuales de un elemento del builder."""
+
+    x: float = Field(..., ge=-100000, le=100000)
+    y: float = Field(..., ge=-100000, le=100000)
+
+
+class CanvasAssetSchema(BaseModel):
+    """Activo representado en el canvas sin mezclarlo con NetBox."""
+
+    id: str = Field(..., min_length=1, max_length=64)
+    asset_type: AssetType = Field(...)
+    label: str = Field(..., min_length=1, max_length=128)
+    position: CanvasPositionSchema = Field(...)
+    width: float | None = Field(default=None, ge=1, le=2000)
+    height: float | None = Field(default=None, ge=1, le=2000)
+
+    @field_validator("id")
+    @classmethod
+    def validate_id(cls, value: str) -> str:
+        """Sanitizar ID visual de activo."""
+        return validate_slug(value, "Canvas asset ID")
+
+
+class CanvasCableSchema(BaseModel):
+    """Cable visual con extremos y puertos elegidos en la UI."""
+
+    id: str = Field(..., min_length=1, max_length=64)
+    source_device_id: str = Field(..., min_length=1, max_length=64)
+    target_device_id: str = Field(..., min_length=1, max_length=64)
+    source_port_id: str | None = Field(default=None, max_length=128)
+    target_port_id: str | None = Field(default=None, max_length=128)
+
+    @field_validator("id", "source_device_id", "target_device_id")
+    @classmethod
+    def validate_slug_fields(cls, value: str) -> str:
+        """Sanitizar IDs visuales relacionados con cables."""
+        return validate_slug(value, "Canvas cable field")
+
+
+class CanvasTopologySchema(BaseModel):
+    """Estado visual opcional usado para reconstruir el builder."""
+
+    assets: list[CanvasAssetSchema] = Field(default_factory=list)
+    cables: list[CanvasCableSchema] = Field(default_factory=list)
 
 
 class TopologyCreate(BaseModel):
@@ -137,6 +189,12 @@ class TopologyCreate(BaseModel):
     conduits: list[ConduitSchema] = Field(
         default_factory=list,
         description="Conductos de comunicación entre zonas",
+    )
+
+    # --- Estado visual del builder ---
+    canvas: CanvasTopologySchema | None = Field(
+        default=None,
+        description="Coordenadas y metadatos visuales del canvas UI",
     )
 
     # =========================================================================
@@ -274,6 +332,22 @@ class TopologyCreate(BaseModel):
                     f"'{cable.terminations[1].port_id}'"
                 )
             seen.add(endpoints)
+        return self
+
+    @model_validator(mode="after")
+    def validate_cable_ports_are_single_use(self) -> "TopologyCreate":
+        """Impedir que un puerto físico aparezca en más de un cable."""
+        port_usage: dict[str, str] = {}
+        for cable in self.cables:
+            for termination in cable.terminations:
+                previous_cable_id = port_usage.get(termination.port_id)
+                if previous_cable_id is not None:
+                    raise ValueError(
+                        f"Cable '{cable.id}': termination port "
+                        f"'{termination.port_id}' is already used by cable "
+                        f"'{previous_cable_id}'"
+                    )
+                port_usage[termination.port_id] = cable.id
         return self
 
     # =========================================================================

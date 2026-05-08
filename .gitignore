@@ -17,6 +17,7 @@ env/
 
 # Environment variables (NUNCA commitear secretos)
 .env
+*.local.env
 
 # IDE
 .vscode/
@@ -44,4 +45,10 @@ docker/netbox/env/*.local.env
 # Artefactos locales generados por el pipeline
 var/
 
-Constructor.pdf
+# Documentos y Auditoría
+Constructor Digital Twins IEC 62443.pdf
+pdf_content.txt
+init_system.sh
+excalidraw.log
+.gemini_security/
+GEMINI.md

@@ -111,6 +111,30 @@ CUSTOM_FIELD_BLUEPRINTS: tuple[CustomFieldBlueprint, ...] = (
         description="Criticidad OT/IT calculada por GEMEROTIC",
         object_types=("dcim.device",),
     ),
+    CustomFieldBlueprint(
+        name="gemerotic_project",
+        label="GEMEROTIC project",
+        description="Proyecto GEMEROTIC que gestiona el activo",
+        object_types=("dcim.device",),
+    ),
+    CustomFieldBlueprint(
+        name="gemerotic_sync_state",
+        label="GEMEROTIC sync state",
+        description="Estado de sincronización del activo dentro del gemelo",
+        object_types=("dcim.device",),
+    ),
+    CustomFieldBlueprint(
+        name="gemerotic_ui_node_id",
+        label="GEMEROTIC UI node ID",
+        description="Identificador del nodo visual origen en el builder",
+        object_types=("dcim.device",),
+    ),
+    CustomFieldBlueprint(
+        name="gemerotic_canvas_position",
+        label="GEMEROTIC canvas position",
+        description="Coordenadas visuales del activo en el canvas",
+        object_types=("dcim.device",),
+    ),
 )
 
 
@@ -395,6 +419,31 @@ class NetBoxClient:
 
         importer = TopologyImporter(self)
         return importer.import_topology(topology)
+
+    def sync_project_state(
+        self,
+        project_name: str,
+        project_state: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Sincronizar NetBox desde el estado editable aunque sea borrador."""
+        from app.services.topology_importer import TopologyImporter
+
+        importer = TopologyImporter(self)
+        return importer.sync_project_state(project_name, project_state)
+
+    def clean_topology(self, topology_name: str) -> dict[str, Any]:
+        """Eliminar de NetBox los objetos gestionados para una topología."""
+        from app.services.topology_importer import TopologyImporter
+
+        importer = TopologyImporter(self)
+        return importer.clean_topology(topology_name)
+
+    def list_managed_project_names(self) -> list[str]:
+        """Detectar namespaces GEMEROTIC presentes en NetBox."""
+        from app.services.topology_importer import TopologyImporter
+
+        importer = TopologyImporter(self)
+        return importer.list_managed_project_names()
 
     def _authorization_header(self) -> str:
         """Construir el header correcto para tokens NetBox v1/v2."""

@@ -50,11 +50,11 @@ import './App.css'
 import {
   bootstrapNetBox,
   chatWithComplianceAssistant,
-  createTopology,
-  deployPipeline,
+  deploySavedPipeline,
   generateComplianceReport,
-  generatePipelineArtifacts,
+  generateSavedPipelineArtifacts,
   getPipelineLabStatus,
+  getTopologyState,
   type ComplianceChatMessage,
   type ComplianceChatResponse,
   type ComplianceReportResponse,
@@ -66,7 +66,10 @@ import {
   type PipelineLabStatusResponse,
   type PipelineRunResponse,
   type PipelineToolReportResponse,
+  type TopologyProjectStatePayload,
+  type TopologyProjectStateSaveResponse,
   runPipelineConsoleCommand,
+  saveTopologyState,
 } from './api/gemeroticApi'
 import { AssetNode } from './components/AssetNode'
 import { CableEdge } from './components/CableEdge'
@@ -74,6 +77,8 @@ import { DrawingNode as DrawingCanvasNode } from './components/DrawingNode'
 import { EquipmentGlyph } from './components/EquipmentGlyph'
 import { getEdgeHandleIds, getSiblingOffsets } from './domain/edgeLayout'
 import { assetCatalog, getAssetDefinition } from './domain/assetCatalog'
+const DEPLOY_TOOL_NAMES = ['docker', 'containerlab', 'ansible-playbook'] as const
+
 import {
   buildTopologyPayload,
   createBuilderEdge,
@@ -110,6 +115,8 @@ const edgeTypes = {
   cable: CableEdge,
 }
 
+const PROJECT_NAME_STORAGE_KEY = 'gemerotic-current-project-v2'
+const PROJECT_DRAFT_STORAGE_PREFIX = 'gemerotic-project-draft-v2:'
 const criticalityOptions: Criticality[] = ['critical', 'high', 'medium', 'low']
 const securityLevelOptions: SecurityLevel[] = ['SL-0', 'SL-1', 'SL-2', 'SL-3', 'SL-4']
 const purdueOptions: PurdueLevel[] = [0, 1, 2, 3, 4, 5]
@@ -130,6 +137,9 @@ type ConsoleEntry = {
   id: string
   tone: OperationStatus
   text: string
+}
+type SaveCurrentTopologyOptions = {
+  refreshWorkflow?: boolean
 }
 type DeviceConsole = {
   nodeId: string
@@ -163,17 +173,17 @@ const viewOptions: Array<{
   id: TopologyView
   label: string
 }> = [
-  { id: 'physical', label: 'Fisica' },
-  { id: 'logical', label: 'Logica' },
+  { id: 'physical', label: 'Física' },
+  { id: 'logical', label: 'Lógica' },
   { id: 'security', label: 'Seguridad' },
 ]
 
 const assetGroups = [
-  { id: 'network', label: 'Routers/Switches' },
+  { id: 'network', label: 'Red' },
   { id: 'ot', label: 'Control OT' },
-  { id: 'compute', label: 'End devices' },
-  { id: 'security', label: 'Security' },
-  { id: 'all', label: 'All devices' },
+  { id: 'compute', label: 'Terminales' },
+  { id: 'security', label: 'Seguridad' },
+  { id: 'all', label: 'Todos los dispositivos' },
 ]
 
 const defaultEdgeOptions: DefaultEdgeOptions = {
@@ -191,7 +201,7 @@ const purdueLabels: Record<PurdueLevel, string> = {
   2: 'Supervision',
   3: 'DMZ industrial',
   4: 'IT planta',
-  5: 'Enterprise',
+  5: 'Empresa',
 }
 
 const drawingPalette = ['#2563eb', '#0f766e', '#b45309', '#b91c1c', '#64748b']
@@ -204,42 +214,7 @@ const drawingKindLabels: Record<DrawingKind, string> = {
 }
 
 function createInitialDrawingNodes(): DrawingNodeModel[] {
-  return [
-    createDrawingNode('drawing-room', 'rectangle', 'Cuarto de servidores', 'physical', {
-      color: '#64748b',
-      height: 230,
-      position: { x: 70, y: 58 },
-      width: 360,
-    }),
-    createDrawingNode('drawing-cell', 'rectangle', 'Celda OT / Linea A', 'physical', {
-      color: '#0f766e',
-      height: 250,
-      position: { x: 520, y: 160 },
-      width: 360,
-    }),
-    createDrawingNode('drawing-dmz', 'zone', 'Zona DMZ industrial', 'security', {
-      color: '#b45309',
-      height: 250,
-      position: { x: 260, y: 110 },
-      purdueLevel: 3,
-      securityLevel: 'SL-3',
-      width: 300,
-    }),
-    createDrawingNode('drawing-control', 'zone', 'Zona OT Control', 'security', {
-      color: '#0f766e',
-      height: 270,
-      position: { x: 600, y: 155 },
-      purdueLevel: 1,
-      securityLevel: 'SL-3',
-      width: 300,
-    }),
-    createDrawingNode('drawing-note', 'text', 'Doble clic para editar texto o zona', 'physical', {
-      color: '#2563eb',
-      height: 56,
-      position: { x: 88, y: 328 },
-      width: 280,
-    }),
-  ]
+  return []
 }
 
 function createDrawingNode(
@@ -281,21 +256,27 @@ function createDrawingNode(
 }
 
 function App() {
-  const initialState = useMemo(() => createInitialBuilderState(), [])
-  const [settings, setSettings] = useState<TopologySettings>(initialState.settings)
-  const [nodes, setNodes, onNodesChange] = useNodesState<BuilderNode>(initialState.nodes)
+  const initialState = useMemo(() => createInitialAppState(), [])
+  const [settings, setSettings] = useState<TopologySettings>(
+    initialState.snapshot.settings,
+  )
+  const [nodes, setNodes, onNodesChange] = useNodesState<BuilderNode>(
+    initialState.snapshot.nodes,
+  )
   const [drawings, setDrawings, onDrawingsChange] =
-    useNodesState<DrawingNodeModel>(createInitialDrawingNodes())
-  const [edges, setEdges, onEdgesChange] = useEdgesState<BuilderEdge>(initialState.edges)
+    useNodesState<DrawingNodeModel>(initialState.snapshot.drawings)
+  const [edges, setEdges, onEdgesChange] = useEdgesState<BuilderEdge>(
+    initialState.snapshot.edges,
+  )
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(
-    initialState.nodes[0]?.id ?? null,
+    initialState.snapshot.nodes[0]?.id ?? null,
   )
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null)
   const [editorNodeId, setEditorNodeId] = useState<string | null>(null)
   const [drawingEditorId, setDrawingEditorId] = useState<string | null>(null)
   const [editorTab, setEditorTab] = useState<EditorTab>('equipment')
-  const [activeView, setActiveView] = useState<TopologyView>('physical')
+  const [activeView, setActiveView] = useState<TopologyView>(initialState.activeView)
   const [interactionMode, setInteractionMode] = useState<InteractionMode>('select')
   const [pendingLinkSource, setPendingLinkSource] = useState<LinkEndpoint | null>(null)
   const [portPicker, setPortPicker] = useState<PortPickerState | null>(null)
@@ -307,8 +288,15 @@ function App() {
   const [linkDraft, setLinkDraft] = useState<CableDraft | null>(null)
   const [historyPast, setHistoryPast] = useState<CanvasHistoryState[]>([])
   const [historyFuture, setHistoryFuture] = useState<CanvasHistoryState[]>([])
-  const [apiBaseUrl, setApiBaseUrl] = useState(() => getDefaultApiBaseUrl())
-  const [apiKey, setApiKey] = useState('')
+  const [apiBaseUrl, setApiBaseUrl] = useState(() =>
+    window.localStorage.getItem('gemerotic-api-base-url') ?? getDefaultApiBaseUrl(),
+  )
+  const [apiKey, setApiKey] = useState(() =>
+    window.localStorage.getItem('gemerotic-api-key') ?? '',
+  )
+  const [remoteStateLoaded, setRemoteStateLoaded] = useState(
+    () => window.localStorage.getItem(PROJECT_NAME_STORAGE_KEY) === null,
+  )
   const [reactFlowInstance, setReactFlowInstance] =
     useState<ReactFlowInstance<CanvasNode, BuilderEdge> | null>(null)
   const [operationStatus, setOperationStatus] = useState<OperationStatus>('idle')
@@ -317,7 +305,7 @@ function App() {
     {
       id: 'boot-console-entry',
       tone: 'success',
-      text: 'Proyecto cargado. Arrastra equipos al workspace o usa Add Link para crear enlaces.',
+      text: 'Proyecto cargado. Arrastra equipos al workspace o usa Añadir enlace para crear enlaces.',
     },
   ])
   const [health, setHealth] = useState<HealthResponse | null>(null)
@@ -481,10 +469,11 @@ function App() {
       }),
     [activeView, edges, nodeById, selectedEdgeId, showInterfaceLabels, siblingOffsets],
   )
-  const allToolsInstalled =
+  const deployToolsInstalled =
     toolReport !== null &&
-    toolReport.tools.length > 0 &&
-    toolReport.tools.every((tool) => tool.installed)
+    DEPLOY_TOOL_NAMES.every((toolName) =>
+      toolReport.tools.some((tool) => tool.name === toolName && tool.installed),
+    )
   const activeDeviceConsole =
     activeConsoleTabId === 'app' ? null : deviceConsoles[activeConsoleTabId] ?? null
   const runtimeNodesById = useMemo(
@@ -495,7 +484,105 @@ function App() {
   const canRedo = historyFuture.length > 0
   const apiConfig = { baseUrl: apiBaseUrl, apiKey }
   const hasApiBaseUrl = apiBaseUrl.trim().length > 0
-  const hasApiKey = apiKey.trim().length > 0
+
+  useEffect(() => {
+    window.localStorage.setItem('gemerotic-api-base-url', apiBaseUrl)
+  }, [apiBaseUrl])
+
+  useEffect(() => {
+    window.localStorage.setItem('gemerotic-api-key', apiKey)
+  }, [apiKey])
+
+  useEffect(() => {
+    if (remoteStateLoaded || !hasApiBaseUrl) {
+      return
+    }
+
+    let cancelled = false
+    const projectName = window.localStorage.getItem(PROJECT_NAME_STORAGE_KEY)
+    if (projectName === null) {
+      return
+    }
+    const storedProjectName = projectName
+
+    async function hydrateProjectState() {
+      try {
+        const result = await getTopologyState(
+          { baseUrl: apiBaseUrl, apiKey },
+          storedProjectName,
+        )
+        if (cancelled) {
+          return
+        }
+        if (result.ok && result.data.data !== undefined) {
+          const localDraft = loadProjectDraft(storedProjectName)
+          if (isProjectStateNewer(localDraft, result.data.data)) {
+            appendConsole('Estado local conservado; servidor aun no tenia el ultimo cambio', 'idle')
+            return
+          }
+          const restored = coerceProjectState(
+            result.data.data,
+            cloneSnapshot({ settings, nodes, edges, drawings }),
+          )
+          const cloned = cloneSnapshot(restored.snapshot)
+          setSettings(cloned.settings)
+          setNodes(cloned.nodes)
+          setEdges(cloned.edges)
+          setDrawings(cloned.drawings)
+          setSelectedNodeId(null)
+          setSelectedEdgeId(null)
+          setSelectedDrawingId(null)
+          setEditorNodeId(null)
+          setDrawingEditorId(null)
+          setPendingLinkSource(null)
+          setPortPicker(null)
+          setLinkDraft(null)
+          setInteractionMode('select')
+          setActiveView(restored.activeView)
+          setHistoryPast([])
+          setHistoryFuture([])
+          window.localStorage.setItem(PROJECT_NAME_STORAGE_KEY, restored.projectName)
+          saveProjectDraft(result.data.data)
+          setOperationStatus('success')
+          setOperationMessage('Estado guardado cargado')
+          appendConsole('Estado guardado cargado desde el API', 'success')
+          return
+        }
+        if (result.status !== 404) {
+          const message = extractMessage(result.data, `HTTP ${result.status}`)
+          setOperationStatus('error')
+          setOperationMessage(message)
+          appendConsole(message, 'error')
+        }
+      } catch (error) {
+        if (!cancelled) {
+          const message = error instanceof Error ? error.message : 'Petición fallida'
+          appendConsole(`No se pudo cargar estado guardado: ${message}`, 'error')
+        }
+      } finally {
+        if (!cancelled) {
+          setRemoteStateLoaded(true)
+        }
+      }
+    }
+
+    void hydrateProjectState()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    apiBaseUrl,
+    apiKey,
+    drawings,
+    edges,
+    hasApiBaseUrl,
+    nodes,
+    remoteStateLoaded,
+    setDrawings,
+    setEdges,
+    setNodes,
+    settings,
+  ])
 
   function appendConsole(text: string, tone: OperationStatus = 'idle') {
     setConsoleEntries((current) => [
@@ -563,7 +650,7 @@ function App() {
         },
     }))
     setActiveConsoleTabId(nodeId)
-    if (!runtimeNodesById.has(nodeId) && hasApiBaseUrl && hasApiKey) {
+    if (!runtimeNodesById.has(nodeId) && hasApiBaseUrl) {
       void inspectRuntimeLab()
     }
   }
@@ -620,14 +707,7 @@ function App() {
   }
 
   function ensureProtectedApiConfigured(actionLabel: string): boolean {
-    if (!ensureApiBaseUrlConfigured(actionLabel)) {
-      return false
-    }
-    if (hasApiKey) {
-      return true
-    }
-    showActionRequired(`Configura X-API-Key en Proyecto antes de ejecutar: ${actionLabel}.`)
-    return false
+    return ensureApiBaseUrlConfigured(actionLabel)
   }
 
   function pushHistorySnapshot() {
@@ -1060,7 +1140,7 @@ function App() {
       setLinkDraft(null)
       appendConsole(
         nextMode === 'link'
-          ? 'Add Link activado: selecciona un equipo y despues un puerto de origen'
+          ? 'Añadir enlace activado: selecciona un equipo y despues un puerto de origen'
           : 'Modo seleccion activado',
         'success',
       )
@@ -1347,7 +1427,7 @@ function App() {
       setOperationMessage(successMessage)
       appendConsole(successMessage, 'success')
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Request failed'
+      const message = error instanceof Error ? error.message : 'Petición fallida'
       setOperationStatus('error')
       setOperationMessage(message)
       appendConsole(message, 'error')
@@ -1363,16 +1443,16 @@ function App() {
       const result = await getHealth(apiConfig)
       setHealth(result.data)
       const message = result.ok
-        ? `Health OK · NetBox ${result.data.checks.netbox_connected ? 'online' : 'offline'}`
+        ? `Health OK · NetBox ${result.data.checks.netbox_connected ? 'conectado' : 'desconectado'}`
         : `Health fallo · HTTP ${result.status}`
       setOperationStatus(result.ok ? 'success' : 'error')
       setOperationMessage(message)
       appendConsole(message, result.ok ? 'success' : 'error')
-      if (result.ok && hasApiKey) {
+      if (result.ok) {
         void checkTools({ quiet: true })
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Request failed'
+      const message = error instanceof Error ? error.message : 'Petición fallida'
       setOperationStatus('error')
       setOperationMessage(message)
       appendConsole(message, 'error')
@@ -1404,7 +1484,7 @@ function App() {
       }
       return result.data.data
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Request failed'
+      const message = error instanceof Error ? error.message : 'Petición fallida'
       setOperationStatus('error')
       setOperationMessage(message)
       appendConsole(message, 'error')
@@ -1419,20 +1499,170 @@ function App() {
     return runOperation(() => bootstrapNetBox(apiConfig), 'Bootstrap de NetBox completado')
   }
 
-  const persistTopology = () => {
-    if (!ensureProtectedApiConfigured('Persistir topologia')) {
-      return
+  const refreshWorkflowAfterSave = async (
+    savedTopology: TopologyProjectStateSaveResponse,
+  ): Promise<string[]> => {
+    const messages: string[] = []
+
+    try {
+      const healthResult = await getHealth(apiConfig)
+      if (healthResult.ok && healthResult.data.checks) {
+        setHealth(healthResult.data)
+        messages.push(
+          `NetBox ${
+            healthResult.data.checks.netbox_connected ? 'conectado' : 'desconectado'
+          }`,
+        )
+      } else {
+        messages.push(
+          `Health pendiente: ${extractMessage(healthResult.data, `HTTP ${healthResult.status}`)}`,
+        )
+      }
+    } catch (error) {
+      messages.push(`Health pendiente: ${error instanceof Error ? error.message : 'petición fallida'}`)
     }
-    return runOperation(() => createTopology(apiConfig, payload), 'Topologia enviada a NetBox')
+
+    try {
+      const toolsResult = await getPipelineTools(apiConfig)
+      if (toolsResult.ok && toolsResult.data.data !== undefined) {
+        setToolReport(toolsResult.data.data)
+        messages.push(
+          `Pipeline ${
+            toolsResult.data.data.tools.filter((tool) => tool.installed).length
+          }/${toolsResult.data.data.tools.length}`,
+        )
+      } else {
+        messages.push(
+          `Pipeline pendiente: ${extractMessage(toolsResult.data, `HTTP ${toolsResult.status}`)}`,
+        )
+      }
+    } catch (error) {
+      messages.push(`Pipeline pendiente: ${error instanceof Error ? error.message : 'petición fallida'}`)
+    }
+
+    const deployableTopologyName = getDeployableTopologyName(savedTopology)
+    if (deployableTopologyName === null) {
+      setPipelineArtifacts(null)
+      setPipelineRun(null)
+      setLabStatus(null)
+      setComplianceReport(null)
+      messages.push('Artefactos y cumplimiento pendientes: topología incompleta')
+      return messages
+    }
+
+    try {
+      const artifactResult = await generateSavedPipelineArtifacts(
+        apiConfig,
+        deployableTopologyName,
+      )
+      if (artifactResult.ok && artifactResult.data.data !== undefined) {
+        setPipelineArtifacts(artifactResult.data.data)
+        setPipelineRun(null)
+        messages.push(`${artifactResult.data.data.artifacts.length} artefactos`)
+      } else {
+        messages.push(
+          `Artefactos pendientes: ${extractMessage(artifactResult.data, `HTTP ${artifactResult.status}`)}`,
+        )
+      }
+    } catch (error) {
+      messages.push(`Artefactos pendientes: ${error instanceof Error ? error.message : 'petición fallida'}`)
+    }
+
+    try {
+      const complianceResult = await generateComplianceReport(apiConfig, payload)
+      if (complianceResult.ok && complianceResult.data.data !== undefined) {
+        setComplianceReport(complianceResult.data.data)
+        messages.push(
+          `Cumplimiento ${getCompliancePostureLabel(
+            complianceResult.data.data.summary.overall_posture,
+          )}`,
+        )
+      } else {
+        messages.push(
+          `Cumplimiento pendiente: ${extractMessage(complianceResult.data, `HTTP ${complianceResult.status}`)}`,
+        )
+      }
+    } catch (error) {
+      messages.push(`Cumplimiento pendiente: ${error instanceof Error ? error.message : 'petición fallida'}`)
+    }
+
+    return messages
+  }
+
+  const saveCurrentTopology =
+    async (
+      options: SaveCurrentTopologyOptions = {},
+    ): Promise<TopologyProjectStateSaveResponse | null> => {
+    if (!ensureProtectedApiConfigured('Guardar topologia')) {
+      return null
+    }
+    setOperationStatus('running')
+    try {
+      const projectStatePayload = buildProjectStatePayload(
+        cloneSnapshot({ settings, nodes, edges, drawings }),
+        activeView,
+        payload,
+      )
+      saveProjectDraft(projectStatePayload)
+      const result = await saveTopologyState(
+        apiConfig,
+        projectStatePayload.project_name,
+        projectStatePayload,
+      )
+      if (!result.ok || result.data.data === undefined) {
+        const message = `Diseno guardado localmente; API pendiente: ${extractMessage(
+          result.data,
+          `HTTP ${result.status}`,
+        )}`
+        setOperationStatus('success')
+        setOperationMessage(message)
+        appendConsole(message, 'success')
+        return null
+      }
+
+      const saveResult = result.data.data
+      window.localStorage.setItem(PROJECT_NAME_STORAGE_KEY, saveResult.project_name)
+      const message = buildSaveStatusMessage(saveResult)
+      const workflowMessages =
+        options.refreshWorkflow === false ? [] : await refreshWorkflowAfterSave(saveResult)
+      const fullMessage =
+        workflowMessages.length > 0 ? `${message} · ${workflowMessages.join(' · ')}` : message
+      setOperationStatus('success')
+      setOperationMessage(fullMessage)
+      appendConsole(fullMessage, 'success')
+      return saveResult
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Petición fallida'
+      const message = `Diseno guardado localmente; API pendiente: ${detail}`
+      setOperationStatus('success')
+      setOperationMessage(message)
+      appendConsole(message, 'success')
+      return null
+    }
+  }
+
+  const persistTopology = () => {
+    return saveCurrentTopology()
   }
 
   const generateArtifacts = async () => {
-    if (!ensureProtectedApiConfigured('Generar artefactos')) {
+    const savedTopology = await saveCurrentTopology({ refreshWorkflow: false })
+    if (savedTopology === null) {
+      return
+    }
+    const deployableTopologyName = getDeployableTopologyName(savedTopology)
+    if (deployableTopologyName === null) {
+      showActionRequired(
+        'Diseno guardado, pero faltan datos validos para generar artefactos.',
+      )
       return
     }
     setOperationStatus('running')
     try {
-      const result = await generatePipelineArtifacts(apiConfig, payload)
+      const result = await generateSavedPipelineArtifacts(
+        apiConfig,
+        deployableTopologyName,
+      )
       if (!result.ok || result.data.data === undefined) {
         const message = extractMessage(result.data, `HTTP ${result.status}`)
         setOperationStatus('error')
@@ -1445,10 +1675,15 @@ function App() {
       setDataTab('artifacts')
       setShowDataBrowser(true)
       setOperationStatus('success')
-      setOperationMessage(`${result.data.data.artifacts.length} artefactos generados`)
-      appendConsole(`${result.data.data.artifacts.length} artefactos generados`, 'success')
+      setOperationMessage(
+        `${result.data.data.artifacts.length} artefactos generados desde el guardado`,
+      )
+      appendConsole(
+        `${result.data.data.artifacts.length} artefactos generados desde el guardado`,
+        'success',
+      )
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Request failed'
+      const message = error instanceof Error ? error.message : 'Petición fallida'
       setOperationStatus('error')
       setOperationMessage(message)
       appendConsole(message, 'error')
@@ -1478,7 +1713,7 @@ function App() {
       appendConsole(message, 'success')
       return result.data.data
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Request failed'
+      const message = error instanceof Error ? error.message : 'Petición fallida'
       setOperationStatus('error')
       setOperationMessage(message)
       appendConsole(message, 'error')
@@ -1487,16 +1722,26 @@ function App() {
   }
 
   const deployPipelineRun = async () => {
-    if (!ensureProtectedApiConfigured('Desplegar pipeline')) {
+    const savedTopology = await saveCurrentTopology({ refreshWorkflow: false })
+    if (savedTopology === null) {
+      return
+    }
+    const deployableTopologyName = getDeployableTopologyName(savedTopology)
+    if (deployableTopologyName === null) {
+      showActionRequired(
+        'Diseno guardado, pero faltan datos validos para desplegar el pipeline.',
+      )
       return
     }
     const tools = await checkTools({ quiet: true })
     if (tools === null) {
       return
     }
-    const missingTools = tools.tools.filter((tool) => !tool.installed)
+    const missingTools = DEPLOY_TOOL_NAMES.filter(
+      (toolName) => !tools.tools.some((tool) => tool.name === toolName && tool.installed),
+    )
     if (missingTools.length > 0) {
-      const message = `Faltan herramientas del pipeline: ${missingTools.map((tool) => tool.name).join(', ')}`
+      const message = `Faltan herramientas del pipeline: ${missingTools.join(', ')}`
       setOperationStatus('error')
       setOperationMessage(message)
       appendConsole(message, 'error')
@@ -1504,7 +1749,7 @@ function App() {
     }
     setOperationStatus('running')
     try {
-      const result = await deployPipeline(apiConfig, payload)
+      const result = await deploySavedPipeline(apiConfig, deployableTopologyName)
       if (!result.ok || result.data.data === undefined) {
         const message = extractMessage(result.data, `HTTP ${result.status}`)
         setOperationStatus('error')
@@ -1524,7 +1769,7 @@ function App() {
       appendConsole('Pipeline desplegado correctamente', 'success')
       await inspectRuntimeLab(result.data.data.topology_name)
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Request failed'
+      const message = error instanceof Error ? error.message : 'Petición fallida'
       setOperationStatus('error')
       setOperationMessage(message)
       appendConsole(message, 'error')
@@ -1570,7 +1815,7 @@ function App() {
           : `Comando con salida ${consoleResult.exit_code} en ${nodeId}`,
       )
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Request failed'
+      const message = error instanceof Error ? error.message : 'Petición fallida'
       appendDeviceConsole(nodeId, message, 'error')
       setOperationStatus('error')
       setOperationMessage(message)
@@ -1611,15 +1856,15 @@ function App() {
       }
       setOperationStatus('success')
       setOperationMessage(
-        `Compliance ${result.data.data.summary.overall_posture} · ${result.data.data.summary.failed_controls} fail · ${result.data.data.summary.warned_controls} warn`,
+        `Cumplimiento ${getCompliancePostureLabel(result.data.data.summary.overall_posture)} · ${result.data.data.summary.failed_controls} fallos · ${result.data.data.summary.warned_controls} avisos`,
       )
       appendConsole(
-        `Compliance ${result.data.data.summary.overall_posture} · cobertura ${result.data.data.summary.coverage_percent}%`,
+        `Cumplimiento ${getCompliancePostureLabel(result.data.data.summary.overall_posture)} · cobertura ${result.data.data.summary.coverage_percent}%`,
         'success',
       )
       return result.data.data
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Request failed'
+      const message = error instanceof Error ? error.message : 'Petición fallida'
       setOperationStatus('error')
       setOperationMessage(message)
       appendConsole(message, 'error')
@@ -1696,7 +1941,7 @@ function App() {
         'success',
       )
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Request failed'
+      const message = error instanceof Error ? error.message : 'Petición fallida'
       setOperationStatus('error')
       setOperationMessage(message)
       appendConsole(message, 'error')
@@ -1794,11 +2039,11 @@ function App() {
 
           <div className="toolbar-group">
             <button
-              aria-label="Add Link"
+              aria-label="Añadir enlace"
               className="toolbar-button toolbar-button--icon"
               data-active={interactionMode === 'link'}
               onClick={startLinkMode}
-              title="Add Link"
+              title="Añadir enlace"
               type="button"
             >
               <Cable size={16} />
@@ -1870,7 +2115,7 @@ function App() {
               aria-label="Comprobar health"
               className="toolbar-button toolbar-button--icon"
               onClick={checkHealth}
-              title="Health"
+              title="Comprobar estado"
               type="button"
             >
               <Activity size={16} />
@@ -1996,14 +2241,14 @@ function App() {
                     ? 'online'
                     : 'error'
               }
-              value={health?.checks.netbox_connected ? 'online' : 'sin verificar'}
+              value={health?.checks.netbox_connected ? 'conectado' : 'sin verificar'}
             />
             <WorkflowChip
               label="Pipeline"
               state={
                 toolReport === null
                   ? 'unchecked'
-                  : allToolsInstalled
+                  : deployToolsInstalled
                     ? 'ready'
                     : 'partial'
               }
@@ -2021,7 +2266,7 @@ function App() {
               value={labStatus === null ? 'sin runtime' : `${labStatus.nodes.length} nodos`}
             />
             <WorkflowChip
-              label="Compliance"
+              label="Cumplimiento"
               state={
                 complianceReport === null
                   ? 'unchecked'
@@ -2031,7 +2276,7 @@ function App() {
                       ? 'partial'
                       : 'ready'
               }
-              value={complianceReport?.summary.overall_posture ?? 'sin informe'}
+              value={getCompliancePostureLabel(complianceReport?.summary.overall_posture)}
             />
           </div>
           <p className="workflow-strip__message" data-tone={operationStatus}>
@@ -2041,7 +2286,7 @@ function App() {
       </header>
 
       <section className="workspace-grid">
-        <aside className="devices-pane" aria-label="Devices toolbar">
+        <aside className="devices-pane" aria-label="Barra de dispositivos">
           <div className="devices-categories">
             {assetGroups.map((group) => (
               <button
@@ -2059,7 +2304,7 @@ function App() {
               className="devices-category"
               data-active={interactionMode === 'link'}
               onClick={startLinkMode}
-              title="Add Link"
+              title="Añadir enlace"
               type="button"
             >
               <Cable size={18} />
@@ -2070,7 +2315,7 @@ function App() {
             <div className="devices-pane__header">
               <strong>
                 {assetGroups.find((group) => group.id === selectedDeviceGroup)?.label ??
-                  'All devices'}
+                  'Todos los dispositivos'}
               </strong>
               <small>Arrastra o haz clic para insertar</small>
             </div>
@@ -2113,7 +2358,7 @@ function App() {
           </div>
         </aside>
 
-        <section className="workspace-pane" aria-label="GNS3 style workspace">
+        <section className="workspace-pane" aria-label="Área de trabajo estilo GNS3">
           <div
             className="workspace-canvas"
             data-view={activeView}
@@ -2166,7 +2411,7 @@ function App() {
             </span>
             <span>
               <Cable size={13} />
-              {interactionMode === 'link' ? 'Add Link' : 'Seleccion'}
+              {interactionMode === 'link' ? 'Añadir enlace' : 'Seleccion'}
             </span>
             <strong>
               {pendingLinkSource
@@ -2182,22 +2427,22 @@ function App() {
           </div>
         </section>
 
-        <aside className="summary-pane" aria-label="Topology and server summary">
+        <aside className="summary-pane" aria-label="Resumen de topología y servicios">
           <section className="dock-panel">
             <div className="dock-panel__header">
-              <strong>Topology Summary</strong>
-              <span>{topologySummary.assets} nodes</span>
+              <strong>Resumen de topología</strong>
+              <span>{topologySummary.assets} nodos</span>
             </div>
             <div className="dock-panel__body">
               <div className="summary-metrics">
-                <Metric label="Devices" value={String(topologySummary.assets)} />
-                <Metric label="Links" value={String(topologySummary.links)} />
-                <Metric label="Zones" value={String(topologySummary.zones)} />
-                <Metric label="View" value={activeView} />
+                <Metric label="Dispositivos" value={String(topologySummary.assets)} />
+                <Metric label="Enlaces" value={String(topologySummary.links)} />
+                <Metric label="Zonas" value={String(topologySummary.zones)} />
+                <Metric label="Vista" value={getTopologyViewLabel(activeView)} />
               </div>
 
               <div className="summary-list">
-                <div className="summary-list__header">Nodes</div>
+                <div className="summary-list__header">Nodos</div>
                 {nodes.map((node) => (
                   <button
                     key={node.id}
@@ -2218,7 +2463,7 @@ function App() {
                     <div>
                       <strong>{node.data.label}</strong>
                       <small>
-                        {node.data.assetType.replace('_', ' ')} · VLAN {node.data.vlanId}
+                        {getAssetDefinition(node.data.assetType).label} · VLAN {node.data.vlanId}
                       </small>
                     </div>
                     <ChevronRight size={14} />
@@ -2227,7 +2472,7 @@ function App() {
               </div>
 
               <div className="summary-list">
-                <div className="summary-list__header">Links</div>
+                <div className="summary-list__header">Enlaces</div>
                 {edges.map((edge) => (
                   <button
                     key={edge.id}
@@ -2255,8 +2500,8 @@ function App() {
 
           <section className="dock-panel dock-panel--servers">
             <div className="dock-panel__header">
-              <strong>Servers Summary</strong>
-              <span>{allToolsInstalled ? 'ready' : 'partial'}</span>
+              <strong>Resumen de servicios</strong>
+              <span>{deployToolsInstalled ? 'listo' : 'parcial'}</span>
             </div>
             <div className="dock-panel__body">
               <div className="server-summary__list">
@@ -2266,31 +2511,31 @@ function App() {
                 </div>
                 <div className="server-summary__row">
                   <span>NetBox</span>
-                  <strong>{health?.checks.netbox_connected ? 'online' : 'unchecked'}</strong>
+                  <strong>{health?.checks.netbox_connected ? 'conectado' : 'sin verificar'}</strong>
                 </div>
                 <div className="server-summary__row">
                   <span>Rate limit</span>
                   <strong>
-                    {health?.checks.rate_limit_backend_connected ? 'online' : 'unchecked'}
+                    {health?.checks.rate_limit_backend_connected ? 'conectado' : 'sin verificar'}
                   </strong>
                 </div>
                 <div className="server-summary__row">
                   <span>Pipeline</span>
                   <strong>
                     {toolReport === null
-                      ? 'unchecked'
-                      : allToolsInstalled
-                        ? 'ready'
-                      : 'partial'}
+                      ? 'sin verificar'
+                      : deployToolsInstalled
+                        ? 'listo'
+                      : 'parcial'}
                   </strong>
                 </div>
                 <div className="server-summary__row">
-                  <span>Lab runtime</span>
-                  <strong>{labStatus ? `${labStatus.nodes.length} nodes` : 'unchecked'}</strong>
+                  <span>Runtime del lab</span>
+                  <strong>{labStatus ? `${labStatus.nodes.length} nodos` : 'sin verificar'}</strong>
                 </div>
                 <div className="server-summary__row">
-                  <span>Compliance</span>
-                  <strong>{complianceReport?.summary.overall_posture ?? 'unchecked'}</strong>
+                  <span>Cumplimiento</span>
+                  <strong>{getCompliancePostureLabel(complianceReport?.summary.overall_posture)}</strong>
                 </div>
               </div>
 
@@ -2298,14 +2543,14 @@ function App() {
                 {(toolReport?.tools ?? []).map((tool) => (
                   <div className="tool-chip" data-installed={tool.installed} key={tool.name}>
                     <strong>{tool.name}</strong>
-                    <span>{tool.installed ? 'OK' : 'Missing'}</span>
-                    <small>{tool.path ?? tool.error ?? 'Not detected'}</small>
+                    <span>{tool.installed ? 'OK' : 'Falta'}</span>
+                    <small>{tool.path ?? tool.error ?? 'No detectado'}</small>
                   </div>
                 ))}
                 {toolReport === null ? (
                   <div className="tool-chip" data-installed="pending">
-                    <strong>Environment</strong>
-                    <span>Unchecked</span>
+                    <strong>Entorno</strong>
+                    <span>Sin verificar</span>
                     <small>Pulsa Entorno para inspeccionar el host</small>
                   </div>
                 ) : null}
@@ -2337,7 +2582,7 @@ function App() {
                   type="button"
                 >
                   <ShieldCheck size={16} />
-                  Compliance
+                  Cumplimiento
                 </button>
                 <button
                   className="secondary-button"
@@ -2353,7 +2598,7 @@ function App() {
         </aside>
       </section>
 
-      <section className="console-pane" aria-label="GNS3 style console">
+      <section className="console-pane" aria-label="Consola estilo GNS3">
         <div className="console-pane__header">
           <div className="console-tabs" role="tablist" aria-label="Pestañas de consola">
             <button
@@ -2364,7 +2609,7 @@ function App() {
               type="button"
             >
               <TerminalSquare size={14} />
-              Workspace
+              Consola
             </button>
             {Object.values(deviceConsoles).map((consoleTab) => (
               <button
@@ -2584,6 +2829,26 @@ function DataDrawer({
   )
 }
 
+function getTopologyViewLabel(view: TopologyView): string {
+  return viewOptions.find((option) => option.id === view)?.label ?? 'Vista'
+}
+
+function getCompliancePostureLabel(posture?: string): string {
+  if (posture === 'strong') {
+    return 'fuerte'
+  }
+  if (posture === 'attention_required') {
+    return 'requiere atención'
+  }
+  if (posture === 'non_compliant') {
+    return 'no conforme'
+  }
+  if (posture === 'partial') {
+    return 'parcial'
+  }
+  return 'sin informe'
+}
+
 function ProjectSettingsModal({
   apiBaseUrl,
   apiKey,
@@ -2602,7 +2867,7 @@ function ProjectSettingsModal({
   settings: TopologySettings
 }) {
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Project settings">
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Configuración del proyecto">
       <div className="modal-shell modal-shell--project">
         <div className="modal-header">
           <div className="modal-header__brand">
@@ -2620,7 +2885,7 @@ function ProjectSettingsModal({
         <div className="modal-body">
           <div className="modal-section">
             <div className="modal-section__header">
-              <strong>Workspace</strong>
+              <strong>Área de trabajo</strong>
               <span>Identidad del laboratorio</span>
             </div>
             <div className="field-grid">
@@ -2720,7 +2985,7 @@ function DataBrowserModal({
   pipelineRunText: string
 }) {
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Data browser">
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Navegador de datos">
       <div className="modal-shell modal-shell--data">
         <div className="modal-header">
           <div className="modal-header__brand">
@@ -2735,7 +3000,7 @@ function DataBrowserModal({
           </button>
         </div>
 
-        <div className="modal-tabs" role="tablist" aria-label="Data browser tabs">
+        <div className="modal-tabs" role="tablist" aria-label="Pestañas del navegador de datos">
           <button
             className="summary-tab"
             aria-selected={dataTab === 'topology'}
@@ -2761,7 +3026,7 @@ function DataBrowserModal({
             role="tab"
             type="button"
           >
-            <span>Ejecucion</span>
+            <span>Ejecución</span>
           </button>
           <button
             className="summary-tab"
@@ -2770,7 +3035,7 @@ function DataBrowserModal({
             role="tab"
             type="button"
           >
-            <span>Compliance</span>
+            <span>Cumplimiento</span>
           </button>
         </div>
 
@@ -2778,7 +3043,7 @@ function DataBrowserModal({
           {dataTab === 'topology' ? (
             <DataDrawer
               label="TopologyCreate"
-              meta={`${payload.devices.length} devices · ${payload.cables.length} cables`}
+              meta={`${payload.devices.length} dispositivos · ${payload.cables.length} cables`}
               value={payloadText}
             />
           ) : null}
@@ -2786,14 +3051,14 @@ function DataBrowserModal({
           {dataTab === 'artifacts' ? (
             pipelineArtifacts ? (
               <DataDrawer
-                label="Artifacts"
-                meta={`${pipelineArtifacts.artifacts.length} files`}
+                label="Artefactos"
+                meta={`${pipelineArtifacts.artifacts.length} archivos`}
                 value={artifactText}
               />
             ) : (
               <div className="empty-state">
                 <strong>Sin artefactos</strong>
-                <span>Genera artefactos desde la toolbar para revisarlos aqui.</span>
+                <span>Genera artefactos desde la barra para revisarlos aqui.</span>
               </div>
             )
           ) : null}
@@ -2801,13 +3066,13 @@ function DataBrowserModal({
           {dataTab === 'run' ? (
             pipelineRun ? (
               <DataDrawer
-                label="Run"
-                meta={`${pipelineRun.commands.length} commands`}
+                label="Ejecución"
+                meta={`${pipelineRun.commands.length} comandos`}
                 value={pipelineRunText}
               />
             ) : (
               <div className="empty-state">
-                <strong>Sin ejecucion</strong>
+                <strong>Sin ejecución</strong>
                 <span>El despliegue controlado aparecera aqui cuando el entorno este listo.</span>
               </div>
             )
@@ -2816,14 +3081,14 @@ function DataBrowserModal({
           {dataTab === 'compliance' ? (
             complianceReport ? (
               <DataDrawer
-                label="Compliance"
-                meta={`${complianceReport.summary.failed_controls} fail · ${complianceReport.summary.warned_controls} warn · ${complianceReport.summary.coverage_percent}% coverage`}
+                label="Cumplimiento"
+                meta={`${complianceReport.summary.failed_controls} fallos · ${complianceReport.summary.warned_controls} avisos · ${complianceReport.summary.coverage_percent}% cobertura`}
                 value={complianceText}
               />
             ) : (
               <div className="empty-state">
                 <strong>Sin informe</strong>
-                <span>Evalua compliance desde la toolbar para revisar findings y cobertura.</span>
+                <span>Evalua cumplimiento desde la barra para revisar hallazgos y cobertura.</span>
               </div>
             )
           ) : null}
@@ -2861,7 +3126,7 @@ function ComplianceAssistantModal({
       className="modal-backdrop"
       role="dialog"
       aria-modal="true"
-      aria-label="Compliance assistant"
+      aria-label="Asistente de cumplimiento"
     >
       <div className="modal-shell modal-shell--assistant">
         <div className="modal-header">
@@ -2891,12 +3156,12 @@ function ComplianceAssistantModal({
             {complianceReport ? (
               <div className="compliance-summary">
                 <div className="compliance-pill" data-tone={complianceReport.summary.overall_posture}>
-                  {complianceReport.summary.overall_posture}
+                  {getCompliancePostureLabel(complianceReport.summary.overall_posture)}
                 </div>
                 <div className="compliance-stats">
-                  <span>{complianceReport.summary.failed_controls} fail</span>
-                  <span>{complianceReport.summary.warned_controls} warn</span>
-                  <span>{complianceReport.summary.coverage_percent}% coverage</span>
+                  <span>{complianceReport.summary.failed_controls} fallos</span>
+                  <span>{complianceReport.summary.warned_controls} avisos</span>
+                  <span>{complianceReport.summary.coverage_percent}% cobertura</span>
                 </div>
               </div>
             ) : (
@@ -2943,7 +3208,7 @@ function ComplianceAssistantModal({
                   data-role={message.role}
                   key={`${message.role}-${index}`}
                 >
-                  <strong>{message.role === 'assistant' ? 'Advisor' : 'You'}</strong>
+                  <strong>{message.role === 'assistant' ? 'Asistente' : 'Tú'}</strong>
                   <p>{message.content}</p>
                 </div>
               ))}
@@ -2999,7 +3264,9 @@ function NodeConsolePane({
   return (
     <div className="node-console">
       <div className="node-console__meta">
-        <span>{activeNode?.data.assetType.replace('_', ' ') ?? consoleState.nodeId}</span>
+        <span>
+          {activeNode ? getAssetDefinition(activeNode.data.assetType).label : consoleState.nodeId}
+        </span>
         <strong>
           {runtimeNode
             ? `${runtimeNode.container_name} · ${runtimeNode.state || runtimeNode.status || 'runtime'}`
@@ -3060,7 +3327,7 @@ function NodeConsolePane({
           type="button"
         >
           <SendHorizonal size={16} />
-          {busy ? 'Ejecutando' : 'Run'}
+          {busy ? 'Ejecutando' : 'Ejecutar'}
         </button>
       </div>
     </div>
@@ -3103,14 +3370,14 @@ function NodeEditorModal({
   )
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Node editor">
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Editor de nodo">
       <div className="modal-shell">
         <div className="modal-header">
           <div className="modal-header__brand">
             <EquipmentGlyph assetType={editorNode.data.assetType} size={40} />
             <div>
               <strong>{editorNode.data.label}</strong>
-              <span>{editorNode.data.assetType.replace('_', ' ')}</span>
+              <span>{getAssetDefinition(editorNode.data.assetType).label}</span>
             </div>
           </div>
           <button className="icon-button" onClick={onClose} type="button">
@@ -3118,7 +3385,7 @@ function NodeEditorModal({
           </button>
         </div>
 
-        <div className="modal-tabs" role="tablist" aria-label="Node editor tabs">
+        <div className="modal-tabs" role="tablist" aria-label="Pestañas del editor de nodo">
           {[
             { id: 'equipment', label: 'Equipo' },
             { id: 'ports', label: 'Puertos' },
@@ -3531,7 +3798,7 @@ function DrawingEditorModal({
   onDelete: () => void
 }) {
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Drawing editor">
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Editor de dibujo">
       <div className="modal-shell modal-shell--drawing">
         <div className="modal-header">
           <div className="modal-header__brand">
@@ -3696,7 +3963,7 @@ function CableEditorModal({
   const targetOptions = buildPortOptions(targetNode, edges, draft.id, draft.targetPortIndex)
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Cable editor">
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Editor de cable">
       <div className="modal-shell modal-shell--cable">
         <div className="modal-header">
           <div className="modal-header__brand">
@@ -3786,6 +4053,230 @@ function CableEditorModal({
       </div>
     </div>
   )
+}
+
+function buildProjectStatePayload(
+  snapshot: CanvasHistoryState,
+  activeView: TopologyView,
+  topology: unknown,
+): TopologyProjectStatePayload {
+  const projectName = slugify(snapshot.settings.name)
+  return {
+    project_name: projectName,
+    version: 1,
+    client_saved_at: new Date().toISOString(),
+    settings: snapshot.settings,
+    nodes: snapshot.nodes,
+    edges: snapshot.edges,
+    drawings: snapshot.drawings,
+    active_view: activeView,
+    topology,
+  }
+}
+
+function createInitialAppState(): {
+  activeView: TopologyView
+  snapshot: CanvasHistoryState
+} {
+  const fallback = createDefaultSnapshot()
+  const projectName = window.localStorage.getItem(PROJECT_NAME_STORAGE_KEY)
+  const draft = projectName === null ? null : loadProjectDraft(projectName)
+  if (draft === null) {
+    return {
+      activeView: 'physical',
+      snapshot: fallback,
+    }
+  }
+
+  const restored = coerceProjectState(draft, fallback)
+  return {
+    activeView: restored.activeView,
+    snapshot: restored.snapshot,
+  }
+}
+
+function createDefaultSnapshot(): CanvasHistoryState {
+  const builderState = createInitialBuilderState()
+  return {
+    settings: builderState.settings,
+    nodes: builderState.nodes,
+    edges: builderState.edges,
+    drawings: createInitialDrawingNodes(),
+  }
+}
+
+function saveProjectDraft(projectState: TopologyProjectStatePayload): void {
+  try {
+    window.localStorage.setItem(PROJECT_NAME_STORAGE_KEY, projectState.project_name)
+    window.localStorage.setItem(
+      getProjectDraftStorageKey(projectState.project_name),
+      JSON.stringify(projectState),
+    )
+  } catch {
+    // El navegador puede bloquear localStorage; el API sigue siendo la fuente remota.
+  }
+}
+
+function loadProjectDraft(projectName: string): TopologyProjectStatePayload | null {
+  try {
+    const raw = window.localStorage.getItem(getProjectDraftStorageKey(projectName))
+    if (raw === null) {
+      return null
+    }
+    const parsed = JSON.parse(raw)
+    if (!isRecord(parsed) || parsed.project_name !== projectName) {
+      return null
+    }
+    return parsed as TopologyProjectStatePayload
+  } catch {
+    return null
+  }
+}
+
+function getProjectDraftStorageKey(projectName: string): string {
+  return `${PROJECT_DRAFT_STORAGE_PREFIX}${projectName}`
+}
+
+function isProjectStateNewer(
+  candidate: TopologyProjectStatePayload | null,
+  baseline: TopologyProjectStatePayload,
+): boolean {
+  if (candidate === null) {
+    return false
+  }
+  return getProjectStateTimestamp(candidate) > getProjectStateTimestamp(baseline)
+}
+
+function getProjectStateTimestamp(projectState: TopologyProjectStatePayload): number {
+  const timestamp = projectState.client_saved_at ?? projectState.saved_at
+  if (timestamp === undefined) {
+    return 0
+  }
+  const parsed = Date.parse(timestamp)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function coerceProjectState(
+  projectState: TopologyProjectStatePayload,
+  fallback: CanvasHistoryState,
+): {
+  activeView: TopologyView
+  projectName: string
+  snapshot: CanvasHistoryState
+} {
+  const settings = coerceTopologySettings(projectState.settings, fallback.settings)
+  const candidate: CanvasHistoryState = {
+    settings,
+    nodes: Array.isArray(projectState.nodes)
+      ? (projectState.nodes as BuilderNode[])
+      : fallback.nodes,
+    edges: Array.isArray(projectState.edges)
+      ? (projectState.edges as BuilderEdge[])
+      : fallback.edges,
+    drawings: Array.isArray(projectState.drawings)
+      ? (projectState.drawings as DrawingNodeModel[])
+      : fallback.drawings,
+  }
+
+  try {
+    return {
+      activeView: isTopologyView(projectState.active_view)
+        ? projectState.active_view
+        : 'physical',
+      projectName: slugify(settings.name || projectState.project_name),
+      snapshot: cloneSnapshot(candidate),
+    }
+  } catch {
+    return {
+      activeView: 'physical',
+      projectName: slugify(fallback.settings.name),
+      snapshot: cloneSnapshot(fallback),
+    }
+  }
+}
+
+function coerceTopologySettings(
+  rawSettings: unknown,
+  fallback: TopologySettings,
+): TopologySettings {
+  if (!isRecord(rawSettings)) {
+    return { ...fallback }
+  }
+
+  return {
+    name: typeof rawSettings.name === 'string' ? rawSettings.name : fallback.name,
+    description:
+      typeof rawSettings.description === 'string'
+        ? rawSettings.description
+        : fallback.description,
+    siteName:
+      typeof rawSettings.siteName === 'string' ? rawSettings.siteName : fallback.siteName,
+    roomName:
+      typeof rawSettings.roomName === 'string' ? rawSettings.roomName : fallback.roomName,
+    rackName:
+      typeof rawSettings.rackName === 'string' ? rawSettings.rackName : fallback.rackName,
+  }
+}
+
+function buildSaveStatusMessage(result: TopologyProjectStateSaveResponse): string {
+  if (
+    result.topology_validation.status === 'failed' &&
+    result.netbox_sync.status === 'synchronized' &&
+    result.netbox_sync.detail === 'Topology cleared from NetBox'
+  ) {
+    return 'Diseno vacio guardado; NetBox limpiado para esta topologia'
+  }
+  if (result.netbox_sync.status === 'queued') {
+    const netboxDetail = compactDetail(
+      result.netbox_sync.detail,
+      'sincronizacion NetBox en cola',
+    )
+    if (result.topology_validation.status === 'failed') {
+      return `Diseno guardado; topologia pendiente; ${netboxDetail}`
+    }
+    return `Diseno guardado; ${netboxDetail}`
+  }
+  if (result.topology_validation.status === 'failed') {
+    return `Diseno guardado; topologia pendiente: ${compactDetail(
+      result.topology_validation.detail,
+      'validation failed',
+    )}`
+  }
+  if (result.netbox_sync.status === 'failed') {
+    return `Diseno guardado; NetBox pendiente: ${compactDetail(
+      result.netbox_sync.detail,
+      'sync failed',
+    )}`
+  }
+  if (result.netbox_sync.status === 'skipped') {
+    return 'Diseno guardado; NetBox omitido hasta tener topologia valida'
+  }
+  if (result.netbox_sync.status === 'draft_synchronized') {
+    return 'Diseno guardado; inventario NetBox en borrador'
+  }
+  return 'Diseno guardado y NetBox sincronizado'
+}
+
+function getDeployableTopologyName(
+  result: TopologyProjectStateSaveResponse,
+): string | null {
+  if (result.topology_validation.status !== 'valid') {
+    return null
+  }
+  return result.topology_name
+}
+
+function compactDetail(detail: string | null, fallback: string): string {
+  const value = detail?.replace(/\s+/g, ' ').trim() || fallback
+  return value.length > 180 ? `${value.slice(0, 177)}...` : value
+}
+
+function isTopologyView(value: unknown): value is TopologyView {
+  return value === 'physical' || value === 'logical' || value === 'security'
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
 }
 
 function cloneSnapshot(snapshot: CanvasHistoryState): CanvasHistoryState {

@@ -71,7 +71,7 @@ class ComplianceAssistant:
             base_url=settings.OLLAMA_BASE_URL,
             model=settings.OLLAMA_MODEL,
             timeout_seconds=settings.OLLAMA_TIMEOUT_SECONDS,
-            api_key=settings.OLLAMA_API_KEY,
+            api_key=settings.OLLAMA_API_KEY.get_secret_value(),
         )
 
     def answer(
@@ -255,7 +255,7 @@ class ComplianceAssistant:
         """Usar Ollama como capa de explicación, no como fuente de verdad."""
         try:
             llm_output = self._ollama_client.answer(
-                prompt=_build_ollama_prompt(messages, latest_question),
+                messages=_build_ollama_messages(messages, latest_question),
                 context=_build_ollama_context(topology, report),
             )
         except Exception:
@@ -382,20 +382,20 @@ def _question_is_in_scope(
     )
 
 
-def _build_ollama_prompt(
+def _build_ollama_messages(
     messages: list[ComplianceChatMessage],
     latest_question: str,
-) -> str:
-    transcript = "\n".join(
-        f"{message.role}: {message.content}" for message in messages[-6:]
-    )
-    return (
-        "Answer the latest user question using only the provided GEMEROTIC "
-        "topology and deterministic compliance report.\n"
-        "Conversation:\n"
-        f"{transcript}\n\n"
-        f"Latest question:\n{latest_question}"
-    )
+) -> list[dict[str, str]]:
+    """Convertir historial a formato nativo de Ollama para evitar inyección."""
+    formatted = [
+        {"role": message.role, "content": message.content}
+        for message in messages[-6:]
+    ]
+    # Si el último mensaje no es la pregunta actual (poco común en este flujo),
+    # nos aseguramos de que esté presente.
+    if not formatted or formatted[-1]["content"] != latest_question:
+        formatted.append({"role": "user", "content": latest_question})
+    return formatted
 
 
 def _build_ollama_context(topology: TopologyCreate, report) -> dict[str, object]:

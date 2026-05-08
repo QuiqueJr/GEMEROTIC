@@ -1,11 +1,35 @@
 import { describe, expect, it } from 'vitest'
 
-import { createInitialBuilderState } from './topologyBuilder'
+import { assetCatalog } from './assetCatalog'
+import {
+  createBuilderEdge,
+  createInitialBuilderState,
+  createNodeFromAsset,
+} from './topologyBuilder'
 import { getEdgeHandleIds, getSiblingOffsets } from './edgeLayout'
+import type { BuilderState } from './topologyTypes'
+
+function createDemoBuilderState(): BuilderState {
+  const state = createInitialBuilderState()
+  state.nodes = [
+    createNodeFromAsset(assetCatalog[0], 0, { x: 120, y: 150 }),
+    createNodeFromAsset(assetCatalog[1], 0, { x: 400, y: 150 }),
+  ]
+  state.edges = [
+    createBuilderEdge({
+      id: 'edge-router-switch',
+      source: 'router-01',
+      target: 'switch-01',
+      sourcePortIndex: 0,
+      targetPortIndex: 0,
+    }),
+  ]
+  return state
+}
 
 describe('edgeLayout', () => {
   it('elige handles laterales cuando los equipos estan alineados horizontalmente', () => {
-    const state = createInitialBuilderState()
+    const state = createDemoBuilderState()
     const sourceNode = state.nodes[0]
     const targetNode = state.nodes[1]
 
@@ -16,7 +40,7 @@ describe('edgeLayout', () => {
   })
 
   it('elige handles verticales cuando el destino queda por debajo', () => {
-    const state = createInitialBuilderState()
+    const state = createDemoBuilderState()
     const sourceNode = state.nodes[1]
     const targetNode = {
       ...state.nodes[1],
@@ -30,7 +54,7 @@ describe('edgeLayout', () => {
   })
 
   it('separa visualmente multiples cables entre el mismo par de nodos', () => {
-    const state = createInitialBuilderState()
+    const state = createDemoBuilderState()
     const offsets = getSiblingOffsets(state.edges)
 
     expect(offsets.get('edge-router-switch')).toBe(0)

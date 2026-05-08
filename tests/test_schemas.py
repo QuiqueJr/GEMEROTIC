@@ -916,6 +916,35 @@ class TestTopologyCreateMVP:
         assert topology.vlans == []
         assert topology.security_zones == []
 
+    def test_topology_accepts_canvas_metadata(self):
+        """El estado visual opcional no contamina las 3 capas core."""
+        payload = _mvp_topology_payload()
+        payload["canvas"] = {
+            "assets": [
+                {
+                    "id": "router-01",
+                    "asset_type": "router",
+                    "label": "Router Core",
+                    "position": {"x": 120, "y": 150},
+                }
+            ],
+            "cables": [
+                {
+                    "id": "uplink-core",
+                    "source_device_id": "router-01",
+                    "target_device_id": "switch-01",
+                    "source_port_id": "router-01:eth0",
+                    "target_port_id": "switch-01:eth0",
+                }
+            ],
+        }
+
+        topology = TopologyCreate(**payload)
+
+        assert topology.canvas is not None
+        assert topology.canvas.assets[0].position.x == 120
+        assert topology.canvas.assets[0].asset_type == AssetType.ROUTER
+
 
 # =============================================================================
 # TopologyCreate — Integridad referencial Layer 1 (jerarquía física)
@@ -1049,6 +1078,30 @@ class TestTopologyReferentialCables:
                 cables=[
                     _minimal_cable("c-01", "router-01:eth0", "switch-01:eth0"),
                     _minimal_cable("c-02", "switch-01:eth0", "router-01:eth0"),
+                ],
+            )
+
+    def test_reject_port_used_by_multiple_cables(self):
+        """Un puerto físico solo puede estar conectado por un cable."""
+        with pytest.raises(ValidationError, match="already used by cable"):
+            TopologyCreate(
+                name="shared-port-lab",
+                sites=[_minimal_site()],
+                devices=[
+                    _minimal_device(
+                        "router-01",
+                        "router",
+                        [
+                            {"id": "router-01:eth0", "name": "eth0"},
+                            {"id": "router-01:eth1", "name": "eth1"},
+                        ],
+                    ),
+                    _minimal_device("switch-01", "switch"),
+                    _minimal_device("host-01", "host"),
+                ],
+                cables=[
+                    _minimal_cable("c-01", "router-01:eth0", "switch-01:eth0"),
+                    _minimal_cable("c-02", "router-01:eth0", "host-01:eth0"),
                 ],
             )
 

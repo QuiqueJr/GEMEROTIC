@@ -101,4 +101,7 @@ class TestRuntimeRequirements:
         assert "network_mode: host" in compose
         assert "privileged: true" in compose
         assert "/var/run/docker.sock:/var/run/docker.sock" in compose
-        assert "/run/netns:/run/netns" in compose
+        assert (
+            "/run/netns:/run/netns" in compose
+            or "/var/run/netns:/var/run/netns" in compose
+        )

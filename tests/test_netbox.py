@@ -163,7 +163,8 @@ class TestNetBoxClient:
         assert result["rack_roles"]["existing"] == ["network", "server"]
         assert "ot" in result["rack_roles"]["created"]
         assert result["custom_fields"]["existing"] == ["gemerotic_firmware_version"]
-        assert result["custom_fields"]["created"] == ["gemerotic_criticality"]
+        assert "gemerotic_criticality" in result["custom_fields"]["created"]
+        assert "gemerotic_sync_state" in result["custom_fields"]["created"]
 
     def test_authorization_header_uses_bearer_for_v2_tokens(self):
         client = NetBoxClient(

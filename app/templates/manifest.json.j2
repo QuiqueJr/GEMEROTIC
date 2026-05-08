@@ -2,6 +2,20 @@
   "schema": "gemerotic.pipeline.artifacts.v1",
   "topology_name": topology_name,
   "stages": {
+    "topology": {
+      "payload": "topology/topology.json",
+      "canvas": "topology/canvas.json"
+    },
+    "inventory": {
+      "netbox": "inventory/netbox_inventory.json"
+    },
+    "runtime": {
+      "containerlab_nodes": "runtime/containerlab_nodes.json",
+      "containerlab_links": "runtime/containerlab_links.json"
+    },
+    "ansible_vars": {
+      "vars": "ansible/vars.json"
+    },
     "containerlab": {
       "entrypoint": "containerlab/topology.clab.yml",
       "command": "containerlab deploy --topo containerlab/topology.clab.yml"
