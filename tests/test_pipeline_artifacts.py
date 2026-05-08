@@ -46,6 +46,7 @@ class TestPipelineArtifactGenerator:
             "runtime",
             "containerlab",
             "ansible",
+            "ansible_vars",
             "batfish",
             "opa",
             "metadata",
@@ -88,6 +89,9 @@ class TestPipelineArtifactGenerator:
         ansible_vars = json.loads(
             _artifact_by_path(result.artifacts, "ansible/vars.json").content
         )
+        router_config = json.loads(
+            _artifact_by_path(result.artifacts, "configs/assets/router-01.json").content
+        )
 
         assert inventory["all"]["hosts"]["localhost"]["ansible_connection"] == "local"
         assert len(inventory["all"]["vars"]["gemerotic_nodes"]) == 4
@@ -95,6 +99,7 @@ class TestPipelineArtifactGenerator:
         assert len(opa_input["zones"]) == 2
         assert len(netbox_inventory["devices"]) == 4
         assert len(ansible_vars["gemerotic_nodes"]) == 4
+        assert router_config["id"] == "router-01"
         router_inventory = next(
             device
             for device in netbox_inventory["devices"]

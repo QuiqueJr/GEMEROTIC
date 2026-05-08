@@ -12,6 +12,7 @@ PipelineStage = Literal[
     "runtime",
     "containerlab",
     "ansible",
+    "ansible_vars",
     "batfish",
     "opa",
     "metadata",

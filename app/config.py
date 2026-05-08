@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     NETBOX_TOKEN: SecretStr = SecretStr("")
     NETBOX_TIMEOUT_SECONDS: float = 10.0
     NETBOX_VERIFY_SSL: bool = True
+    NETBOX_SINGLE_PROJECT_MODE: bool = True
 
     # --- Seguridad MVP: API key opcional durante pruebas ---
     # FUTURO: reactivar por entorno y reemplazar con usuario (JWT / OAuth2)

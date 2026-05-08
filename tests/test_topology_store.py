@@ -68,3 +68,22 @@ class TestTopologyStore:
 
         with pytest.raises(TopologyNotFoundError, match="Saved topology not found"):
             store.load("missing-lab")
+
+    def test_list_project_names_returns_saved_state_and_topology_dirs(self, tmp_path):
+        topology = TopologyCreate(**_mvp_topology_payload())
+        store = TopologyStore(root=tmp_path)
+
+        store.save(topology)
+        store.save_project_state(
+            "draft-lab",
+            {
+                "project_name": "draft-lab",
+                "settings": {},
+                "nodes": [],
+                "edges": [],
+                "drawings": [],
+                "active_view": "physical",
+            },
+        )
+
+        assert store.list_project_names() == ["draft-lab", "mvp-lab-01"]

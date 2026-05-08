@@ -4226,6 +4226,16 @@ function buildSaveStatusMessage(result: TopologyProjectStateSaveResponse): strin
   ) {
     return 'Diseno vacio guardado; NetBox limpiado para esta topologia'
   }
+  if (result.netbox_sync.status === 'queued') {
+    const netboxDetail = compactDetail(
+      result.netbox_sync.detail,
+      'sincronizacion NetBox en cola',
+    )
+    if (result.topology_validation.status === 'failed') {
+      return `Diseno guardado; topologia pendiente; ${netboxDetail}`
+    }
+    return `Diseno guardado; ${netboxDetail}`
+  }
   if (result.topology_validation.status === 'failed') {
     return `Diseno guardado; topologia pendiente: ${compactDetail(
       result.topology_validation.detail,
@@ -4240,6 +4250,9 @@ function buildSaveStatusMessage(result: TopologyProjectStateSaveResponse): strin
   }
   if (result.netbox_sync.status === 'skipped') {
     return 'Diseno guardado; NetBox omitido hasta tener topologia valida'
+  }
+  if (result.netbox_sync.status === 'draft_synchronized') {
+    return 'Diseno guardado; inventario NetBox en borrador'
   }
   return 'Diseno guardado y NetBox sincronizado'
 }

@@ -48,7 +48,7 @@ export type PipelineArtifactsResponse = {
 }
 
 export type NetBoxSyncStatus = {
-  status: 'synchronized' | 'failed' | 'skipped'
+  status: 'synchronized' | 'draft_synchronized' | 'queued' | 'failed' | 'skipped'
   detail: string | null
   result?: unknown
 }

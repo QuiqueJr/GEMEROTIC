@@ -78,6 +78,14 @@ class PipelineArtifactGenerator:
                 stage="ansible",
                 payload=context["ansible_variables"],
             ),
+            *[
+                self._json_artifact(
+                    path=f"configs/assets/{node['id']}.json",
+                    stage="ansible_vars",
+                    payload=node,
+                )
+                for node in context["nodes"]
+            ],
         ]
         artifacts = [
             *split_artifacts,

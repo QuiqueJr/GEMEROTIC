@@ -148,9 +148,22 @@ TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
     un `TopologyCreate` válido
   - `POST /api/v1/topology` guarda primero el `TopologyCreate` validado en el
     store local del proyecto (`var/topologies/<topology_name>`)
-  - NetBox pasa a ser una sincronización derivada de mejor esfuerzo: si falla,
-    el guardado sigue devolviendo `201` y la respuesta incluye
-    `netbox_sync.status = failed` con el detalle del error
+  - NetBox pasa a ser una sincronización derivada de mejor esfuerzo y en
+    segundo plano: el guardado sigue devolviendo `201` aunque NetBox tarde o
+    falle, la respuesta inmediata usa `netbox_sync.status = queued` y la
+    metadata del proyecto registra después `synchronized`, `draft_synchronized`
+    o `failed`
+  - NetBox también recibe el estado visual incompleto como inventario
+    `draft`: los nodos y cables resolubles de `state.json` se reflejan como
+    objetos planificados aunque todavía no exista un `TopologyCreate`
+    desplegable
+  - en modo MVP monoprojecto (`NETBOX_SINGLE_PROJECT_MODE=true`), al guardar un
+    proyecto se limpian los objetos gestionados por GEMEROTIC de otros
+    proyectos locales y de namespaces detectables en NetBox para que el
+    inventario visible represente el proyecto activo
+  - los dispositivos existentes en NetBox se actualizan de forma idempotente
+    cuando cambian nombre, tipo, ubicación, estado, criticidad, firmware,
+    posición de canvas o datos de sincronización
   - si el canvas se guarda vacío, el backend limpia en NetBox los objetos
     gestionados bajo ese `project_name` para evitar que reaparezcan dispositivos
     o cables de pruebas anteriores
@@ -182,6 +195,7 @@ TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
   - `runtime/containerlab_nodes.json`
   - `runtime/containerlab_links.json`
   - `ansible/vars.json`
+  - `configs/assets/<asset_id>.json`
 - Se incorporó una capa inicial de cumplimiento OT asistida:
   - `POST /api/v1/compliance/report` evalúa la topología contra una baseline
     GEMEROTIC trazable a `NIS2 + IEC 62443 + ISO/IEC 27001`
@@ -245,7 +259,7 @@ TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
     con Ollama `0.23.1`; la validación fuerte sigue haciéndose después con
     Pydantic en `OllamaComplianceOutput`
   - flujo de integración probado contra servidor con una topología demo:
-    guardado visual recuperable, `netbox_sync=synchronized`, 19 artefactos
+    guardado visual recuperable, `netbox_sync=synchronized`, artefactos
     generados y compliance `attention_required` con 0 fallos y 1 aviso
   - próximo punto exacto para continuar: comprobar desde navegador que al
     guardar una topología real aparecen estados en español como `NetBox

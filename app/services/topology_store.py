@@ -131,6 +131,19 @@ class TopologyStore:
             )
         return payload
 
+    def list_project_names(self) -> list[str]:
+        """Listar proyectos con estado local guardado."""
+        if not self._root.exists():
+            return []
+
+        names: list[str] = []
+        for path in self._root.iterdir():
+            if not path.is_dir():
+                continue
+            if (path / "state.json").exists() or (path / "topology.json").exists():
+                names.append(path.name)
+        return sorted(names)
+
     def update_netbox_sync(
         self,
         topology_name: str,
