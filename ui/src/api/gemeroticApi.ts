@@ -70,6 +70,7 @@ export type TopologyProjectStatePayload = {
   nodes: unknown[]
   edges: unknown[]
   drawings: unknown[]
+  physical_layout?: unknown
   active_view: 'physical' | 'logical' | 'security'
   topology?: unknown
 }
@@ -131,6 +132,8 @@ export type PipelineLabStatusResponse = {
   topology_name: string
   lab_path: string
   abs_lab_path: string
+  deployed?: boolean
+  detail?: string | null
   nodes: PipelineLabNodeResponse[]
 }
 

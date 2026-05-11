@@ -21,6 +21,7 @@ from app.schemas.pipeline import (
 )
 from app.schemas.topology import TopologyCreate
 from app.services.pipeline_runner import (
+    PipelineLabNotFoundError,
     PipelineRunner,
     PipelineRuntimeCommandError,
     PipelineToolError,
@@ -110,6 +111,15 @@ class FakePipelineRunner:
             exit_code=0,
             stdout_tail=f"executed {command_text}",
             stderr_tail="",
+        )
+
+
+class MissingLabPipelineRunner(FakePipelineRunner):
+    """Runner falso para labs todavía no desplegados."""
+
+    def inspect_lab(self, topology_name: str) -> PipelineLabStatus:
+        raise PipelineLabNotFoundError(
+            f"Pipeline lab is unavailable: {topology_name}"
         )
 
 
@@ -351,6 +361,24 @@ class TestPipelineRunnerEndpoint:
 
         assert response.status_code == 200
         assert response.json()["data"]["nodes"][0]["node_id"] == "router-01"
+
+    def test_inspect_lab_endpoint_returns_not_deployed_state(self, monkeypatch):
+        monkeypatch.setattr(settings, "API_KEY", "secret-key")
+        application = create_app(rate_limiter=AllowAllRateLimiter())
+        application.dependency_overrides[get_pipeline_runner] = (
+            lambda: MissingLabPipelineRunner()
+        )
+
+        with TestClient(application) as client:
+            response = client.get(
+                "/api/v1/pipeline/labs/mvp-lab-01",
+                headers={"X-API-Key": "secret-key"},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["message"] == "Pipeline lab is not deployed"
+        assert response.json()["data"]["deployed"] is False
+        assert response.json()["data"]["nodes"] == []
 
     def test_console_endpoint_executes_runtime_command(self, monkeypatch):
         monkeypatch.setattr(settings, "API_KEY", "secret-key")

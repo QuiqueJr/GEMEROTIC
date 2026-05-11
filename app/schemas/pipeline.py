@@ -119,7 +119,9 @@ class PipelineLabStatus(BaseModel):
     topology_name: str = Field(..., min_length=1, max_length=64)
     lab_path: str = Field(default="", max_length=512)
     abs_lab_path: str = Field(default="", max_length=1024)
-    nodes: list[PipelineLabNode] = Field(..., min_length=1)
+    deployed: bool = Field(default=True)
+    detail: str | None = Field(default=None, max_length=1024)
+    nodes: list[PipelineLabNode] = Field(default_factory=list)
 
 
 class PipelineConsoleRequest(BaseModel):

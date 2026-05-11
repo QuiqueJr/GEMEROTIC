@@ -59,7 +59,6 @@ import {
   type ComplianceChatResponse,
   type ComplianceReportResponse,
   getHealth,
-  type PipelineConsoleResultResponse,
   getPipelineTools,
   type HealthResponse,
   type PipelineArtifactsResponse,
@@ -68,13 +67,17 @@ import {
   type PipelineToolReportResponse,
   type TopologyProjectStatePayload,
   type TopologyProjectStateSaveResponse,
-  runPipelineConsoleCommand,
   saveTopologyState,
 } from './api/gemeroticApi'
 import { AssetNode } from './components/AssetNode'
 import { CableEdge } from './components/CableEdge'
 import { DrawingNode as DrawingCanvasNode } from './components/DrawingNode'
 import { EquipmentGlyph } from './components/EquipmentGlyph'
+import {
+  PhysicalInventoryPanel,
+  PhysicalToolsPanel,
+  PhysicalWorkspace,
+} from './components/PhysicalWorkspace'
 import { getEdgeHandleIds, getSiblingOffsets } from './domain/edgeLayout'
 import { assetCatalog, getAssetDefinition } from './domain/assetCatalog'
 const DEPLOY_TOOL_NAMES = ['docker', 'containerlab', 'ansible-playbook'] as const
@@ -93,6 +96,27 @@ import {
   updatePortConfig,
 } from './domain/topologyBuilder'
 import type { DrawingKind, DrawingNode as DrawingNodeModel } from './domain/drawingTypes'
+import {
+  addPhysicalLocationToLayout,
+  addPhysicalObjectToLayout,
+  clonePhysicalLayout,
+  coercePhysicalLayout,
+  createDefaultPhysicalLayout,
+  getActivePhysicalLocation,
+  getPhysicalLocation,
+  movePhysicalLocationInLayout,
+  movePhysicalObjectInLayout,
+  physicalLocationLabels,
+  physicalObjectLabels,
+  removePhysicalItem,
+  renamePhysicalItem,
+  setPhysicalLocationMapInLayout,
+  type PhysicalLayout,
+  type PhysicalLocationType,
+  type PhysicalMapImage,
+  type PhysicalPoint,
+  type PhysicalObjectType,
+} from './domain/physicalLayout'
 import type {
   AssetType,
   BuilderEdge,
@@ -133,19 +157,8 @@ type WorkflowState =
 type EditorTab = 'equipment' | 'ports' | 'logical' | 'security'
 type InteractionMode = 'select' | 'link'
 type DataTab = 'topology' | 'artifacts' | 'run' | 'compliance'
-type ConsoleEntry = {
-  id: string
-  tone: OperationStatus
-  text: string
-}
 type SaveCurrentTopologyOptions = {
   refreshWorkflow?: boolean
-}
-type DeviceConsole = {
-  nodeId: string
-  label: string
-  draft: string
-  entries: ConsoleEntry[]
 }
 type LinkEndpoint = {
   nodeId: string
@@ -167,6 +180,7 @@ type CableDraft = {
 type CanvasNode = BuilderNode | DrawingNodeModel
 type CanvasHistoryState = BuilderState & {
   drawings: DrawingNodeModel[]
+  physicalLayout: PhysicalLayout
 }
 
 const viewOptions: Array<{
@@ -265,6 +279,9 @@ function App() {
   )
   const [drawings, setDrawings, onDrawingsChange] =
     useNodesState<DrawingNodeModel>(initialState.snapshot.drawings)
+  const [physicalLayout, setPhysicalLayout] = useState<PhysicalLayout>(
+    initialState.snapshot.physicalLayout,
+  )
   const [edges, setEdges, onEdgesChange] = useEdgesState<BuilderEdge>(
     initialState.snapshot.edges,
   )
@@ -273,6 +290,9 @@ function App() {
   )
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null)
+  const [selectedPhysicalId, setSelectedPhysicalId] = useState<string | null>(
+    initialState.snapshot.physicalLayout.activeLocationId,
+  )
   const [editorNodeId, setEditorNodeId] = useState<string | null>(null)
   const [drawingEditorId, setDrawingEditorId] = useState<string | null>(null)
   const [editorTab, setEditorTab] = useState<EditorTab>('equipment')
@@ -301,13 +321,6 @@ function App() {
     useState<ReactFlowInstance<CanvasNode, BuilderEdge> | null>(null)
   const [operationStatus, setOperationStatus] = useState<OperationStatus>('idle')
   const [operationMessage, setOperationMessage] = useState('Proyecto cargado')
-  const [consoleEntries, setConsoleEntries] = useState<ConsoleEntry[]>([
-    {
-      id: 'boot-console-entry',
-      tone: 'success',
-      text: 'Proyecto cargado. Arrastra equipos al workspace o usa Añadir enlace para crear enlaces.',
-    },
-  ])
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [toolReport, setToolReport] = useState<PipelineToolReportResponse | null>(null)
   const [pipelineArtifacts, setPipelineArtifacts] =
@@ -320,10 +333,6 @@ function App() {
   const [chatMessages, setChatMessages] = useState<ComplianceChatMessage[]>([])
   const [chatDraft, setChatDraft] = useState('')
   const [chatBusy, setChatBusy] = useState(false)
-  const [deviceConsoles, setDeviceConsoles] = useState<Record<string, DeviceConsole>>({})
-  const [activeConsoleTabId, setActiveConsoleTabId] = useState<string>('app')
-  const [consoleBusyNodeId, setConsoleBusyNodeId] = useState<string | null>(null)
-
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null
   const selectedEdge = edges.find((edge) => edge.id === selectedEdgeId) ?? null
   const selectedDrawing =
@@ -367,11 +376,24 @@ function App() {
     }),
     [edges.length, nodes.length, payload.interfaces.length, payload.security_zones.length],
   )
+  const activePhysicalLocation = useMemo(
+    () => getActivePhysicalLocation(physicalLayout),
+    [physicalLayout],
+  )
+  const physicalSummary = useMemo(
+    () => ({
+      locations: physicalLayout.locations.length,
+      objects: physicalLayout.objects.length,
+      active: activePhysicalLocation.name,
+      activeType: physicalLocationLabels[activePhysicalLocation.type],
+    }),
+    [activePhysicalLocation, physicalLayout.locations.length, physicalLayout.objects.length],
+  )
   const resizeDrawingFromCanvas = useCallback(
     (drawingId: string, width: number, height: number) => {
       const nextWidth = clampDrawingSize(width)
       const nextHeight = clampDrawingSize(height)
-      const snapshot = cloneSnapshot({ settings, nodes, edges, drawings })
+      const snapshot = cloneSnapshot({ settings, nodes, edges, drawings, physicalLayout })
       setHistoryPast((previous) => [...previous.slice(-59), snapshot])
       setHistoryFuture([])
       setDrawings((currentDrawings) =>
@@ -387,7 +409,7 @@ function App() {
       setOperationStatus('success')
       setOperationMessage('Dibujo redimensionado')
     },
-    [drawings, edges, nodes, setDrawings, settings],
+    [drawings, edges, nodes, physicalLayout, setDrawings, settings],
   )
   const displayedNodes = useMemo(
     () =>
@@ -474,12 +496,6 @@ function App() {
     DEPLOY_TOOL_NAMES.every((toolName) =>
       toolReport.tools.some((tool) => tool.name === toolName && tool.installed),
     )
-  const activeDeviceConsole =
-    activeConsoleTabId === 'app' ? null : deviceConsoles[activeConsoleTabId] ?? null
-  const runtimeNodesById = useMemo(
-    () => new Map((labStatus?.nodes ?? []).map((node) => [node.node_id, node])),
-    [labStatus],
-  )
   const canUndo = historyPast.length > 0
   const canRedo = historyFuture.length > 0
   const apiConfig = { baseUrl: apiBaseUrl, apiKey }
@@ -514,7 +530,7 @@ function App() {
         if (cancelled) {
           return
         }
-        if (result.ok && result.data.data !== undefined) {
+        if (result.ok && result.data.data !== undefined && result.data.data !== null) {
           const localDraft = loadProjectDraft(storedProjectName)
           if (isProjectStateNewer(localDraft, result.data.data)) {
             appendConsole('Estado local conservado; servidor aun no tenia el ultimo cambio', 'idle')
@@ -522,16 +538,18 @@ function App() {
           }
           const restored = coerceProjectState(
             result.data.data,
-            cloneSnapshot({ settings, nodes, edges, drawings }),
+            cloneSnapshot({ settings, nodes, edges, drawings, physicalLayout }),
           )
           const cloned = cloneSnapshot(restored.snapshot)
           setSettings(cloned.settings)
           setNodes(cloned.nodes)
           setEdges(cloned.edges)
           setDrawings(cloned.drawings)
+          setPhysicalLayout(cloned.physicalLayout)
           setSelectedNodeId(null)
           setSelectedEdgeId(null)
           setSelectedDrawingId(null)
+          setSelectedPhysicalId(cloned.physicalLayout.activeLocationId)
           setEditorNodeId(null)
           setDrawingEditorId(null)
           setPendingLinkSource(null)
@@ -548,7 +566,7 @@ function App() {
           appendConsole('Estado guardado cargado desde el API', 'success')
           return
         }
-        if (result.status !== 404) {
+        if (!result.ok) {
           const message = extractMessage(result.data, `HTTP ${result.status}`)
           setOperationStatus('error')
           setOperationMessage(message)
@@ -577,6 +595,7 @@ function App() {
     edges,
     hasApiBaseUrl,
     nodes,
+    physicalLayout,
     remoteStateLoaded,
     setDrawings,
     setEdges,
@@ -584,112 +603,10 @@ function App() {
     settings,
   ])
 
-  function appendConsole(text: string, tone: OperationStatus = 'idle') {
-    setConsoleEntries((current) => [
-      ...current.slice(-59),
-      {
-        id: `${Date.now()}-${current.length}`,
-        text,
-        tone,
-      },
-    ])
-  }
-
-  function appendDeviceConsole(
-    nodeId: string,
-    text: string,
-    tone: OperationStatus = 'idle',
-  ) {
-    const nodeLabel = nodeById.get(nodeId)?.data.label ?? nodeId
-    setDeviceConsoles((current) => {
-      const existing = current[nodeId] ?? {
-        nodeId,
-        label: nodeLabel,
-        draft: '',
-        entries: [],
-      }
-      return {
-        ...current,
-        [nodeId]: {
-          ...existing,
-          label: nodeLabel,
-          entries: [
-            ...existing.entries.slice(-59),
-            {
-              id: `${Date.now()}-${existing.entries.length}`,
-              text,
-              tone,
-            },
-          ],
-        },
-      }
-    })
-  }
-
-  function openNodeConsole(nodeId: string) {
-    const node = nodeById.get(nodeId)
-    if (!node) {
-      return
-    }
-
-    setDeviceConsoles((current) => ({
-      ...current,
-      [nodeId]:
-        current[nodeId] ?? {
-          nodeId,
-          label: node.data.label,
-          draft: '',
-          entries: [
-            {
-              id: `console-${nodeId}-boot`,
-              tone: 'idle',
-              text:
-                'Consola del runtime Linux del lab. Usa comandos allowlistados como ip link show, ip addr show, ping -c 1 <destino> o ip link set dev eth1 down.',
-            },
-          ],
-        },
-    }))
-    setActiveConsoleTabId(nodeId)
-    if (!runtimeNodesById.has(nodeId) && hasApiBaseUrl) {
-      void inspectRuntimeLab()
-    }
-  }
-
-  function updateDeviceConsoleDraft(nodeId: string, value: string) {
-    setDeviceConsoles((current) => {
-      const existing = current[nodeId]
-      if (!existing) {
-        return current
-      }
-      return {
-        ...current,
-        [nodeId]: {
-          ...existing,
-          draft: value,
-        },
-      }
-    })
-  }
-
-  function appendRuntimeConsoleResult(
-    nodeId: string,
-    result: PipelineConsoleResultResponse,
-  ) {
-    const stdout = result.stdout_tail.trim()
-    const stderr = result.stderr_tail.trim()
-    if (stdout) {
-      appendDeviceConsole(nodeId, stdout, result.exit_code === 0 ? 'success' : 'error')
-    }
-    if (stderr) {
-      appendDeviceConsole(nodeId, stderr, 'error')
-    }
-    if (!stdout && !stderr) {
-      appendDeviceConsole(
-        nodeId,
-        result.exit_code === 0 ? 'Comando completado sin salida' : 'Comando sin salida',
-        result.exit_code === 0 ? 'success' : 'error',
-      )
-    }
+  function appendConsole(_text: string, _tone: OperationStatus = 'idle') {
+    void _text
+    void _tone
+    return
   }
 
   function showActionRequired(message: string) {
@@ -711,7 +628,7 @@ function App() {
   }
 
   function pushHistorySnapshot() {
-    const snapshot = cloneSnapshot({ settings, nodes, edges, drawings })
+    const snapshot = cloneSnapshot({ settings, nodes, edges, drawings, physicalLayout })
     setHistoryPast((previous) => [...previous.slice(-59), snapshot])
     setHistoryFuture([])
   }
@@ -722,9 +639,11 @@ function App() {
     setNodes(cloned.nodes)
     setEdges(cloned.edges)
     setDrawings(cloned.drawings)
+    setPhysicalLayout(cloned.physicalLayout)
     setSelectedNodeId(null)
     setSelectedEdgeId(null)
     setSelectedDrawingId(null)
+    setSelectedPhysicalId(cloned.physicalLayout.activeLocationId)
     setEditorNodeId(null)
     setDrawingEditorId(null)
     setPendingLinkSource(null)
@@ -739,7 +658,7 @@ function App() {
       return
     }
     const previous = historyPast[historyPast.length - 1]
-    const current = cloneSnapshot({ settings, nodes, edges, drawings })
+    const current = cloneSnapshot({ settings, nodes, edges, drawings, physicalLayout })
     setHistoryPast(historyPast.slice(0, -1))
     setHistoryFuture([current, ...historyFuture].slice(0, 60))
     restoreSnapshot(previous)
@@ -751,7 +670,7 @@ function App() {
       return
     }
     const next = historyFuture[0]
-    const current = cloneSnapshot({ settings, nodes, edges, drawings })
+    const current = cloneSnapshot({ settings, nodes, edges, drawings, physicalLayout })
     setHistoryPast([...historyPast, current].slice(-60))
     setHistoryFuture(historyFuture.slice(1))
     restoreSnapshot(next)
@@ -789,12 +708,6 @@ function App() {
         ? null
         : current,
     )
-    setDeviceConsoles((current) => {
-      const next = { ...current }
-      delete next[selectedNodeId]
-      return next
-    })
-    setActiveConsoleTabId((current) => (current === selectedNodeId ? 'app' : current))
     appendConsole(`Equipo eliminado: ${removedLabel}`, 'success')
   }
 
@@ -825,6 +738,142 @@ function App() {
     setSelectedDrawingId(null)
     setDrawingEditorId(null)
     appendConsole(`Dibujo eliminado: ${removedLabel}`, 'success')
+  }
+
+  function navigatePhysicalLocation(locationId: string) {
+    setPhysicalLayout((current) => ({
+      ...current,
+      activeLocationId: locationId,
+    }))
+    setSelectedPhysicalId(locationId)
+    setSelectedNodeId(null)
+    setSelectedEdgeId(null)
+    setSelectedDrawingId(null)
+  }
+
+  function addPhysicalLocation(type: Exclude<PhysicalLocationType, 'intercity'>) {
+    const result = addPhysicalLocationToLayout(physicalLayout, type)
+    if (result === null) {
+      const label = physicalLocationLabels[type]
+      showActionRequired(`No se puede crear ${label} desde ${activePhysicalLocation.name}`)
+      return
+    }
+    pushHistorySnapshot()
+    setPhysicalLayout(result.layout)
+    setSelectedPhysicalId(result.locationId)
+    if (type !== 'city') {
+      setPhysicalLayout((current) => ({
+        ...current,
+        activeLocationId: result.locationId,
+      }))
+    }
+    const label = physicalLocationLabels[type]
+    setOperationStatus('success')
+    setOperationMessage(`${label} agregado al mapa físico`)
+    appendConsole(`${label} físico agregado`, 'success')
+  }
+
+  function addPhysicalObject(type: PhysicalObjectType) {
+    const result = addPhysicalObjectToLayout(physicalLayout, type)
+    if (result === null) {
+      showActionRequired(
+        'Selecciona un edificio o cuarto de cableado antes de añadir inventario físico.',
+      )
+      return
+    }
+    pushHistorySnapshot()
+    setPhysicalLayout(result.layout)
+    setSelectedPhysicalId(result.objectId)
+    const label = physicalObjectLabels[type]
+    setOperationStatus('success')
+    setOperationMessage(`${label} agregado al mapa físico`)
+    appendConsole(`${label} físico agregado`, 'success')
+  }
+
+  function renameSelectedPhysical(name: string) {
+    if (selectedPhysicalId === null) {
+      return
+    }
+    setPhysicalLayout((current) => renamePhysicalItem(current, selectedPhysicalId, name))
+  }
+
+  function uploadSelectedPhysicalMap(file: File) {
+    if (selectedPhysicalId === null) {
+      showActionRequired('Selecciona una localización física antes de añadir un mapa.')
+      return
+    }
+    const normalizedName = file.name.toLowerCase()
+    const hasAllowedExtension =
+      normalizedName.endsWith('.png') ||
+      normalizedName.endsWith('.jpg') ||
+      normalizedName.endsWith('.jpeg')
+    const hasAllowedMediaType = file.type === 'image/png' || file.type === 'image/jpeg'
+    if (!hasAllowedExtension || (file.type !== '' && !hasAllowedMediaType)) {
+      showActionRequired('Formato de mapa no válido. Usa .png, .jpg o .jpeg.')
+      return
+    }
+
+    const selectedLocation = getPhysicalLocation(physicalLayout, selectedPhysicalId)
+    if (selectedLocation === null) {
+      showActionRequired('El mapa solo se puede añadir a localizaciones físicas.')
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') {
+        showActionRequired('No se pudo leer el archivo de mapa.')
+        return
+      }
+      const mediaType: PhysicalMapImage['mediaType'] =
+        file.type === 'image/png' || normalizedName.endsWith('.png')
+          ? 'image/png'
+          : 'image/jpeg'
+      const dataUrl = reader.result.replace(
+        /^data:[^;]*;base64,/,
+        `data:${mediaType};base64,`,
+      )
+      const mapImage: PhysicalMapImage = {
+        dataUrl,
+        fileName: file.name,
+        mediaType,
+      }
+      pushHistorySnapshot()
+      setPhysicalLayout((current) =>
+        setPhysicalLocationMapInLayout(current, selectedLocation.id, mapImage),
+      )
+      setOperationStatus('success')
+      setOperationMessage(`Mapa añadido a ${selectedLocation.name}`)
+      appendConsole(`Mapa físico añadido a ${selectedLocation.name}`, 'success')
+    }
+    reader.onerror = () => {
+      showActionRequired('No se pudo leer el archivo de mapa.')
+    }
+    reader.readAsDataURL(file)
+  }
+
+  function movePhysicalLocation(locationId: string, position: PhysicalPoint) {
+    setPhysicalLayout((current) =>
+      movePhysicalLocationInLayout(current, locationId, position),
+    )
+  }
+
+  function movePhysicalObject(objectId: string, position: PhysicalPoint) {
+    setPhysicalLayout((current) =>
+      movePhysicalObjectInLayout(current, objectId, position),
+    )
+  }
+
+  function removeSelectedPhysical() {
+    if (selectedPhysicalId === null) {
+      return
+    }
+    pushHistorySnapshot()
+    setPhysicalLayout((current) => removePhysicalItem(current, selectedPhysicalId))
+    setSelectedPhysicalId(null)
+    setOperationStatus('success')
+    setOperationMessage('Elemento físico eliminado')
+    appendConsole('Elemento físico eliminado', 'success')
   }
 
   useEffect(() => {
@@ -858,6 +907,11 @@ function App() {
       }
 
       if (event.key === 'Delete' || event.key === 'Backspace') {
+        if (activeView === 'physical' && selectedPhysicalId) {
+          event.preventDefault()
+          removeSelectedPhysical()
+          return
+        }
         if (selectedDrawingId) {
           event.preventDefault()
           removeSelectedDrawing()
@@ -1599,7 +1653,7 @@ function App() {
     setOperationStatus('running')
     try {
       const projectStatePayload = buildProjectStatePayload(
-        cloneSnapshot({ settings, nodes, edges, drawings }),
+        cloneSnapshot({ settings, nodes, edges, drawings, physicalLayout }),
         activeView,
         payload,
       )
@@ -1692,6 +1746,7 @@ function App() {
 
   const inspectRuntimeLab = async (
     topologyName = pipelineRun?.topology_name ?? payload.name,
+    options: { quiet?: boolean } = {},
   ): Promise<PipelineLabStatusResponse | null> => {
     if (!ensureProtectedApiConfigured('Inspeccionar lab')) {
       return null
@@ -1701,16 +1756,41 @@ function App() {
       const result = await getPipelineLabStatus(apiConfig, topologyName)
       if (!result.ok || result.data.data === undefined) {
         const message = extractMessage(result.data, `HTTP ${result.status}`)
+        if (isLabUnavailableMessage(message)) {
+          const unavailableMessage = buildLabUnavailableMessage(topologyName, message)
+          setLabStatus(null)
+          setOperationStatus('idle')
+          setOperationMessage(unavailableMessage)
+          if (!options.quiet) {
+            appendConsole(unavailableMessage, 'idle')
+          }
+          return null
+        }
         setOperationStatus('error')
         setOperationMessage(message)
         appendConsole(message, 'error')
+        return null
+      }
+      if (!isLabStatusDeployed(result.data.data)) {
+        const message = buildLabUnavailableMessage(
+          topologyName,
+          result.data.data.detail,
+        )
+        setLabStatus(null)
+        setOperationStatus('idle')
+        setOperationMessage(message)
+        if (!options.quiet) {
+          appendConsole(message, 'idle')
+        }
         return null
       }
       setLabStatus(result.data.data)
       const message = `${result.data.data.nodes.length} nodos del lab detectados`
       setOperationStatus('success')
       setOperationMessage(message)
-      appendConsole(message, 'success')
+      if (!options.quiet) {
+        appendConsole(message, 'success')
+      }
       return result.data.data
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Petición fallida'
@@ -1774,62 +1854,6 @@ function App() {
       setOperationMessage(message)
       appendConsole(message, 'error')
     }
-  }
-
-  const sendRuntimeCommand = async (nodeId: string, explicitCommand?: string) => {
-    if (!ensureProtectedApiConfigured('Consola del runtime')) {
-      return
-    }
-    const consoleState = deviceConsoles[nodeId]
-    const command = (explicitCommand ?? consoleState?.draft ?? '').trim()
-    if (!command) {
-      return
-    }
-
-    appendDeviceConsole(nodeId, `$ ${command}`, 'running')
-    updateDeviceConsoleDraft(nodeId, '')
-    setConsoleBusyNodeId(nodeId)
-
-    try {
-      const result = await runPipelineConsoleCommand(
-        apiConfig,
-        labStatus?.topology_name ?? payload.name,
-        nodeId,
-        command,
-      )
-      if (!result.ok || result.data.data === undefined) {
-        const message = extractMessage(result.data, `HTTP ${result.status}`)
-        appendDeviceConsole(nodeId, message, 'error')
-        setOperationStatus('error')
-        setOperationMessage(message)
-        appendConsole(message, 'error')
-        return
-      }
-
-      const consoleResult = result.data.data
-      appendRuntimeConsoleResult(nodeId, consoleResult)
-      setOperationStatus(consoleResult.exit_code === 0 ? 'success' : 'error')
-      setOperationMessage(
-        consoleResult.exit_code === 0
-          ? `Comando ejecutado en ${nodeId}`
-          : `Comando con salida ${consoleResult.exit_code} en ${nodeId}`,
-      )
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Petición fallida'
-      appendDeviceConsole(nodeId, message, 'error')
-      setOperationStatus('error')
-      setOperationMessage(message)
-      appendConsole(message, 'error')
-    } finally {
-      setConsoleBusyNodeId((current) => (current === nodeId ? null : current))
-    }
-  }
-
-  const openSelectedNodeConsole = () => {
-    if (selectedNodeId === null) {
-      return
-    }
-    openNodeConsole(selectedNodeId)
   }
 
   const evaluateCompliance = async (
@@ -2187,16 +2211,6 @@ function App() {
 
           <div className="toolbar-group">
             <button
-              aria-label="Abrir consola del nodo"
-              className="toolbar-button toolbar-button--icon"
-              disabled={selectedNode === null}
-              onClick={openSelectedNodeConsole}
-              title="Abrir consola del nodo"
-              type="button"
-            >
-              <TerminalSquare size={16} />
-            </button>
-            <button
               aria-label="Configurar proyecto"
               className="toolbar-button toolbar-button--icon"
               onClick={() => setShowProjectSettings(true)}
@@ -2286,76 +2300,90 @@ function App() {
       </header>
 
       <section className="workspace-grid">
-        <aside className="devices-pane" aria-label="Barra de dispositivos">
-          <div className="devices-categories">
-            {assetGroups.map((group) => (
-              <button
-                key={group.id}
-                className="devices-category"
-                data-active={selectedDeviceGroup === group.id}
-                onClick={() => setSelectedDeviceGroup(group.id)}
-                title={group.label}
-                type="button"
-              >
-                <CategoryGlyph groupId={group.id} />
-              </button>
-            ))}
-            <button
-              className="devices-category"
-              data-active={interactionMode === 'link'}
-              onClick={startLinkMode}
-              title="Añadir enlace"
-              type="button"
-            >
-              <Cable size={18} />
-            </button>
-          </div>
-
-          <div className="devices-list">
-            <div className="devices-pane__header">
-              <strong>
-                {assetGroups.find((group) => group.id === selectedDeviceGroup)?.label ??
-                  'Todos los dispositivos'}
-              </strong>
-              <small>Arrastra o haz clic para insertar</small>
-            </div>
-
-            <div className="site-card">
-              <div>
-                <span>Proyecto</span>
-                <strong>{settings.name}</strong>
-              </div>
-              <div>
-                <span>Rack activo</span>
-                <strong>{settings.rackName}</strong>
-              </div>
-              <div>
-                <span>Vista</span>
-                <strong>{viewOptions.find((view) => view.id === activeView)?.label}</strong>
-              </div>
-            </div>
-
-            <div className="device-catalog">
-              {visibleAssets.map((asset) => (
+        <aside
+          className="devices-pane"
+          data-mode={activeView}
+          aria-label="Barra de dispositivos"
+        >
+          {activeView === 'physical' ? (
+            <PhysicalToolsPanel
+              layout={physicalLayout}
+              onAddLocation={addPhysicalLocation}
+              onAddObject={addPhysicalObject}
+            />
+          ) : (
+            <>
+              <div className="devices-categories">
+                {assetGroups.map((group) => (
+                  <button
+                    key={group.id}
+                    className="devices-category"
+                    data-active={selectedDeviceGroup === group.id}
+                    onClick={() => setSelectedDeviceGroup(group.id)}
+                    title={group.label}
+                    type="button"
+                  >
+                    <CategoryGlyph groupId={group.id} />
+                  </button>
+                ))}
                 <button
-                  className="device-catalog__item"
-                  draggable
-                  key={asset.assetType}
-                  onDragStart={handleCatalogDragStart(asset.assetType)}
-                  onClick={() => addAsset(asset.assetType)}
+                  className="devices-category"
+                  data-active={interactionMode === 'link'}
+                  onClick={startLinkMode}
+                  title="Añadir enlace"
                   type="button"
                 >
-                  <EquipmentGlyph assetType={asset.assetType} size={34} />
-                  <div>
-                    <strong>{asset.label}</strong>
-                    <small>
-                      L{asset.purdueLevel} · {asset.portCount} puertos
-                    </small>
-                  </div>
+                  <Cable size={18} />
                 </button>
-              ))}
-            </div>
-          </div>
+              </div>
+
+              <div className="devices-list">
+                <div className="devices-pane__header">
+                  <strong>
+                    {assetGroups.find((group) => group.id === selectedDeviceGroup)?.label ??
+                      'Todos los dispositivos'}
+                  </strong>
+                  <small>Arrastra o haz clic para insertar</small>
+                </div>
+
+                <div className="site-card">
+                  <div>
+                    <span>Proyecto</span>
+                    <strong>{settings.name}</strong>
+                  </div>
+                  <div>
+                    <span>Rack activo</span>
+                    <strong>{settings.rackName}</strong>
+                  </div>
+                  <div>
+                    <span>Vista</span>
+                    <strong>{viewOptions.find((view) => view.id === activeView)?.label}</strong>
+                  </div>
+                </div>
+
+                <div className="device-catalog">
+                  {visibleAssets.map((asset) => (
+                    <button
+                      className="device-catalog__item"
+                      draggable
+                      key={asset.assetType}
+                      onDragStart={handleCatalogDragStart(asset.assetType)}
+                      onClick={() => addAsset(asset.assetType)}
+                      type="button"
+                    >
+                      <EquipmentGlyph assetType={asset.assetType} size={34} />
+                      <div>
+                        <strong>{asset.label}</strong>
+                        <small>
+                          L{asset.purdueLevel} · {asset.portCount} puertos
+                        </small>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
         </aside>
 
         <section className="workspace-pane" aria-label="Área de trabajo estilo GNS3">
@@ -2366,39 +2394,51 @@ function App() {
             onDragOver={handleWorkspaceDragOver}
             onDrop={handleWorkspaceDrop}
           >
-            <ReactFlow
-              defaultEdgeOptions={defaultEdgeOptions}
-              edges={displayedEdges}
-              edgesReconnectable={false}
-              edgeTypes={edgeTypes}
-              fitView
-              fitViewOptions={{ padding: 0.18 }}
-              nodes={displayedCanvasNodes}
-              nodesConnectable={false}
-              nodeTypes={nodeTypes}
-              onEdgesChange={handleEdgesChange}
-              onEdgeClick={(_, edge) => {
-                setSelectedEdgeId(edge.id)
-                setSelectedNodeId(null)
-                setSelectedDrawingId(null)
-                setEditorNodeId(null)
-              }}
-              onEdgeDoubleClick={(_, edge) => openCableEditor(edge as BuilderEdge)}
-              onInit={setReactFlowInstance}
-              onNodeClick={handleCanvasNodeClick}
-              onNodeDoubleClick={handleCanvasNodeDoubleClick}
-              onNodesChange={handleCanvasNodesChange}
-              onPaneClick={() => {
-                setSelectedEdgeId(null)
-                setSelectedDrawingId(null)
-                if (interactionMode !== 'link') {
+            {activeView === 'physical' ? (
+              <PhysicalWorkspace
+                layout={physicalLayout}
+                selectedId={selectedPhysicalId}
+                onBeginMove={pushHistorySnapshot}
+                onMoveLocation={movePhysicalLocation}
+                onMoveObject={movePhysicalObject}
+                onNavigate={navigatePhysicalLocation}
+                onSelect={setSelectedPhysicalId}
+              />
+            ) : (
+              <ReactFlow
+                defaultEdgeOptions={defaultEdgeOptions}
+                edges={displayedEdges}
+                edgesReconnectable={false}
+                edgeTypes={edgeTypes}
+                fitView
+                fitViewOptions={{ padding: 0.18 }}
+                nodes={displayedCanvasNodes}
+                nodesConnectable={false}
+                nodeTypes={nodeTypes}
+                onEdgesChange={handleEdgesChange}
+                onEdgeClick={(_, edge) => {
+                  setSelectedEdgeId(edge.id)
                   setSelectedNodeId(null)
-                }
-              }}
-            >
-              <Background color="#b9c0c6" gap={26} size={1} />
-              <Controls position="bottom-left" showInteractive={false} />
-            </ReactFlow>
+                  setSelectedDrawingId(null)
+                  setEditorNodeId(null)
+                }}
+                onEdgeDoubleClick={(_, edge) => openCableEditor(edge as BuilderEdge)}
+                onInit={setReactFlowInstance}
+                onNodeClick={handleCanvasNodeClick}
+                onNodeDoubleClick={handleCanvasNodeDoubleClick}
+                onNodesChange={handleCanvasNodesChange}
+                onPaneClick={() => {
+                  setSelectedEdgeId(null)
+                  setSelectedDrawingId(null)
+                  if (interactionMode !== 'link') {
+                    setSelectedNodeId(null)
+                  }
+                }}
+              >
+                <Background color="#b9c0c6" gap={26} size={1} />
+                <Controls position="bottom-left" showInteractive={false} />
+              </ReactFlow>
+            )}
           </div>
           <div className="workspace-statusbar" aria-live="polite">
             <span>
@@ -2416,6 +2456,8 @@ function App() {
             <strong>
               {pendingLinkSource
                 ? `Origen seleccionado: ${pendingLinkSourceNode?.data.label ?? pendingLinkSource.nodeId}:${pendingLinkSourceNode ? getPortName(pendingLinkSourceNode, pendingLinkSource.portIndex) : pendingLinkSource.portIndex}`
+                : activeView === 'physical'
+                  ? `${physicalSummary.active} · ${physicalSummary.activeType} · ${physicalSummary.locations} localizaciones · ${physicalSummary.objects} elementos`
                 : selectedDrawing
                   ? `Dibujo: ${selectedDrawing.data.label}`
                   : selectedEdge
@@ -2427,7 +2469,23 @@ function App() {
           </div>
         </section>
 
-        <aside className="summary-pane" aria-label="Resumen de topología y servicios">
+        <aside
+          className="summary-pane"
+          data-mode={activeView}
+          aria-label="Resumen de topología y servicios"
+        >
+          {activeView === 'physical' ? (
+            <PhysicalInventoryPanel
+              layout={physicalLayout}
+              selectedId={selectedPhysicalId}
+              onDeleteSelected={removeSelectedPhysical}
+              onNavigate={navigatePhysicalLocation}
+              onRenameSelected={renameSelectedPhysical}
+              onSelect={setSelectedPhysicalId}
+              onUploadLocationMap={uploadSelectedPhysicalMap}
+            />
+          ) : (
+            <>
           <section className="dock-panel">
             <div className="dock-panel__header">
               <strong>Resumen de topología</strong>
@@ -2595,61 +2653,9 @@ function App() {
               </div>
             </div>
           </section>
+            </>
+          )}
         </aside>
-      </section>
-
-      <section className="console-pane" aria-label="Consola estilo GNS3">
-        <div className="console-pane__header">
-          <div className="console-tabs" role="tablist" aria-label="Pestañas de consola">
-            <button
-              aria-selected={activeConsoleTabId === 'app'}
-              className="console-tab"
-              onClick={() => setActiveConsoleTabId('app')}
-              role="tab"
-              type="button"
-            >
-              <TerminalSquare size={14} />
-              Consola
-            </button>
-            {Object.values(deviceConsoles).map((consoleTab) => (
-              <button
-                key={consoleTab.nodeId}
-                aria-selected={activeConsoleTabId === consoleTab.nodeId}
-                className="console-tab"
-                onClick={() => setActiveConsoleTabId(consoleTab.nodeId)}
-                role="tab"
-                type="button"
-              >
-                <EquipmentGlyph assetType={nodeById.get(consoleTab.nodeId)?.data.assetType ?? 'host'} size={18} />
-                {consoleTab.label}
-              </button>
-            ))}
-          </div>
-          <span>
-            {activeConsoleTabId === 'app'
-              ? operationStatus
-              : runtimeNodesById.get(activeConsoleTabId)?.state || 'runtime'}
-          </span>
-        </div>
-        <div className="console-pane__body">
-          {activeConsoleTabId === 'app' ? (
-            consoleEntries.map((entry) => (
-              <div className="console-line" data-tone={entry.tone} key={entry.id}>
-                <span>{entry.tone.toUpperCase()}</span>
-                <p>{entry.text}</p>
-              </div>
-            ))
-          ) : activeDeviceConsole ? (
-            <NodeConsolePane
-              activeNode={nodeById.get(activeDeviceConsole.nodeId) ?? null}
-              busy={consoleBusyNodeId === activeDeviceConsole.nodeId}
-              consoleState={activeDeviceConsole}
-              runtimeNode={runtimeNodesById.get(activeDeviceConsole.nodeId) ?? null}
-              onDraftChange={updateDeviceConsoleDraft}
-              onRunCommand={(command) => void sendRuntimeCommand(activeDeviceConsole.nodeId, command)}
-            />
-          ) : null}
-        </div>
       </section>
 
       {editorNode ? (
@@ -2657,7 +2663,6 @@ function App() {
           editorNode={editorNode}
           editorTab={editorTab}
           onClose={() => setEditorNodeId(null)}
-          onOpenConsole={() => openNodeConsole(editorNode.id)}
           onDuplicate={duplicateSelectedNode}
           onDelete={removeSelectedNode}
           onUpdatePort={updateEditorPort}
@@ -3244,101 +3249,10 @@ function ComplianceAssistantModal({
   )
 }
 
-function NodeConsolePane({
-  activeNode,
-  busy,
-  consoleState,
-  runtimeNode,
-  onDraftChange,
-  onRunCommand,
-}: {
-  activeNode: BuilderNode | null
-  busy: boolean
-  consoleState: DeviceConsole
-  runtimeNode: PipelineLabStatusResponse['nodes'][number] | null
-  onDraftChange: (nodeId: string, value: string) => void
-  onRunCommand: (command?: string) => void
-}) {
-  const quickCommands = ['hostname', 'ip link show', 'ip addr show', 'ip route show']
-
-  return (
-    <div className="node-console">
-      <div className="node-console__meta">
-        <span>
-          {activeNode ? getAssetDefinition(activeNode.data.assetType).label : consoleState.nodeId}
-        </span>
-        <strong>
-          {runtimeNode
-            ? `${runtimeNode.container_name} · ${runtimeNode.state || runtimeNode.status || 'runtime'}`
-            : 'Lab no desplegado o nodo no descubierto'}
-        </strong>
-      </div>
-
-      <div className="node-console__quick-actions">
-        {quickCommands.map((command) => (
-          <button
-            className="console-quick-button"
-            disabled={runtimeNode === null || busy}
-            key={command}
-            onClick={() => onRunCommand(command)}
-            type="button"
-          >
-            {command}
-          </button>
-        ))}
-      </div>
-
-      {runtimeNode === null ? (
-        <div className="empty-state empty-state--compact">
-          <strong>Runtime pendiente</strong>
-          <span>
-            Despliega el lab y luego usa Inspeccionar lab. En Step 10 la consola actúa
-            sobre el runtime Linux actual de Containerlab, no sobre una CLI vendor.
-          </span>
-        </div>
-      ) : null}
-
-      <div className="node-console__stream">
-        {consoleState.entries.map((entry) => (
-          <div className="console-line" data-tone={entry.tone} key={entry.id}>
-            <span>{entry.tone.toUpperCase()}</span>
-            <p>{entry.text}</p>
-          </div>
-        ))}
-      </div>
-
-      <div className="node-console__composer">
-        <input
-          disabled={runtimeNode === null || busy}
-          onChange={(event) => onDraftChange(consoleState.nodeId, event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault()
-              onRunCommand()
-            }
-          }}
-          placeholder="ip link set dev eth1 down"
-          value={consoleState.draft}
-        />
-        <button
-          className="secondary-button"
-          disabled={runtimeNode === null || busy || !consoleState.draft.trim()}
-          onClick={() => onRunCommand()}
-          type="button"
-        >
-          <SendHorizonal size={16} />
-          {busy ? 'Ejecutando' : 'Ejecutar'}
-        </button>
-      </div>
-    </div>
-  )
-}
-
 function NodeEditorModal({
   editorNode,
   editorTab,
   onClose,
-  onOpenConsole,
   onDuplicate,
   onDelete,
   onUpdatePort,
@@ -3349,7 +3263,6 @@ function NodeEditorModal({
   editorNode: BuilderNode
   editorTab: EditorTab
   onClose: () => void
-  onOpenConsole: () => void
   onDuplicate: () => void
   onDelete: () => void
   onUpdatePort: (portIndex: number, patch: Partial<BuilderPortConfig>) => void
@@ -3697,10 +3610,6 @@ function NodeEditorModal({
         </div>
 
         <div className="modal-footer">
-          <button className="secondary-button" onClick={onOpenConsole} type="button">
-            <TerminalSquare size={16} />
-            Consola
-          </button>
           <button className="secondary-button" onClick={onDuplicate} type="button">
             <Copy size={16} />
             Duplicar
@@ -4069,6 +3978,7 @@ function buildProjectStatePayload(
     nodes: snapshot.nodes,
     edges: snapshot.edges,
     drawings: snapshot.drawings,
+    physical_layout: snapshot.physicalLayout,
     active_view: activeView,
     topology,
   }
@@ -4083,7 +3993,7 @@ function createInitialAppState(): {
   const draft = projectName === null ? null : loadProjectDraft(projectName)
   if (draft === null) {
     return {
-      activeView: 'physical',
+      activeView: 'logical',
       snapshot: fallback,
     }
   }
@@ -4102,6 +4012,7 @@ function createDefaultSnapshot(): CanvasHistoryState {
     nodes: builderState.nodes,
     edges: builderState.edges,
     drawings: createInitialDrawingNodes(),
+    physicalLayout: createDefaultPhysicalLayout(builderState.settings),
   }
 }
 
@@ -4176,19 +4087,20 @@ function coerceProjectState(
     drawings: Array.isArray(projectState.drawings)
       ? (projectState.drawings as DrawingNodeModel[])
       : fallback.drawings,
+    physicalLayout: coercePhysicalLayout(projectState.physical_layout, settings),
   }
 
   try {
     return {
       activeView: isTopologyView(projectState.active_view)
         ? projectState.active_view
-        : 'physical',
+        : 'logical',
       projectName: slugify(settings.name || projectState.project_name),
       snapshot: cloneSnapshot(candidate),
     }
   } catch {
     return {
-      activeView: 'physical',
+      activeView: 'logical',
       projectName: slugify(fallback.settings.name),
       snapshot: cloneSnapshot(fallback),
     }
@@ -4271,6 +4183,24 @@ function compactDetail(detail: string | null, fallback: string): string {
   return value.length > 180 ? `${value.slice(0, 177)}...` : value
 }
 
+function buildLabUnavailableMessage(topologyName: string, detail?: string | null): string {
+  const suffix = detail ? ` Detalle: ${compactDetail(detail, topologyName)}` : ''
+  return `Lab no desplegado para ${topologyName}. Pulsa Desplegar pipeline antes de inspeccionar o usar la consola.${suffix}`
+}
+
+function isLabStatusDeployed(status: PipelineLabStatusResponse): boolean {
+  return status.deployed !== false && status.nodes.length > 0
+}
+
+function isLabUnavailableMessage(message: string): boolean {
+  const normalized = message.toLowerCase()
+  return (
+    normalized.includes('pipeline lab is unavailable') ||
+    normalized.includes('pipeline lab is not deployed') ||
+    normalized.includes('lab no desplegado')
+  )
+}
+
 function isTopologyView(value: unknown): value is TopologyView {
   return value === 'physical' || value === 'logical' || value === 'security'
 }
@@ -4306,6 +4236,7 @@ function cloneSnapshot(snapshot: CanvasHistoryState): CanvasHistoryState {
       position: { ...drawing.position },
       style: drawing.style ? { ...drawing.style } : undefined,
     })),
+    physicalLayout: clonePhysicalLayout(snapshot.physicalLayout),
   }
 }
 

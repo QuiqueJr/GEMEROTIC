@@ -39,11 +39,11 @@ async def get_topology_state(
     """Cargar el ultimo borrador visual guardado."""
     try:
         project_state = topology_store.load_project_state(project_name)
-    except TopologyNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
-        ) from exc
+    except TopologyNotFoundError:
+        return APIResponse(
+            message="Topology state not found",
+            data=None,
+        )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

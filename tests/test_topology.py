@@ -14,6 +14,7 @@ from app.schemas.physical import AssetType, RackType
 from app.schemas.topology import TopologyCreate
 from app.services.netbox_client import NetBoxClientError
 from app.services.topology_importer import TopologyImporter, TopologyImportError
+from app.services.topology_store import TopologyNotFoundError
 from tests.conftest import AllowAllRateLimiter
 from tests.test_schemas import _mvp_topology_payload
 
@@ -251,7 +252,12 @@ class FakeTopologyStore:
         }
 
     def load_project_state(self, project_name: str) -> dict:
-        return self.project_states[project_name]
+        try:
+            return self.project_states[project_name]
+        except KeyError as exc:
+            raise TopologyNotFoundError(
+                f"Saved project state not found: {project_name}"
+            ) from exc
 
     def list_project_names(self) -> list[str]:
         return sorted(set(self.project_states) | set(self.saved))
@@ -770,3 +776,20 @@ class TestTopologyEndpoint:
 
         assert response.status_code == 200
         assert response.json()["data"]["active_view"] == "logical"
+
+    def test_get_state_returns_empty_state_when_project_is_missing(
+        self, monkeypatch
+    ):
+        with _build_client_with_override(
+            ConnectedTopologyClient(),
+            monkeypatch,
+            topology_store=FakeTopologyStore(),
+        ) as client:
+            response = client.get(
+                "/api/v1/topology/state/mvp-lab-01",
+                headers={"X-API-Key": "test-api-key"},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["message"] == "Topology state not found"
+        assert response.json()["data"] is None

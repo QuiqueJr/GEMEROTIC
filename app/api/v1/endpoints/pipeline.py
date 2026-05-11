@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.security import require_api_key
 from app.dependencies import get_topology_store
-from app.schemas.pipeline import PipelineConsoleRequest
+from app.schemas.pipeline import PipelineConsoleRequest, PipelineLabStatus
 from app.schemas.responses import APIResponse
 from app.schemas.topology import TopologyCreate
 from app.services.pipeline_artifacts import PipelineArtifactGenerator
@@ -176,10 +176,15 @@ async def inspect_pipeline_lab(
             detail=str(exc),
         ) from exc
     except PipelineLabNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+        result = PipelineLabStatus(
+            topology_name=topology_name,
+            deployed=False,
             detail=str(exc),
-        ) from exc
+        )
+        return APIResponse(
+            message="Pipeline lab is not deployed",
+            data=result.model_dump(),
+        )
     except PipelineExecutionError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

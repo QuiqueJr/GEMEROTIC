@@ -74,6 +74,9 @@ TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
 - Ejecutar `POST /api/v1/pipeline/deploy/{topology_name}` desde la última
   topología guardada.
 - Consultar labs desplegados con `GET /api/v1/pipeline/labs/{topology_name}`.
+  Si el lab todavia no existe, el endpoint devuelve `200` con
+  `deployed=false` para que la UI muestre un estado pendiente sin tratarlo
+  como ruta rota.
 - Ejecutar consola controlada por nodo con
   `POST /api/v1/pipeline/labs/{topology_name}/nodes/{node_id}/console`.
 - Usar comandos allowlistados con `shell=False`:
@@ -139,7 +142,9 @@ TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
     vista activa y `topology` derivada) en
     `var/topologies/<project_name>/state.json`
   - `GET /api/v1/topology/state/{project_name}` recupera ese estado visual para
-    rehidratar el canvas tras recargar el navegador
+    rehidratar el canvas tras recargar el navegador; si todavia no existe
+    borrador remoto devuelve `200` con `data=null` para que una primera carga
+    no aparezca como fallo de recurso
   - la UI guarda además un draft local inmediato antes de llamar al API; si el
     servidor devuelve un estado más antiguo o la red falla, el navegador no pisa
     la topología recién editada

@@ -5,6 +5,10 @@ import App from './App'
 
 beforeEach(() => {
   window.localStorage.clear()
+  Object.defineProperty(HTMLElement.prototype, 'setPointerCapture', {
+    configurable: true,
+    value: vi.fn(),
+  })
 })
 
 afterEach(() => {
@@ -34,6 +38,92 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: /zoom in/i })).toBeInTheDocument()
   })
 
+  it('modela localizaciones jerarquicas en la vista fisica', () => {
+    render(<App />)
+
+    expect(screen.queryByRole('button', { name: 'Nueva ciudad' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Física' }))
+
+    expect(screen.getByRole('button', { name: 'Nueva ciudad' })).toBeInTheDocument()
+    expect(screen.getByText('Localizaciones físicas')).toBeInTheDocument()
+    const albaceteMarker = screen.getAllByRole('button', {
+      name: 'Abrir localización Planta Principal',
+    })[0]
+    fireEvent.pointerDown(albaceteMarker, {
+      button: 0,
+      clientX: 360,
+      clientY: 580,
+      pointerId: 1,
+    })
+    fireEvent.pointerUp(albaceteMarker, {
+      clientX: 360,
+      clientY: 580,
+      pointerId: 1,
+    })
+
+    const addBuildingButton = screen.getByRole('button', { name: 'Nuevo edificio' })
+    expect(addBuildingButton).not.toBeDisabled()
+    fireEvent.click(addBuildingButton)
+
+    expect(screen.getAllByText('Edificio 4').length).toBeGreaterThan(0)
+    const addClosetButton = screen.getByRole('button', { name: 'Nuevo cuarto de cableado' })
+    expect(addClosetButton).not.toBeDisabled()
+    fireEvent.click(addClosetButton)
+
+    expect(screen.getAllByText('Cuarto de cableado 1').length).toBeGreaterThan(0)
+    const rackButton = screen.getByRole('button', { name: 'Rack' })
+    expect(rackButton).not.toBeDisabled()
+    fireEvent.click(rackButton)
+
+    expect(screen.getAllByText('Rack 1').length).toBeGreaterThan(0)
+  })
+
+  it('permite mover localizaciones y elementos físicos colocados', () => {
+    const captureMock = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, 'setPointerCapture', {
+      configurable: true,
+      value: captureMock,
+    })
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      bottom: 1000,
+      height: 1000,
+      left: 0,
+      right: 1000,
+      top: 0,
+      width: 1000,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    })
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Física' }))
+    const albaceteMarker = screen.getAllByRole('button', {
+      name: 'Abrir localización Planta Principal',
+    })[0]
+
+    fireEvent.pointerDown(albaceteMarker, {
+      button: 0,
+      clientX: 360,
+      clientY: 580,
+      pointerId: 1,
+    })
+    fireEvent.pointerMove(albaceteMarker, {
+      clientX: 800,
+      clientY: 220,
+      pointerId: 1,
+    })
+    fireEvent.pointerUp(albaceteMarker, {
+      clientX: 800,
+      clientY: 220,
+      pointerId: 1,
+    })
+
+    expect(captureMock).toHaveBeenCalledWith(1)
+    expect(albaceteMarker).toHaveStyle({ left: '80%', top: '22%' })
+  })
+
   it('crea un cable nuevo mediante el flujo por puertos tipo gns3', () => {
     render(<App />)
     const workspace = screen.getAllByRole('application')[0]
@@ -60,20 +150,58 @@ describe('App', () => {
     ).toBeGreaterThan(0)
   })
 
-  it('abre una consola dedicada por nodo seleccionado', () => {
+  it('permite añadir un mapa de imagen a la localización seleccionada', async () => {
     render(<App />)
 
-    fireEvent.click(screen.getByRole('button', { name: /Router Core/i }))
-    const openConsoleButton = screen
-      .getAllByRole('button', { name: 'Abrir consola del nodo' })
-      .find((button) => !button.hasAttribute('disabled'))
-    expect(openConsoleButton).toBeDefined()
-    fireEvent.click(openConsoleButton!)
+    fireEvent.click(screen.getByRole('button', { name: 'Física' }))
+    const file = new File(['mapa demo'], 'planta.png', { type: 'image/png' })
+    fireEvent.change(screen.getByLabelText('Archivo de mapa físico'), {
+      target: { files: [file] },
+    })
 
-    expect(screen.getByRole('tab', { name: /router core/i })).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByText('planta.png')).toBeInTheDocument()
+    })
+    expect(screen.getByAltText('Mapa físico de Mapa interurbano')).toHaveAttribute(
+      'src',
+      expect.stringMatching(/^data:image\/png;base64,/),
+    )
+    expect(screen.queryByLabelText('Consola estilo GNS3')).not.toBeInTheDocument()
+  })
+
+  it('muestra lab pendiente sin error HTTP cuando aun no esta desplegado', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: 'success',
+        message: 'Pipeline lab is not deployed',
+        data: {
+          topology_name: 'nuevo-proyecto-ot',
+          lab_path: '',
+          abs_lab_path: '',
+          deployed: false,
+          detail: 'Pipeline lab is unavailable: nuevo-proyecto-ot',
+          nodes: [],
+        },
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Inspeccionar lab' })[0])
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://localhost:8000/api/v1/pipeline/labs/nuevo-proyecto-ot',
+        expect.objectContaining({ method: 'GET' }),
+      )
+    })
     expect(
-      screen.getByText(/Consola del runtime Linux del lab/i),
-    ).toBeInTheDocument()
+      screen.getAllByText(/Lab no desplegado para nuevo-proyecto-ot/i).length,
+    ).toBeGreaterThan(0)
+    expect(screen.queryByText('ERROR')).not.toBeInTheDocument()
   })
 
   it('permite crear y editar dibujos fisicos tipo gns3', () => {
@@ -324,7 +452,7 @@ describe('App', () => {
           ],
           edges: [],
           drawings: [],
-          active_view: 'physical',
+          active_view: 'logical',
         },
       }),
     })
@@ -340,6 +468,31 @@ describe('App', () => {
     })
     expect((await screen.findAllByText('demo-planta')).length).toBeGreaterThan(0)
     expect(screen.getAllByText('Router Core').length).toBeGreaterThan(1)
+  })
+
+  it('ignora estado remoto inexistente sin mostrar error de carga', async () => {
+    window.localStorage.setItem('gemerotic-current-project-v2', 'demo-planta')
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: 'success',
+        message: 'Topology state not found',
+        data: null,
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://localhost:8000/api/v1/topology/state/demo-planta',
+        expect.objectContaining({ method: 'GET' }),
+      )
+    })
+    expect(screen.queryByText('ERROR')).not.toBeInTheDocument()
+    expect(screen.getAllByText('Router Core').length).toBeGreaterThan(0)
   })
 
   it('conserva el draft local si el servidor devuelve un estado mas antiguo', async () => {
@@ -388,7 +541,7 @@ describe('App', () => {
         ],
         edges: [],
         drawings: [],
-        active_view: 'physical',
+        active_view: 'logical',
       }),
     )
     const fetchMock = vi.fn().mockResolvedValue({
@@ -411,7 +564,7 @@ describe('App', () => {
           nodes: [],
           edges: [],
           drawings: [],
-          active_view: 'physical',
+          active_view: 'logical',
         },
       }),
     })
