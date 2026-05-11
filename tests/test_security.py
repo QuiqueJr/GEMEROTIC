@@ -249,6 +249,23 @@ class TestSecurityHeaders:
             "http://localhost:5173"
         )
 
+    def test_cors_preflight_allows_server_frontend_origin(self, monkeypatch):
+        monkeypatch.setattr(settings, "API_KEY", "secret-key")
+
+        with _build_client(monkeypatch, AllowAllRateLimiter()) as client:
+            response = client.options(
+                "/api/v1/topology",
+                headers={
+                    "Origin": "http://212.128.44.220:3000",
+                    "Access-Control-Request-Method": "POST",
+                },
+            )
+
+        assert response.status_code == 200
+        assert response.headers["access-control-allow-origin"] == (
+            "http://212.128.44.220:3000"
+        )
+
 
 class TestHealthSecurity:
     """Tests del health relacionados con el backend compartido."""

@@ -39,13 +39,14 @@ class TestSettings:
         assert settings.RATE_LIMIT_WINDOW_SECONDS == 60
 
     def test_cors_defaults_allow_local_frontend_hosts(self, monkeypatch):
-        """La futura UI local debe poder conectar sin abrir CORS globalmente."""
+        """La UI local y la demo en servidor deben conectar sin abrir CORS globalmente."""
         monkeypatch.delenv("CORS_ALLOWED_ORIGINS", raising=False)
 
         settings = Settings(_env_file=None)
 
         assert "http://localhost:5173" in settings.CORS_ALLOWED_ORIGINS
         assert "http://localhost:3000" in settings.CORS_ALLOWED_ORIGINS
+        assert "http://212.128.44.220:3000" in settings.CORS_ALLOWED_ORIGINS
 
     def test_rate_limit_defaults_are_enabled(self, monkeypatch):
         """El rate limiting debe activarse por defecto en el API."""
