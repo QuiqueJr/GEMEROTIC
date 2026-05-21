@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     NETBOX_VERIFY_SSL: bool = True
     NETBOX_SINGLE_PROJECT_MODE: bool = True
 
+    # --- Persistencia canonica GEMEROTIC ---
+    GRANULAR_STORE_ENABLED: bool = False
+    DATABASE_URL: str = "sqlite:///./var/gemerotic-dev.db"
+    AUTO_DEPLOY_ON_SAVE: bool = False
+    AUTO_DEPLOY_MAX_EVENTS_PER_RUN: int = 20
+    WORKER_POLL_SECONDS: float = 2.0
+
     # --- Seguridad MVP: API key opcional durante pruebas ---
     # FUTURO: reactivar por entorno y reemplazar con usuario (JWT / OAuth2)
     #         para soportar multi-tenancy y tokens individuales de NetBox.

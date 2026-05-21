@@ -24,8 +24,11 @@ import {
   Layers3,
   Link2,
   Network,
+  Power,
+  PowerOff,
   MessageSquare,
   Redo2,
+  RotateCcw,
   Save,
   Settings,
   ShieldCheck,
@@ -49,11 +52,14 @@ import {
 import './App.css'
 import {
   bootstrapNetBox,
+  controlPipelineLabPower,
+  controlPipelineNodePower,
   chatWithComplianceAssistant,
   deploySavedPipeline,
   generateComplianceReport,
   generateSavedPipelineArtifacts,
   getPipelineLabStatus,
+  getProjectJobs,
   getTopologyState,
   type ComplianceChatMessage,
   type ComplianceChatResponse,
@@ -63,10 +69,13 @@ import {
   type HealthResponse,
   type PipelineArtifactsResponse,
   type PipelineLabStatusResponse,
+  type ProjectJob,
+  type RuntimePowerAction,
   type PipelineRunResponse,
   type PipelineToolReportResponse,
   type TopologyProjectStatePayload,
   type TopologyProjectStateSaveResponse,
+  runPipelineConsoleCommand,
   saveTopologyState,
 } from './api/gemeroticApi'
 import { AssetNode } from './components/AssetNode'
@@ -327,6 +336,8 @@ function App() {
     useState<PipelineArtifactsResponse | null>(null)
   const [pipelineRun, setPipelineRun] = useState<PipelineRunResponse | null>(null)
   const [labStatus, setLabStatus] = useState<PipelineLabStatusResponse | null>(null)
+  const [projectJobs, setProjectJobs] = useState<ProjectJob[]>([])
+  const [runtimePowerBusy, setRuntimePowerBusy] = useState(false)
   const [complianceReport, setComplianceReport] =
     useState<ComplianceReportResponse | null>(null)
   const [showComplianceAssistant, setShowComplianceAssistant] = useState(false)
@@ -1553,6 +1564,20 @@ function App() {
     return runOperation(() => bootstrapNetBox(apiConfig), 'Bootstrap de NetBox completado')
   }
 
+  const refreshProjectJobs = async (projectName = payload.name): Promise<ProjectJob[]> => {
+    try {
+      const result = await getProjectJobs(apiConfig, projectName)
+      if (result.ok && result.data.data !== undefined) {
+        const jobs = result.data.data.jobs ?? []
+        setProjectJobs(jobs)
+        return jobs
+      }
+    } catch {
+      // Los jobs granulares son observabilidad; no deben bloquear la edición.
+    }
+    return []
+  }
+
   const refreshWorkflowAfterSave = async (
     savedTopology: TopologyProjectStateSaveResponse,
   ): Promise<string[]> => {
@@ -1638,6 +1663,12 @@ function App() {
       }
     } catch (error) {
       messages.push(`Cumplimiento pendiente: ${error instanceof Error ? error.message : 'petición fallida'}`)
+    }
+
+    const jobs = await refreshProjectJobs(savedTopology.project_name)
+    if (jobs.length > 0) {
+      const pendingJobs = jobs.filter((job) => job.status === 'pending' || job.status === 'running')
+      messages.push(`Trabajos ${pendingJobs.length}/${jobs.length} activos`)
     }
 
     return messages
@@ -1798,6 +1829,108 @@ function App() {
       setOperationMessage(message)
       appendConsole(message, 'error')
       return null
+    }
+  }
+
+  const getRuntimeTopologyName = (): string => {
+    return pipelineRun?.topology_name ?? labStatus?.topology_name ?? payload.name
+  }
+
+  const controlRuntimeNodePower = async (
+    nodeId: string,
+    action: RuntimePowerAction,
+  ) => {
+    if (!ensureProtectedApiConfigured('Control runtime')) {
+      return
+    }
+    const topologyName = getRuntimeTopologyName()
+    setRuntimePowerBusy(true)
+    setOperationStatus('running')
+    try {
+      const result = await controlPipelineNodePower(apiConfig, topologyName, nodeId, action)
+      if (!result.ok || result.data.data === undefined) {
+        const message = extractMessage(result.data, `HTTP ${result.status}`)
+        setOperationStatus('error')
+        setOperationMessage(message)
+        appendConsole(message, 'error')
+        return
+      }
+      const message = `${getPowerActionLabel(action)} ${nodeId}`
+      setOperationStatus('success')
+      setOperationMessage(message)
+      appendConsole(message, 'success')
+      await inspectRuntimeLab(topologyName, { quiet: true })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Petición fallida'
+      setOperationStatus('error')
+      setOperationMessage(message)
+      appendConsole(message, 'error')
+    } finally {
+      setRuntimePowerBusy(false)
+    }
+  }
+
+  const controlRuntimeLabPower = async (action: RuntimePowerAction) => {
+    if (!ensureProtectedApiConfigured('Control runtime')) {
+      return
+    }
+    const topologyName = getRuntimeTopologyName()
+    setRuntimePowerBusy(true)
+    setOperationStatus('running')
+    try {
+      const result = await controlPipelineLabPower(apiConfig, topologyName, action)
+      if (!result.ok || result.data.data === undefined) {
+        const message = extractMessage(result.data, `HTTP ${result.status}`)
+        setOperationStatus('error')
+        setOperationMessage(message)
+        appendConsole(message, 'error')
+        return
+      }
+      const count = result.data.data.node_count ?? result.data.data.results?.length ?? 0
+      const message = `${getPowerActionLabel(action)} gemelo · ${count} nodos`
+      setOperationStatus('success')
+      setOperationMessage(message)
+      appendConsole(message, 'success')
+      await inspectRuntimeLab(topologyName, { quiet: true })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Petición fallida'
+      setOperationStatus('error')
+      setOperationMessage(message)
+      appendConsole(message, 'error')
+    } finally {
+      setRuntimePowerBusy(false)
+    }
+  }
+
+  const openRuntimeConsole = async (nodeId: string) => {
+    if (!ensureProtectedApiConfigured('Consola runtime')) {
+      return
+    }
+    const topologyName = getRuntimeTopologyName()
+    setOperationStatus('running')
+    try {
+      const result = await runPipelineConsoleCommand(
+        apiConfig,
+        topologyName,
+        nodeId,
+        'ip addr show',
+      )
+      if (!result.ok || result.data.data === undefined) {
+        const message = extractMessage(result.data, `HTTP ${result.status}`)
+        setOperationStatus('error')
+        setOperationMessage(message)
+        appendConsole(message, 'error')
+        return
+      }
+      const output = result.data.data.stdout_tail || result.data.data.stderr_tail || 'Sin salida'
+      setOperationStatus('success')
+      setOperationMessage(`Consola ${nodeId}`)
+      appendConsole(`Consola ${nodeId}: ${output}`, 'success')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Petición fallida'
+      setOperationStatus('error')
+      setOperationMessage(message)
+      appendConsole(message, 'error')
     }
   }
 
@@ -2591,9 +2724,81 @@ function App() {
                   <span>Runtime del lab</span>
                   <strong>{labStatus ? `${labStatus.nodes.length} nodos` : 'sin verificar'}</strong>
                 </div>
+                <div className="runtime-control-strip" aria-label="Controles globales del gemelo">
+                  <button
+                    className="toolbar-button toolbar-button--icon"
+                    disabled={runtimePowerBusy}
+                    onClick={() => void controlRuntimeLabPower('start')}
+                    title="Encender gemelo"
+                    type="button"
+                  >
+                    <Power size={16} />
+                  </button>
+                  <button
+                    className="toolbar-button toolbar-button--icon"
+                    disabled={runtimePowerBusy}
+                    onClick={() => void controlRuntimeLabPower('stop')}
+                    title="Apagar gemelo"
+                    type="button"
+                  >
+                    <PowerOff size={16} />
+                  </button>
+                  <button
+                    className="toolbar-button toolbar-button--icon"
+                    disabled={runtimePowerBusy}
+                    onClick={() => void controlRuntimeLabPower('restart')}
+                    title="Reiniciar gemelo"
+                    type="button"
+                  >
+                    <RotateCcw size={16} />
+                  </button>
+                </div>
+                <div className="runtime-control-strip" aria-label="Controles del activo seleccionado">
+                  <span>{selectedNode ? selectedNode.data.label : 'Selecciona un activo'}</span>
+                  <button
+                    className="toolbar-button toolbar-button--icon"
+                    disabled={runtimePowerBusy || selectedNode === null}
+                    onClick={() => selectedNode && void controlRuntimeNodePower(selectedNode.id, 'start')}
+                    title="Encender activo"
+                    type="button"
+                  >
+                    <Power size={16} />
+                  </button>
+                  <button
+                    className="toolbar-button toolbar-button--icon"
+                    disabled={runtimePowerBusy || selectedNode === null}
+                    onClick={() => selectedNode && void controlRuntimeNodePower(selectedNode.id, 'stop')}
+                    title="Apagar activo"
+                    type="button"
+                  >
+                    <PowerOff size={16} />
+                  </button>
+                  <button
+                    className="toolbar-button toolbar-button--icon"
+                    disabled={runtimePowerBusy || selectedNode === null}
+                    onClick={() => selectedNode && void controlRuntimeNodePower(selectedNode.id, 'restart')}
+                    title="Reiniciar activo"
+                    type="button"
+                  >
+                    <RotateCcw size={16} />
+                  </button>
+                  <button
+                    className="toolbar-button toolbar-button--icon"
+                    disabled={selectedNode === null}
+                    onClick={() => selectedNode && void openRuntimeConsole(selectedNode.id)}
+                    title="Abrir consola del activo"
+                    type="button"
+                  >
+                    <TerminalSquare size={16} />
+                  </button>
+                </div>
                 <div className="server-summary__row">
                   <span>Cumplimiento</span>
                   <strong>{getCompliancePostureLabel(complianceReport?.summary.overall_posture)}</strong>
+                </div>
+                <div className="server-summary__row">
+                  <span>Trabajos</span>
+                  <strong>{projectJobs.length > 0 ? `${projectJobs.length} recientes` : 'sin cola'}</strong>
                 </div>
               </div>
 
@@ -4186,6 +4391,16 @@ function compactDetail(detail: string | null, fallback: string): string {
 function buildLabUnavailableMessage(topologyName: string, detail?: string | null): string {
   const suffix = detail ? ` Detalle: ${compactDetail(detail, topologyName)}` : ''
   return `Lab no desplegado para ${topologyName}. Pulsa Desplegar pipeline antes de inspeccionar o usar la consola.${suffix}`
+}
+
+function getPowerActionLabel(action: RuntimePowerAction): string {
+  if (action === 'start') {
+    return 'Encendido'
+  }
+  if (action === 'stop') {
+    return 'Apagado'
+  }
+  return 'Reinicio'
 }
 
 function isLabStatusDeployed(status: PipelineLabStatusResponse): boolean {

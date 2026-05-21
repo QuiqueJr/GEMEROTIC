@@ -161,6 +161,23 @@ class TopologyStore:
             },
         )
 
+    def update_pipeline_deploy(
+        self,
+        topology_name: str,
+        deploy_result: dict[str, Any],
+    ) -> None:
+        """Anotar el resultado del despliegue transparente en metadata."""
+        topology_dir = self._topology_dir(topology_name)
+        metadata_file = topology_dir / "metadata.json"
+        self._merge_metadata(
+            metadata_file,
+            {
+                "topology_name": topology_name,
+                "pipeline_deploy": deploy_result,
+                "updated_at": datetime.now(UTC).isoformat(),
+            },
+        )
+
     def _topology_dir(self, topology_name: str) -> Path:
         """Resolver un directorio seguro dentro del store."""
         safe_name = validate_slug(topology_name, "Topology name")

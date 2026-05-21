@@ -5,9 +5,11 @@ Fixtures compartidos para todos los tests.
 import pytest
 from fastapi.testclient import TestClient
 
+from app.config import settings
 from app.core.rate_limit import RateLimitDecision
 from app.dependencies import get_netbox_client
 from app.main import create_app
+from app.persistence.database import reset_engine_for_tests
 
 
 class DisconnectedNetBoxClient:
@@ -37,6 +39,19 @@ class AllowAllRateLimiter:
 
     async def aclose(self) -> None:
         return None
+
+
+@pytest.fixture(autouse=True)
+def isolated_runtime_settings(monkeypatch):
+    """
+    Aisla los tests del .env real de despliegue.
+    """
+    monkeypatch.setattr(settings, "GRANULAR_STORE_ENABLED", False)
+    monkeypatch.setattr(settings, "AUTO_DEPLOY_ON_SAVE", False)
+    monkeypatch.setattr(settings, "DATABASE_URL", "sqlite:///./var/test.db")
+    reset_engine_for_tests()
+    yield
+    reset_engine_for_tests()
 
 
 @pytest.fixture()

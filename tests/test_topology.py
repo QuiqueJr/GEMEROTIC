@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.config import settings
-from app.dependencies import get_netbox_client, get_topology_store
+from app.dependencies import get_netbox_client, get_pipeline_runner, get_topology_store
 from app.main import create_app
 from app.schemas.physical import AssetType, RackType
 from app.schemas.topology import TopologyCreate
@@ -223,6 +223,32 @@ class BrokenNetBoxTopologyClient:
         raise NetBoxClientError("NetBox project state sync failed")
 
 
+class FakePipelineRunner:
+    """Runner mínimo para tests de despliegue automático."""
+
+    def __init__(self):
+        self.deployed: list[str] = []
+
+    def deploy(self, topology: TopologyCreate):
+        self.deployed.append(topology.name)
+        return SimpleNamespace(
+            model_dump=lambda: {
+                "topology_name": topology.name,
+                "bundle_dir": "/tmp/gemerotic-test",
+                "artifacts": [],
+                "commands": [],
+            }
+        )
+
+
+class FailingPipelineRunner(FakePipelineRunner):
+    """Runner que simula un fallo externo de despliegue."""
+
+    def deploy(self, topology: TopologyCreate):
+        self.deployed.append(topology.name)
+        raise RuntimeError("containerlab failed")
+
+
 class FakeTopologyStore:
     """Store mínimo en memoria para tests de endpoints."""
 
@@ -230,6 +256,7 @@ class FakeTopologyStore:
         self.saved: dict[str, TopologyCreate] = {}
         self.project_states: dict[str, dict] = {}
         self.sync_results: dict[str, dict] = {}
+        self.pipeline_deploys: dict[str, dict] = {}
 
     def save(self, topology: TopologyCreate) -> dict:
         self.saved[topology.name] = topology
@@ -265,18 +292,25 @@ class FakeTopologyStore:
     def update_netbox_sync(self, topology_name: str, sync_result: dict) -> None:
         self.sync_results[topology_name] = sync_result
 
+    def update_pipeline_deploy(self, topology_name: str, deploy_result: dict) -> None:
+        self.pipeline_deploys[topology_name] = deploy_result
+
 
 def _build_client_with_override(
     fake_client,
     monkeypatch,
     api_key: str = "test-api-key",
     topology_store=None,
+    pipeline_runner=None,
 ) -> TestClient:
     monkeypatch.setattr(settings, "API_KEY", api_key)
     application = create_app(rate_limiter=AllowAllRateLimiter())
     application.dependency_overrides[get_netbox_client] = lambda: fake_client
-    application.dependency_overrides[get_topology_store] = (
-        lambda: topology_store or FakeTopologyStore()
+    application.dependency_overrides[get_topology_store] = lambda: (
+        topology_store or FakeTopologyStore()
+    )
+    application.dependency_overrides[get_pipeline_runner] = lambda: (
+        pipeline_runner or FakePipelineRunner()
     )
     return TestClient(application)
 
@@ -657,12 +691,50 @@ class TestTopologyEndpoint:
         assert data["project_name"] == "mvp-lab-01"
         assert data["topology_validation"]["status"] == "valid"
         assert data["netbox_sync"]["status"] == "queued"
-        assert data["netbox_sync"]["detail"] == "Operational NetBox sync queued"
-        assert topology_store.sync_results["mvp-lab-01"]["status"] == "synchronized"
+        assert data["netbox_sync"]["detail"] == "Draft NetBox sync queued"
+        assert (
+            topology_store.sync_results["mvp-lab-01"]["status"] == "draft_synchronized"
+        )
         assert topology_store.project_states["mvp-lab-01"]["settings"]["name"] == (
             "mvp-lab-01"
         )
         assert "mvp-lab-01" in topology_store.saved
+
+    def test_save_state_auto_deploys_valid_matching_topology_when_enabled(
+        self, monkeypatch
+    ):
+        payload = _mvp_topology_payload()
+        topology_store = FakeTopologyStore()
+        pipeline_runner = FakePipelineRunner()
+        monkeypatch.setattr(settings, "AUTO_DEPLOY_ON_SAVE", True)
+        state_payload = {
+            "project_name": "mvp-lab-01",
+            "version": 1,
+            "settings": {"name": "mvp-lab-01"},
+            "nodes": [{"id": device["id"]} for device in payload["devices"]],
+            "edges": [{"id": cable["id"]} for cable in payload["cables"]],
+            "drawings": [],
+            "active_view": "physical",
+            "topology": payload,
+        }
+
+        with _build_client_with_override(
+            ConnectedTopologyClient(),
+            monkeypatch,
+            topology_store=topology_store,
+            pipeline_runner=pipeline_runner,
+        ) as client:
+            response = client.put(
+                "/api/v1/topology/state/mvp-lab-01",
+                json=state_payload,
+                headers={"X-API-Key": "test-api-key"},
+            )
+
+        data = response.json()["data"]
+        assert response.status_code == 201
+        assert data["pipeline_deploy"]["status"] == "deployed"
+        assert pipeline_runner.deployed == ["mvp-lab-01"]
+        assert topology_store.pipeline_deploys["mvp-lab-01"]["status"] == "deployed"
 
     def test_save_state_survives_invalid_topology_payload(self, monkeypatch):
         payload = _mvp_topology_payload()
@@ -777,9 +849,7 @@ class TestTopologyEndpoint:
         assert response.status_code == 200
         assert response.json()["data"]["active_view"] == "logical"
 
-    def test_get_state_returns_empty_state_when_project_is_missing(
-        self, monkeypatch
-    ):
+    def test_get_state_returns_empty_state_when_project_is_missing(self, monkeypatch):
         with _build_client_with_override(
             ConnectedTopologyClient(),
             monkeypatch,

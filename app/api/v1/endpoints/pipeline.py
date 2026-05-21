@@ -5,8 +5,9 @@ Endpoints de generación de artefactos del pipeline.
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.security import require_api_key
-from app.dependencies import get_topology_store
+from app.dependencies import get_pipeline_runner, get_topology_store
 from app.schemas.pipeline import PipelineConsoleRequest, PipelineLabStatus
+from app.schemas.project_commands import RuntimePowerRequest
 from app.schemas.responses import APIResponse
 from app.schemas.topology import TopologyCreate
 from app.services.pipeline_artifacts import PipelineArtifactGenerator
@@ -25,11 +26,6 @@ from app.services.topology_store import (
 )
 
 router = APIRouter(prefix="/pipeline")
-
-
-def get_pipeline_runner() -> PipelineRunner:
-    """Crear runner local del pipeline."""
-    return PipelineRunner()
 
 
 @router.post(
@@ -246,6 +242,94 @@ async def run_pipeline_node_console(
     return APIResponse(
         message="Pipeline console command executed",
         data=result.model_dump(),
+    )
+
+
+@router.post(
+    "/labs/{topology_name}/nodes/{node_id}/power",
+    response_model=APIResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Encender, apagar o reiniciar un nodo del lab",
+)
+async def control_pipeline_node_power(
+    topology_name: str,
+    node_id: str,
+    request: RuntimePowerRequest,
+    _: None = Depends(require_api_key),
+    runner: PipelineRunner = Depends(get_pipeline_runner),
+) -> APIResponse:
+    """Controlar el ciclo de vida de un activo desplegado."""
+    try:
+        result = runner.control_node_power(topology_name, node_id, request.action)
+    except PipelineToolError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    except PipelineLabNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except PipelineNodeNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except PipelineRuntimeCommandError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except PipelineExecutionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+    return APIResponse(
+        message="Pipeline node power action executed",
+        data=result,
+    )
+
+
+@router.post(
+    "/labs/{topology_name}/power",
+    response_model=APIResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Encender, apagar o reiniciar todos los nodos del lab",
+)
+async def control_pipeline_lab_power(
+    topology_name: str,
+    request: RuntimePowerRequest,
+    _: None = Depends(require_api_key),
+    runner: PipelineRunner = Depends(get_pipeline_runner),
+) -> APIResponse:
+    """Controlar el ciclo de vida global del gemelo desplegado."""
+    try:
+        result = runner.control_lab_power(topology_name, request.action)
+    except PipelineToolError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    except PipelineLabNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except PipelineRuntimeCommandError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except PipelineExecutionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+    return APIResponse(
+        message="Pipeline lab power action executed",
+        data=result,
     )
 
 

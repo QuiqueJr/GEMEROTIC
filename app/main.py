@@ -17,6 +17,7 @@ from app.core.rate_limit import (
     RedisSlidingWindowRateLimiter,
 )
 from app.core.security import RateLimitMiddleware, SecurityHeadersMiddleware
+from app.persistence.database import init_database
 
 
 def build_rate_limiter() -> RateLimitBackend:
@@ -39,6 +40,7 @@ def create_app(rate_limiter: RateLimitBackend | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(application: FastAPI):
         application.state.rate_limiter = application_rate_limiter
+        init_database()
         try:
             yield
         finally:

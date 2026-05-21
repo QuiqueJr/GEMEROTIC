@@ -39,7 +39,7 @@ class TestSettings:
         assert settings.RATE_LIMIT_WINDOW_SECONDS == 60
 
     def test_cors_defaults_allow_local_frontend_hosts(self, monkeypatch):
-        """La UI local y la demo en servidor deben conectar sin abrir CORS globalmente."""
+        """La UI local y la demo remota conectan sin abrir CORS global."""
         monkeypatch.delenv("CORS_ALLOWED_ORIGINS", raising=False)
 
         settings = Settings(_env_file=None)

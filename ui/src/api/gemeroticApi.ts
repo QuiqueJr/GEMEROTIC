@@ -87,6 +87,16 @@ export type TopologyProjectStateSaveResponse = {
   }
   netbox_sync: NetBoxSyncStatus
   netbox_cleanup?: NetBoxSyncStatus
+  pipeline_deploy?: NetBoxSyncStatus
+  granular_store?: {
+    project_name?: string
+    revision?: number
+    jobs_queued?: string[]
+    deployment_status?: string
+    netbox_status?: string
+    status?: string
+    detail?: string
+  }
 }
 
 export type PipelineCommandResult = {
@@ -145,6 +155,56 @@ export type PipelineConsoleResultResponse = {
   exit_code: number
   stdout_tail: string
   stderr_tail: string
+}
+
+export type RuntimePowerAction = 'start' | 'stop' | 'restart'
+
+export type RuntimePowerResponse = {
+  topology_name: string
+  action: RuntimePowerAction
+  node_id?: string
+  container_name?: string
+  node_count?: number
+  exit_code?: string
+  stdout_tail?: string
+  stderr_tail?: string
+  results?: RuntimePowerResponse[]
+}
+
+export type ProjectJob = {
+  id: string
+  project_name: string
+  event_type: string
+  entity_type: string | null
+  entity_id: string | null
+  revision: number
+  status: 'pending' | 'running' | 'done' | 'failed'
+  attempts: number
+  error: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+export type ProjectJobsResponse = {
+  project_name: string
+  jobs: ProjectJob[]
+}
+
+export type ProjectCommandPayload = {
+  command_type: string
+  entity_id?: string
+  entity_type?: string
+  payload?: Record<string, unknown>
+  expected_revision?: number
+  idempotency_key?: string
+}
+
+export type ProjectCommandResponse = {
+  project_name: string
+  revision: number
+  entity_type: string | null
+  entity_id: string | null
+  jobs_queued: string[]
 }
 
 export type ComplianceStatus = 'pass' | 'fail' | 'warn' | 'not_assessed'
@@ -361,6 +421,69 @@ export async function runPipelineConsoleCommand(
       method: 'POST',
       apiKeyRequired: true,
       body: { command },
+    },
+  )
+}
+
+export async function applyProjectCommand(
+  config: APIConfig,
+  projectName: string,
+  payload: ProjectCommandPayload,
+): Promise<APIResult<APIEnvelope<ProjectCommandResponse>>> {
+  return requestJson<APIEnvelope<ProjectCommandResponse>>(
+    config,
+    `/api/v1/projects/${encodeURIComponent(projectName)}/commands`,
+    {
+      method: 'POST',
+      apiKeyRequired: true,
+      body: payload,
+    },
+  )
+}
+
+export async function getProjectJobs(
+  config: APIConfig,
+  projectName: string,
+): Promise<APIResult<APIEnvelope<ProjectJobsResponse>>> {
+  return requestJson<APIEnvelope<ProjectJobsResponse>>(
+    config,
+    `/api/v1/projects/${encodeURIComponent(projectName)}/jobs`,
+    {
+      method: 'GET',
+      apiKeyRequired: true,
+    },
+  )
+}
+
+export async function controlPipelineNodePower(
+  config: APIConfig,
+  topologyName: string,
+  nodeId: string,
+  action: RuntimePowerAction,
+): Promise<APIResult<APIEnvelope<RuntimePowerResponse>>> {
+  return requestJson<APIEnvelope<RuntimePowerResponse>>(
+    config,
+    `/api/v1/pipeline/labs/${encodeURIComponent(topologyName)}/nodes/${encodeURIComponent(nodeId)}/power`,
+    {
+      method: 'POST',
+      apiKeyRequired: true,
+      body: { action },
+    },
+  )
+}
+
+export async function controlPipelineLabPower(
+  config: APIConfig,
+  topologyName: string,
+  action: RuntimePowerAction,
+): Promise<APIResult<APIEnvelope<RuntimePowerResponse>>> {
+  return requestJson<APIEnvelope<RuntimePowerResponse>>(
+    config,
+    `/api/v1/pipeline/labs/${encodeURIComponent(topologyName)}/power`,
+    {
+      method: 'POST',
+      apiKeyRequired: true,
+      body: { action },
     },
   )
 }

@@ -9,7 +9,7 @@ persistir zonas y conductos.
 from __future__ import annotations
 
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from hashlib import sha1
 from typing import Any
@@ -228,6 +228,7 @@ class TopologyImporter:
             rack_records[rack.id] = record
             summaries["racks"].register(rack.id, record, created)
 
+        duplicate_device_names = self._duplicate_device_names(topology.devices)
         for device in topology.devices:
             site_record, room_record, rack_record = self._resolve_device_placement(
                 topology,
@@ -242,6 +243,11 @@ class TopologyImporter:
                 site_record=site_record,
                 room_record=room_record,
                 rack_record=rack_record,
+                netbox_name=self._netbox_device_name(
+                    topology.name,
+                    device,
+                    duplicate_device_names,
+                ),
             )
             device_records[device.id] = record
             summaries["devices"].register(device.id, record, created)
@@ -437,7 +443,7 @@ class TopologyImporter:
         site_record, created = self._ensure_site(
             project_name,
             site_id,
-            _text(settings.get("siteName"), "Planta Principal"),
+            _label(settings.get("siteName"), "Planta Principal"),
             None,
         )
         summaries["sites"].register(site_id, site_record, created)
@@ -445,14 +451,14 @@ class TopologyImporter:
         room_record, created = self._ensure_room(
             project_name,
             room_id,
-            _text(settings.get("roomName"), "Cuarto Servidores"),
+            _label(settings.get("roomName"), "Cuarto Servidores"),
             site_record,
         )
         summaries["rooms"].register(room_id, room_record, created)
 
         rack = RackSchema(
             id=rack_id,
-            name=_text(settings.get("rackName"), "Rack Red 01"),
+            name=_label(settings.get("rackName"), "Rack Red 01"),
             room_id=room_id,
             rack_type=RackType.MIXED,
         )
@@ -465,6 +471,7 @@ class TopologyImporter:
         summaries["racks"].register(rack_id, rack_record, created)
 
         port_bindings: dict[str, PortBinding] = {}
+        duplicate_device_names = self._duplicate_device_names(draft_devices)
         for node, device in zip(nodes, draft_devices, strict=True):
             record, created = self._ensure_device(
                 topology_name=project_name,
@@ -474,6 +481,11 @@ class TopologyImporter:
                 rack_record=rack_record,
                 sync_state=DEFAULT_DRAFT_SYNC_STATE,
                 canvas_position=_node_canvas_position(node),
+                netbox_name=self._netbox_device_name(
+                    project_name,
+                    device,
+                    duplicate_device_names,
+                ),
             )
             summaries["devices"].register(device.id, record, created)
 
@@ -536,7 +548,7 @@ class TopologyImporter:
 
         return DeviceSchema(
             id=node_id,
-            name=_text(data.get("label"), node_id),
+            name=_label(data.get("label"), node_id),
             asset_type=_enum_value(AssetType, data.get("assetType"), AssetType.HOST),
             rack_id=rack_id,
             rack_position=_optional_int_in_range(
@@ -923,6 +935,7 @@ class TopologyImporter:
         rack_record: Any | None,
         sync_state: str = DEFAULT_DEPLOYABLE_SYNC_STATE,
         canvas_position: str | None = None,
+        netbox_name: str | None = None,
     ) -> tuple[Any, bool]:
         scoped_device_id = self._scoped_token(topology_name, device.id)
         manufacturer = self._ensure_manufacturer(device.manufacturer or "Generic")
@@ -939,7 +952,8 @@ class TopologyImporter:
             )
 
         payload: dict[str, Any] = {
-            "name": self._scoped_name(
+            "name": netbox_name
+            or self._scoped_name(
                 topology_name,
                 device.name,
                 max_length=DEFAULT_DEVICE_NAME_MAX_LENGTH,
@@ -1412,6 +1426,34 @@ class TopologyImporter:
     def _default_model_name(self, asset_type: str) -> str:
         return asset_type.replace("_", " ").title()
 
+    def _duplicate_device_names(self, devices: list[DeviceSchema]) -> set[str]:
+        """Detectar etiquetas repetidas que NetBox no acepta en el mismo site."""
+        counts = Counter(device.name for device in devices)
+        return {name for name, count in counts.items() if count > 1}
+
+    def _netbox_device_name(
+        self,
+        topology_name: str,
+        device: DeviceSchema,
+        duplicate_device_names: set[str],
+    ) -> str:
+        """Construir nombre único en NetBox sin cambiar la etiqueta visual."""
+        raw_name = device.name
+        if device.name in duplicate_device_names:
+            suffix = f" {device.id}"
+            project_suffix = f" [{topology_name}]"
+            max_base_length = (
+                DEFAULT_DEVICE_NAME_MAX_LENGTH
+                - len(suffix)
+                - len(project_suffix)
+            )
+            raw_name = f"{truncate_text(device.name, max(4, max_base_length))}{suffix}"
+        return self._scoped_name(
+            topology_name,
+            raw_name,
+            max_length=DEFAULT_DEVICE_NAME_MAX_LENGTH,
+        )
+
     def _serialize_summary(self, summary: ResourceSummary) -> dict[str, Any]:
         return {
             "created": summary.created,
@@ -1501,6 +1543,14 @@ def _text(value: Any, fallback: str) -> str:
     if isinstance(value, str) and value.strip():
         return value.strip()
     return fallback
+
+
+def _label(value: Any, fallback: str) -> str:
+    """Convertir texto visual en etiqueta compatible con schemas físicos."""
+    raw = _text(value, fallback)
+    cleaned = re.sub(r"[^a-zA-Z0-9 _-]+", " ", raw)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned or fallback
 
 
 def _optional_text(value: Any) -> str | None:

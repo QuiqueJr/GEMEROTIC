@@ -2,6 +2,7 @@
 Endpoint principal de topología.
 """
 
+import re
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
@@ -9,12 +10,19 @@ from pydantic import ValidationError
 
 from app.config import settings
 from app.core.security import require_api_key
-from app.dependencies import get_netbox_client, get_topology_store
+from app.dependencies import get_netbox_client, get_pipeline_runner, get_topology_store
+from app.persistence.database import get_session_factory, init_database
 from app.schemas.project_state import TopologyProjectState
 from app.schemas.responses import APIResponse
 from app.schemas.topology import TopologyCreate
 from app.schemas.validators import validate_slug
+from app.services.granular_project_store import GranularProjectStore
 from app.services.netbox_client import NetBoxClient, NetBoxClientError
+from app.services.pipeline_runner import (
+    PipelineExecutionError,
+    PipelineRunner,
+    PipelineToolError,
+)
 from app.services.topology_importer import TopologyImportError
 from app.services.topology_store import (
     TopologyNotFoundError,
@@ -77,6 +85,7 @@ async def save_topology_state(
     background_tasks: BackgroundTasks,
     _: None = Depends(require_api_key),
     netbox_client: NetBoxClient = Depends(get_netbox_client),
+    pipeline_runner: PipelineRunner = Depends(get_pipeline_runner),
     topology_store: TopologyStore = Depends(get_topology_store),
 ) -> APIResponse:
     """Guardar borrador visual y ejecutar derivaciones de mejor esfuerzo."""
@@ -95,16 +104,20 @@ async def save_topology_state(
 
     state_payload = project_state.model_dump(mode="json", exclude_none=True)
     saved_state = topology_store.save_project_state(safe_project_name, state_payload)
+    granular_save = _try_save_granular_project_state(safe_project_name, state_payload)
+    if granular_save is not None:
+        saved_state["granular_store"] = granular_save
+
     derived = _try_save_operational_topology(
         safe_project_name,
         state_payload.get("topology"),
         topology_store,
     )
-    queued_sync = _queued_netbox_sync(derived, project_state.nodes)
+    queued_sync = _queued_netbox_sync(derived, state_payload)
     derived["netbox_sync"] = queued_sync
-    if len(project_state.nodes) == 0:
+    if len(_project_nodes(state_payload)) == 0:
         derived["netbox_cleanup"] = queued_sync
-    elif derived["topology_validation"]["status"] != "valid":
+    elif queued_sync["detail"] == "Draft NetBox sync queued":
         derived["netbox_draft_sync"] = queued_sync
 
     background_tasks.add_task(
@@ -115,6 +128,14 @@ async def save_topology_state(
         topology_store,
     )
 
+    topology = _build_topology_or_none(state_payload.get("topology"))
+    if _should_auto_deploy(state_payload, topology, derived):
+        derived["pipeline_deploy"] = _deploy_topology_after_save(
+            topology,
+            pipeline_runner,
+            topology_store,
+        )
+
     return APIResponse(
         message="Topology state saved successfully",
         data={
@@ -122,6 +143,28 @@ async def save_topology_state(
             **derived,
         },
     )
+
+
+def _try_save_granular_project_state(
+    project_name: str,
+    project_state: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Guardar la fuente granular si esta habilitada."""
+    if not settings.GRANULAR_STORE_ENABLED:
+        return None
+    try:
+        init_database()
+        session_factory = get_session_factory()
+        with session_factory() as session:
+            return GranularProjectStore(session).save_project_state(
+                project_name,
+                project_state,
+            )
+    except Exception as exc:  # pragma: no cover - defensa de persistencia nueva
+        return {
+            "status": "failed",
+            "detail": str(exc),
+        }
 
 
 def _sync_netbox_from_project_state(
@@ -136,21 +179,26 @@ def _sync_netbox_from_project_state(
         netbox_client,
         topology_store,
     )
-    raw_topology = project_state.get("topology")
-    topology = _build_topology_or_none(raw_topology)
-    if topology is not None:
-        sync_result = _try_import_topology_to_netbox(topology, netbox_client)
-        if project_cleanup is not None:
-            sync_result["project_cleanup"] = project_cleanup
-        topology_store.update_netbox_sync(topology.name, sync_result)
-        return
-
-    if len(_project_nodes(project_state)) == 0:
+    nodes = _project_nodes(project_state)
+    if len(nodes) == 0:
         sync_result = _try_clean_netbox_project(project_name, netbox_client)
         if project_cleanup is not None:
             sync_result["project_cleanup"] = project_cleanup
         topology_store.update_netbox_sync(project_name, sync_result)
         return
+
+    raw_topology = project_state.get("topology")
+    topology = _build_topology_or_none(raw_topology)
+    if topology is not None and _topology_matches_project_state(
+        project_state,
+        topology,
+    ):
+        sync_result = _try_import_topology_to_netbox(topology, netbox_client)
+        if project_cleanup is not None:
+            sync_result["project_cleanup"] = project_cleanup
+        topology_store.update_netbox_sync(topology.name, sync_result)
+        if sync_result["status"] == "synchronized":
+            return
 
     draft_sync = _try_sync_project_state(
         project_name,
@@ -206,6 +254,47 @@ async def create_topology(
     )
 
 
+def _should_auto_deploy(
+    project_state: dict[str, Any],
+    topology: TopologyCreate | None,
+    derived: dict[str, Any],
+) -> bool:
+    """Decidir si el guardado debe reconciliar el runtime automaticamente."""
+    if not settings.AUTO_DEPLOY_ON_SAVE:
+        return False
+    if topology is None:
+        return False
+    if derived["topology_validation"]["status"] != "valid":
+        return False
+    if len(_project_nodes(project_state)) == 0:
+        return False
+    return _topology_matches_project_state(project_state, topology)
+
+
+def _deploy_topology_after_save(
+    topology: TopologyCreate,
+    pipeline_runner: PipelineRunner,
+    topology_store: TopologyStore,
+) -> dict[str, Any]:
+    """Ejecutar Containerlab + Ansible de forma transparente al guardar."""
+    deploy_result: dict[str, Any] = {
+        "status": "deployed",
+        "detail": None,
+        "result": None,
+    }
+    try:
+        result = pipeline_runner.deploy(topology)
+        deploy_result["result"] = result.model_dump()
+    except (PipelineToolError, PipelineExecutionError) as exc:
+        deploy_result["status"] = "failed"
+        deploy_result["detail"] = str(exc)
+    except Exception as exc:  # pragma: no cover - defensa del proceso externo
+        deploy_result["status"] = "failed"
+        deploy_result["detail"] = f"Automatic deployment failed: {exc}"
+    topology_store.update_pipeline_deploy(topology.name, deploy_result)
+    return deploy_result
+
+
 def _try_save_operational_topology(
     project_name: str,
     raw_topology: Any,
@@ -259,11 +348,17 @@ def _try_save_operational_topology(
 
 def _queued_netbox_sync(
     derived: dict[str, Any],
-    nodes: list[dict[str, Any]],
+    project_state: dict[str, Any],
 ) -> dict[str, Any]:
     """Describir la sincronización NetBox que queda en segundo plano."""
+    nodes = _project_nodes(project_state)
     validation_status = derived["topology_validation"]["status"]
-    if validation_status == "valid":
+    topology = _build_topology_or_none(project_state.get("topology"))
+    if (
+        validation_status == "valid"
+        and topology is not None
+        and _topology_matches_project_state(project_state, topology)
+    ):
         detail = "Operational NetBox sync queued"
     elif len(nodes) == 0:
         detail = "NetBox cleanup queued"
@@ -315,6 +410,40 @@ def _project_nodes(project_state: dict[str, Any]) -> list[dict[str, Any]]:
     return [node for node in nodes if isinstance(node, dict)]
 
 
+def _project_edges(project_state: dict[str, Any]) -> list[dict[str, Any]]:
+    """Extraer enlaces visuales válidos de un estado permisivo."""
+    edges = project_state.get("edges")
+    if not isinstance(edges, list):
+        return []
+    return [edge for edge in edges if isinstance(edge, dict)]
+
+
+def _topology_matches_project_state(
+    project_state: dict[str, Any],
+    topology: TopologyCreate,
+) -> bool:
+    """Evitar que NetBox se quede con una topología operativa obsoleta."""
+    node_ids = {
+        _builder_slug(node.get("id"))
+        for node in _project_nodes(project_state)
+        if _builder_slug(node.get("id"))
+    }
+    topology_device_ids = {device.id for device in topology.devices}
+    if node_ids != topology_device_ids:
+        return False
+
+    return len(_project_edges(project_state)) == len(topology.cables)
+
+
+def _builder_slug(value: Any) -> str:
+    """Normalizar IDs visuales con la misma tolerancia que el importador draft."""
+    if not isinstance(value, str):
+        return ""
+    normalized = re.sub(r"[^a-z0-9]+", "-", value.lower())
+    parts = [part for part in normalized.replace("_", "-").split("-") if part]
+    return "-".join(parts)
+
+
 def _try_sync_project_state(
     project_name: str,
     project_state: dict[str, Any],
@@ -332,7 +461,7 @@ def _try_sync_project_state(
             project_name,
             project_state,
         )
-    except (TopologyImportError, NetBoxClientError) as exc:
+    except (TopologyImportError, NetBoxClientError, TypeError, ValueError) as exc:
         netbox_sync["status"] = "failed"
         netbox_sync["detail"] = str(exc)
 

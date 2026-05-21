@@ -1,0 +1,3 @@
+"""
+Persistencia propia de GEMEROTIC.
+"""

@@ -5,7 +5,9 @@ Dependencias compartidas para inyección en endpoints.
 from functools import lru_cache
 
 from app.config import settings
+from app.persistence.database import get_database_session
 from app.services.netbox_client import NetBoxClient
+from app.services.pipeline_runner import PipelineRunner
 from app.services.topology_store import TopologyStore
 
 
@@ -24,3 +26,17 @@ def get_netbox_client() -> NetBoxClient:
 def get_topology_store() -> TopologyStore:
     """Construir el store local de topologías guardadas."""
     return TopologyStore()
+
+
+
+def get_pipeline_runner() -> PipelineRunner:
+    """Construir runner local del pipeline."""
+    return PipelineRunner()
+
+
+__all__ = [
+    "get_database_session",
+    "get_netbox_client",
+    "get_pipeline_runner",
+    "get_topology_store",
+]

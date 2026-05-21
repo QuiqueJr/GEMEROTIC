@@ -12,13 +12,125 @@ UI (React Flow) -> Core API (FastAPI) -> SSoT (NetBox) -> Generador de Configura
 -> Observabilidad (LibreNMS/Oxidized) -> Auditoria de Cumplimiento (OPA)
 ```
 
-> **Nota:** El proyecto se construye fase por fase. Desde Step 10, el pipeline
-> puede escribir un bundle local controlado y ejecutar Containerlab + Ansible
-> mediante comandos allowlistados, sin shell y protegidos por `X-API-Key`.
+> **Nota:** El proyecto se construye fase por fase. Desde Step 11.5, el
+> guardado del builder queda desacoplado en una fuente granular con outbox
+> durable, y el despliegue Containerlab + Ansible se reconcilia de forma
+> transparente desde el ultimo estado persistido.
 
 ---
 
-## Estado Actual: Step 11 - Validacion Batfish con Perfiles Mixtos
+## Estado Actual: Step 11.5 - Persistencia Granular y Runtime Transparente
+
+### Objetivo de este paso
+
+Sustituir el snapshot monolitico del MVP por una base persistente y granular
+que permita escalar proyectos grandes sin reenviar toda la topologia por cada
+cambio pequeno:
+
+```
+UI Builder -> API FastAPI -> PostgreSQL granular + Outbox -> NetBox / Artefactos / Containerlab / Ansible
+```
+
+El objetivo operativo es que el usuario solo guarde su gemelo. A partir de ese
+guardado, GEMEROTIC debe persistir el estado editable, sincronizar NetBox,
+generar artefactos IaC y reconciliar el runtime sin exigir un boton manual de
+despliegue.
+
+### Alcance inicial permitido
+
+- Mantener compatibilidad con el endpoint legacy
+  `PUT /api/v1/topology/state/{project_name}` para no romper la UI actual.
+- Introducir PostgreSQL propio de GEMEROTIC como base canonica granular, sin
+  reutilizar la base interna de NetBox.
+- Separar entidades persistidas por tipo:
+  - estado visual del builder (`ui.settings`, `ui.asset`, `ui.connection`,
+    `ui.drawing`, `ui.physical_layout`)
+  - Capa 1 fisica (`physical.site`, `physical.room`, `physical.rack`,
+    `physical.device`, `physical.patch_panel`, `physical.cable`)
+  - Capa 2 logica (`logical.interface`, `logical.vlan`)
+  - Capa 3 OT (`security.zone`, `security.conduit`)
+  - configuracion por activo (`asset.config`)
+- Encolar trabajos durables de sincronizacion y reconciliacion:
+  - `netbox.sync`
+  - `artifacts.generate`
+  - `deploy.reconcile`
+  - `validate.compliance`
+- Levantar un worker independiente para procesar el outbox.
+- Activar despliegue transparente en servidor mediante
+  `AUTO_DEPLOY_ON_SAVE=true`.
+- Exponer endpoints de proyecto granular:
+  - `GET /api/v1/projects/{project_name}/snapshot`
+  - `POST /api/v1/projects/{project_name}/commands`
+  - `GET /api/v1/projects/{project_name}/jobs`
+- Exponer controles de runtime tipo GNS3/Packet Tracer:
+  - `POST /api/v1/pipeline/labs/{topology_name}/power`
+  - `POST /api/v1/pipeline/labs/{topology_name}/nodes/{node_id}/power`
+  - consola controlada por activo desde la UI.
+
+### Avance actual dentro de Step 11.5
+
+- Se anade `app/persistence/` con SQLAlchemy y tablas:
+  - `gemerotic_projects`
+  - `gemerotic_project_entities`
+  - `gemerotic_outbox_events`
+  - `gemerotic_runtime_nodes`
+- Se anade `GranularProjectStore` como capa de persistencia granular y control
+  de revision optimista.
+- Se anade `granular_importer.py` para traducir el snapshot legacy del builder
+  a entidades granulares sin romper compatibilidad con el frontend existente.
+- Se corrige la identidad granular de `logical.interface`: cuando una interfaz
+  no tiene `id` propio se usa `port_id` como identificador estable, evitando
+  duplicados como `interfaces-unknown`.
+- `PUT /api/v1/topology/state/{project_name}` ahora:
+  - guarda siempre el estado visual en `state.json`
+  - importa el estado a PostgreSQL granular si `GRANULAR_STORE_ENABLED=true`
+  - valida y guarda `TopologyCreate` si existe y es valido
+  - encola la sincronizacion NetBox como best-effort
+  - ejecuta despliegue transparente si el payload operativo es valido y
+    coincide con el canvas guardado
+  - no falla el guardado por errores de NetBox, worker, artefactos o runtime
+- `docker-compose.api.yml` incorpora:
+  - `gemerotic-postgres`
+  - `gemerotic-worker`
+  - `gemerotic-api` dependiente de PostgreSQL sano
+- La UI incorpora controles de runtime:
+  - encender, apagar y reiniciar gemelo completo
+  - encender, apagar y reiniciar activo seleccionado
+  - abrir consola controlada del activo seleccionado
+  - listar trabajos recientes del proyecto
+- La UI mantiene el titulo del navegador como `GEMEROTIC`.
+- El servidor remoto queda desplegado en `/home/enrique/GEMEROTIC/GEMEROTIC`
+  con `GRANULAR_STORE_ENABLED=true` y `AUTO_DEPLOY_ON_SAVE=true`.
+- Verificacion realizada en servidor:
+  - `ruff check .` sin errores
+  - `223 passed` en backend
+  - `47 passed` en frontend
+  - `bun run build` correcto
+  - `GET /api/v1/health` saludable con NetBox y rate limit conectados
+  - PostgreSQL con las cuatro tablas granulares creadas
+  - `nuevo-proyecto-ot` con `deployment_status=ready`,
+    `netbox_status=synchronized` y `validation_status=ready`
+  - Containerlab con 15 nodos de `nuevo-proyecto-ot` en estado `running`
+  - consola controlada por nodo respondiendo desde el frontend y desde API
+  - reinicio de nodo mediante endpoint de power probado correctamente
+
+### Fuera de alcance de Step 11.5
+
+- No sustituir aun el frontend completo por comandos granulares puros; el
+  snapshot legacy sigue siendo el checkpoint compatible mientras se migra la
+  UI por partes.
+- No implementar una terminal interactiva PTY/WebSocket completa. La consola
+  actual ejecuta comandos allowlistados sobre el contenedor del activo.
+- No garantizar imagenes NOS vendor reales para todos los activos. El runtime
+  actual usa perfiles disponibles para demo tangible y queda pendiente cerrar
+  una taxonomia de imagenes por fabricante/tipo de activo.
+- No ejecutar OPA como binario obligatorio; el sistema genera artefactos OPA y
+  mantiene compliance determinista interno, pero OPA sigue pendiente de la fase
+  de auditoria.
+
+---
+
+## Estado Anterior: Step 11 - Validacion Batfish con Perfiles Mixtos
 
 ### Objetivo de este paso
 
@@ -250,9 +362,10 @@ TopologyCreate -> Jinja2 bundle -> Containerlab deploy -> Ansible apply
     best-effort, `GET /api/v1/health`, `GET /api/v1/pipeline/tools`,
     `POST /api/v1/pipeline/artifacts/{topology_name}` y
     `POST /api/v1/compliance/report`
-  - el despliegue real de Containerlab + Ansible no se ejecuta automáticamente
-    al guardar; sigue detrás del botón explícito de despliegue para evitar
-    cambios operativos involuntarios
+  - el despliegue real de Containerlab + Ansible se reconcilia
+    automaticamente al guardar en servidor cuando
+    `AUTO_DEPLOY_ON_SAVE=true`; el botón explícito de despliegue se mantiene
+    como acción manual de recuperación y pruebas
   - el servidor `/home/enrique/gemerotic-deploy-current` quedó con NetBox,
     Redis rate limit, API y UI levantados; `GET /api/v1/health` respondió
     `netbox_connected=true` y `rate_limit_backend_connected=true`
@@ -890,6 +1003,7 @@ curl http://localhost:8000/api/v1/health
 | Step 9 | Generador Jinja2 de artefactos del pipeline | Completado |
 | **Step 10** | Ejecucion controlada de Containerlab y Ansible | Completado |
 | **Step 11** | Validacion Batfish con perfiles mixtos (NOS vs Linux) | Completado |
+| **Step 11.5** | Persistencia granular PostgreSQL + outbox + runtime transparente | Completado |
 | **Step 12** | Observabilidad LibreNMS/Oxidized | Pendiente |
 | **Step 13** | Auditoria de cumplimiento OPA | Pendiente |
 

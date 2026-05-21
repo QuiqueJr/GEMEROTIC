@@ -176,9 +176,7 @@ class PipelineRunner:
             None,
         )
         if node is None:
-            raise PipelineNodeNotFoundError(
-                f"Pipeline node is unavailable: {node_id}"
-            )
+            raise PipelineNodeNotFoundError(f"Pipeline node is unavailable: {node_id}")
 
         completed = self._run_command_raw(
             command=["docker", "exec", node.container_name, *parsed_command],
@@ -193,6 +191,57 @@ class PipelineRunner:
             stdout_tail=_tail(completed.stdout or "", 4000),
             stderr_tail=_tail(completed.stderr or "", 4000),
         )
+
+    def control_node_power(
+        self,
+        topology_name: str,
+        node_id: str,
+        action: str,
+    ) -> dict[str, str]:
+        """Encender, apagar o reiniciar un nodo del lab."""
+        self._require_tools(("docker", "containerlab"))
+        lab_status = self.inspect_lab(topology_name)
+        node = next(
+            (
+                candidate
+                for candidate in lab_status.nodes
+                if candidate.node_id == node_id
+            ),
+            None,
+        )
+        if node is None:
+            raise PipelineNodeNotFoundError(f"Pipeline node is unavailable: {node_id}")
+
+        command = _docker_power_command(action, node.container_name)
+        completed = self._run_command_raw(command=command, cwd=REPO_ROOT)
+        return {
+            "topology_name": topology_name,
+            "node_id": node_id,
+            "container_name": node.container_name,
+            "action": action,
+            "exit_code": str(completed.returncode),
+            "stdout_tail": _tail(completed.stdout or "", 2000),
+            "stderr_tail": _tail(completed.stderr or "", 2000),
+        }
+
+    def control_lab_power(
+        self,
+        topology_name: str,
+        action: str,
+    ) -> dict[str, Any]:
+        """Encender, apagar o reiniciar todos los nodos del lab."""
+        self._require_tools(("docker", "containerlab"))
+        lab_status = self.inspect_lab(topology_name)
+        results = [
+            self.control_node_power(topology_name, node.node_id, action)
+            for node in lab_status.nodes
+        ]
+        return {
+            "topology_name": topology_name,
+            "action": action,
+            "node_count": len(results),
+            "results": results,
+        }
 
     def _check_tool(self, tool_name: str) -> PipelineToolStatus:
         path = self._tool_resolver(tool_name)
@@ -319,15 +368,11 @@ def _tail(value: str, max_length: int) -> str:
 
 def _build_lab_status(topology_name: str, payload: Any) -> PipelineLabStatus:
     if not isinstance(payload, dict):
-        raise PipelineLabNotFoundError(
-            f"Pipeline lab is unavailable: {topology_name}"
-        )
+        raise PipelineLabNotFoundError(f"Pipeline lab is unavailable: {topology_name}")
 
     lab_rows = payload.get(topology_name)
     if not isinstance(lab_rows, list) or not lab_rows:
-        raise PipelineLabNotFoundError(
-            f"Pipeline lab is unavailable: {topology_name}"
-        )
+        raise PipelineLabNotFoundError(f"Pipeline lab is unavailable: {topology_name}")
 
     nodes = [
         PipelineLabNode(
@@ -345,9 +390,7 @@ def _build_lab_status(topology_name: str, payload: Any) -> PipelineLabStatus:
         if _read_text(row, "name")
     ]
     if not nodes:
-        raise PipelineLabNotFoundError(
-            f"Pipeline lab is unavailable: {topology_name}"
-        )
+        raise PipelineLabNotFoundError(f"Pipeline lab is unavailable: {topology_name}")
 
     first_row = lab_rows[0]
     return PipelineLabStatus(
@@ -356,6 +399,17 @@ def _build_lab_status(topology_name: str, payload: Any) -> PipelineLabStatus:
         abs_lab_path=_read_text(first_row, "absLabPath"),
         nodes=nodes,
     )
+
+
+def _docker_power_command(action: str, container_name: str) -> list[str]:
+    """Construir comando Docker para controles de energia."""
+    if action == "start":
+        return ["docker", "start", container_name]
+    if action == "stop":
+        return ["docker", "stop", "-t", "5", container_name]
+    if action == "restart":
+        return ["docker", "restart", "-t", "5", container_name]
+    raise PipelineRuntimeCommandError("Power action is not valid")
 
 
 def _read_text(row: Any, key: str) -> str:
@@ -394,11 +448,7 @@ def _parse_runtime_command(command_text: str) -> list[str]:
     if tokens == ["ss", "-ltn"]:
         return tokens
 
-    if (
-        len(tokens) == 5
-        and tokens[:3] == ["ip", "link", "show"]
-        and tokens[3] == "dev"
-    ):
+    if len(tokens) == 5 and tokens[:3] == ["ip", "link", "show"] and tokens[3] == "dev":
         _validate_interface_name(tokens[4])
         return tokens
 
@@ -411,11 +461,7 @@ def _parse_runtime_command(command_text: str) -> list[str]:
         _validate_interface_name(tokens[4])
         return tokens
 
-    if (
-        len(tokens) == 5
-        and tokens[:3] == ["ip", "addr", "show"]
-        and tokens[3] == "dev"
-    ):
+    if len(tokens) == 5 and tokens[:3] == ["ip", "addr", "show"] and tokens[3] == "dev":
         _validate_interface_name(tokens[4])
         return tokens
 
@@ -428,16 +474,10 @@ def _parse_runtime_command(command_text: str) -> list[str]:
         _validate_interface_name(tokens[5])
         return tokens
 
-    if (
-        len(tokens) == 4
-        and tokens[:2] == ["ping", "-c"]
-        and tokens[2].isdigit()
-    ):
+    if len(tokens) == 4 and tokens[:2] == ["ping", "-c"] and tokens[2].isdigit():
         count = int(tokens[2])
         if count < 1 or count > 5:
-            raise PipelineRuntimeCommandError(
-                "Ping count must be between 1 and 5"
-            )
+            raise PipelineRuntimeCommandError("Ping count must be between 1 and 5")
         _validate_target(tokens[3])
         return tokens
 
