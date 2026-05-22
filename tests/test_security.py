@@ -6,6 +6,10 @@ from fastapi.testclient import TestClient
 
 from app.config import settings
 from app.core.rate_limit import RateLimitBackendError, RateLimitDecision
+from app.core.security import (
+    create_terminal_session_token,
+    is_valid_terminal_session_token,
+)
 from app.dependencies import get_netbox_client, get_topology_store
 from app.main import create_app
 from tests.test_schemas import _mvp_topology_payload
@@ -171,6 +175,62 @@ class TestAPIKeySecurity:
 
         assert response.status_code == 200
         assert response.json()["status"] == "success"
+
+
+class TestTerminalSessionToken:
+    """Tests de tokens efímeros para WebSocket de terminal."""
+
+    def test_terminal_session_token_is_valid_for_exact_node(
+        self,
+        monkeypatch,
+    ):
+        monkeypatch.setattr(settings, "API_KEY", "secret-key")
+        monkeypatch.setattr(settings, "RUNTIME_TERMINAL_TOKEN_TTL_SECONDS", 30)
+
+        token, expires_at, ttl_seconds = create_terminal_session_token(
+            "mvp-lab-01",
+            "router-01",
+            now=1000,
+        )
+
+        assert expires_at == 1030
+        assert ttl_seconds == 30
+        assert is_valid_terminal_session_token(
+            token,
+            "mvp-lab-01",
+            "router-01",
+            now=1020,
+        )
+        assert not is_valid_terminal_session_token(
+            token,
+            "mvp-lab-01",
+            "switch-01",
+            now=1020,
+        )
+
+    def test_terminal_session_token_rejects_expired_or_tampered_token(
+        self,
+        monkeypatch,
+    ):
+        monkeypatch.setattr(settings, "API_KEY", "secret-key")
+        token, _, _ = create_terminal_session_token(
+            "mvp-lab-01",
+            "router-01",
+            now=1000,
+        )
+
+        assert not is_valid_terminal_session_token(
+            token,
+            "mvp-lab-01",
+            "router-01",
+            now=5000,
+        )
+        assert not is_valid_terminal_session_token(
+            f"{token}tampered",
+            "mvp-lab-01",
+            "router-01",
+            now=1001,
+        )
 
 
 class TestRateLimitSecurity:

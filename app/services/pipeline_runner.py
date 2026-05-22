@@ -22,11 +22,14 @@ from app.schemas.pipeline import (
     PipelineConsoleResult,
     PipelineLabNode,
     PipelineLabStatus,
+    PipelineRunningConfigSyncResult,
     PipelineRunResult,
+    PipelineTerminalTarget,
     PipelineToolReport,
     PipelineToolStatus,
 )
 from app.schemas.topology import TopologyCreate
+from app.schemas.validators import validate_slug
 from app.services.pipeline_artifacts import PipelineArtifactGenerator
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -69,14 +72,18 @@ class PipelineRunner:
         self,
         artifact_generator: PipelineArtifactGenerator | None = None,
         output_root: Path = DEFAULT_OUTPUT_ROOT,
+        docker_host_output_root: Path | None = None,
         tool_resolver: Callable[[str], str | None] = shutil.which,
         command_runner: Callable[
             ...,
             subprocess.CompletedProcess[str],
         ] = subprocess.run,
     ):
-        self._artifact_generator = artifact_generator or PipelineArtifactGenerator()
+        self._artifact_generator = artifact_generator or PipelineArtifactGenerator(
+            docker_host_output_root=docker_host_output_root
+        )
         self._output_root = output_root
+        self._docker_host_output_root = docker_host_output_root
         self._tool_resolver = tool_resolver
         self._command_runner = command_runner
 
@@ -189,6 +196,82 @@ class PipelineRunner:
             command=parsed_command,
             exit_code=completed.returncode,
             stdout_tail=_tail(completed.stdout or "", 4000),
+            stderr_tail=_tail(completed.stderr or "", 4000),
+        )
+
+    def resolve_terminal_target(
+        self,
+        topology_name: str,
+        node_id: str,
+    ) -> PipelineTerminalTarget:
+        """Resolver y validar el contenedor exacto para una terminal."""
+        self._require_tools(("docker", "containerlab"))
+        safe_topology_name, safe_node_id = _validate_runtime_target(
+            topology_name,
+            node_id,
+        )
+        lab_status = self.inspect_lab(safe_topology_name)
+        node = _find_lab_node(lab_status, safe_topology_name, safe_node_id)
+        is_frr = _is_frr_node(node)
+        if not is_frr:
+            raise PipelineRuntimeCommandError(
+                "Interactive terminal is only available for FRR nodes"
+            )
+        command = [
+            "docker",
+            "exec",
+            "-i",
+            node.container_name,
+            "vtysh",
+        ]
+        return PipelineTerminalTarget(
+            topology_name=safe_topology_name,
+            node_id=safe_node_id,
+            container_name=node.container_name,
+            image=node.image,
+            kind=node.kind,
+            profile=node.profile,
+            is_frr=is_frr,
+            command=command,
+        )
+
+    def sync_node_running_config(
+        self,
+        topology_name: str,
+        node_id: str,
+    ) -> PipelineRunningConfigSyncResult:
+        """Leer running-config FRR mediante vtysh sin shell."""
+        target = self.resolve_terminal_target(topology_name, node_id)
+        if not target.is_frr:
+            raise PipelineRuntimeCommandError(
+                "Running config sync is only available for FRR nodes"
+            )
+
+        command = [
+            "docker",
+            "exec",
+            target.container_name,
+            "vtysh",
+            "-c",
+            "show running-config",
+        ]
+        completed = self._run_command_raw(command=command, cwd=REPO_ROOT)
+        if completed.returncode != 0:
+            command_output = _tail(completed.stderr or completed.stdout or "", 1200)
+            suffix = f": {command_output}" if command_output else ""
+            raise PipelineExecutionError(
+                f"Running config command returned non-zero exit code{suffix}"
+            )
+
+        running_config = completed.stdout or ""
+        return PipelineRunningConfigSyncResult(
+            topology_name=target.topology_name,
+            node_id=target.node_id,
+            container_name=target.container_name,
+            command=command,
+            running_config=running_config,
+            exit_code=completed.returncode,
+            stdout_tail=_tail(running_config, 4000),
             stderr_tail=_tail(completed.stderr or "", 4000),
         )
 
@@ -381,6 +464,7 @@ def _build_lab_status(topology_name: str, payload: Any) -> PipelineLabStatus:
             container_id=_read_text(row, "container_id"),
             image=_read_text(row, "image"),
             kind=_read_text(row, "kind"),
+            profile=_read_text(row, "profile"),
             state=_read_text(row, "state"),
             status=_read_text(row, "status"),
             ipv4_address=_read_text(row, "ipv4_address"),
@@ -424,6 +508,37 @@ def _extract_node_id(topology_name: str, container_name: str) -> str:
     if container_name.startswith(prefix):
         return container_name[len(prefix) :]
     return container_name
+
+
+def _validate_runtime_target(topology_name: str, node_id: str) -> tuple[str, str]:
+    try:
+        safe_topology_name = validate_slug(topology_name, "Topology name")
+        safe_node_id = validate_slug(node_id, "Node ID")
+    except ValueError as exc:
+        raise PipelineRuntimeCommandError("Runtime target is not valid") from exc
+    return safe_topology_name, safe_node_id
+
+
+def _find_lab_node(
+    lab_status: PipelineLabStatus,
+    topology_name: str,
+    node_id: str,
+) -> PipelineLabNode:
+    expected_container_name = f"clab-{topology_name}-{node_id}"
+    for candidate in lab_status.nodes:
+        if (
+            candidate.node_id == node_id
+            and candidate.container_name == expected_container_name
+        ):
+            return candidate
+    raise PipelineRuntimeCommandError(
+        "Pipeline container target does not match requested node"
+    )
+
+
+def _is_frr_node(node: PipelineLabNode) -> bool:
+    markers = " ".join([node.image, node.kind, node.profile]).lower()
+    return any(marker in markers for marker in ("frr/frrouting", "frrouting", "frr"))
 
 
 def _parse_runtime_command(command_text: str) -> list[str]:

@@ -47,3 +47,16 @@
       loop: "{% raw %}{{ gemerotic_nodes | subelements('interfaces') }}{% endraw %}"
       when: "{% raw %}item.1.ipv6_address is not none{% endraw %}"
       changed_when: true
+
+    - name: Validar configuración FRR en nodos NOS
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - "{% raw %}{{ item.container_name }}{% endraw %}"
+          - vtysh
+          - -c
+          - show running-config
+      loop: "{% raw %}{{ gemerotic_nodes }}{% endraw %}"
+      when: "{% raw %}item.profile == 'nos'{% endraw %}"
+      changed_when: false

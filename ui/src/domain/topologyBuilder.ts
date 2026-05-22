@@ -28,6 +28,7 @@ type DevicePayload = {
   model?: string
   firmware_version?: string
   serial_number?: string
+  config?: Record<string, unknown>
   ports: DevicePortPayload[]
 }
 
@@ -349,6 +350,9 @@ function buildDevicePayload(
   }
   if (node.data.serialNumber) {
     payload.serial_number = sanitizeLabel(node.data.serialNumber)
+  }
+  if (node.data.runningConfig?.trim()) {
+    payload.config = { runningConfig: node.data.runningConfig }
   }
   const rackPosition = normalizeRackPosition(node.data.rackPosition)
   if (rackPosition !== undefined) {

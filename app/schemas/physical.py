@@ -7,6 +7,7 @@ patch panels, puertos y cableado. Mapea directamente a objetos de NetBox
 """
 
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -276,6 +277,10 @@ class DeviceSchema(BaseModel):
     ports: list[DevicePortSchema] = Field(
         ..., min_length=1,
         description="Puertos/interfaces físicas del dispositivo (mínimo 1)",
+    )
+    config: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Configuración granular opcional usada por IaC y runtime",
     )
 
     @field_validator("id")

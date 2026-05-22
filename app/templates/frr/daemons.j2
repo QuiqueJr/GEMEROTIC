@@ -1,0 +1,8 @@
+zebra=yes
+{% set running_config = node.config.get("runningConfig", node.config.get("running_config", "")) %}
+bgpd={{ "yes" if node.config.get("bgp") or "router bgp" in running_config else "no" }}
+ospfd={{ "yes" if node.config.get("ospf") or "router ospf" in running_config else "no" }}
+staticd=yes
+
+vtysh_enable=yes
+watchfrr_enable=yes

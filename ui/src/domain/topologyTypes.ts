@@ -50,6 +50,7 @@ export type BuilderNodeData = {
   enabled: boolean
   portConfigs: BuilderPortConfig[]
   allowedProtocols: string[]
+  runningConfig?: string
   activeView?: TopologyView
 }
 

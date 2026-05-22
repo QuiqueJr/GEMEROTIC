@@ -75,13 +75,13 @@ import {
   type PipelineToolReportResponse,
   type TopologyProjectStatePayload,
   type TopologyProjectStateSaveResponse,
-  runPipelineConsoleCommand,
   saveTopologyState,
 } from './api/gemeroticApi'
 import { AssetNode } from './components/AssetNode'
 import { CableEdge } from './components/CableEdge'
 import { DrawingNode as DrawingCanvasNode } from './components/DrawingNode'
 import { EquipmentGlyph } from './components/EquipmentGlyph'
+import { RuntimeTerminal } from './components/RuntimeTerminal'
 import {
   PhysicalInventoryPanel,
   PhysicalToolsPanel,
@@ -338,6 +338,7 @@ function App() {
   const [labStatus, setLabStatus] = useState<PipelineLabStatusResponse | null>(null)
   const [projectJobs, setProjectJobs] = useState<ProjectJob[]>([])
   const [runtimePowerBusy, setRuntimePowerBusy] = useState(false)
+  const [runtimeConsoleNodeId, setRuntimeConsoleNodeId] = useState<string | null>(null)
   const [complianceReport, setComplianceReport] =
     useState<ComplianceReportResponse | null>(null)
   const [showComplianceAssistant, setShowComplianceAssistant] = useState(false)
@@ -345,6 +346,10 @@ function App() {
   const [chatDraft, setChatDraft] = useState('')
   const [chatBusy, setChatBusy] = useState(false)
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null
+  const runtimeConsoleNode =
+    runtimeConsoleNodeId === null
+      ? null
+      : nodes.find((node) => node.id === runtimeConsoleNodeId) ?? null
   const selectedEdge = edges.find((edge) => edge.id === selectedEdgeId) ?? null
   const selectedDrawing =
     drawings.find((drawing) => drawing.id === selectedDrawingId) ?? null
@@ -509,7 +514,10 @@ function App() {
     )
   const canUndo = historyPast.length > 0
   const canRedo = historyFuture.length > 0
-  const apiConfig = { baseUrl: apiBaseUrl, apiKey }
+  const apiConfig = useMemo(
+    () => ({ baseUrl: apiBaseUrl, apiKey }),
+    [apiBaseUrl, apiKey],
+  )
   const hasApiBaseUrl = apiBaseUrl.trim().length > 0
 
   useEffect(() => {
@@ -1902,36 +1910,14 @@ function App() {
     }
   }
 
-  const openRuntimeConsole = async (nodeId: string) => {
+  const openRuntimeConsole = (nodeId: string) => {
     if (!ensureProtectedApiConfigured('Consola runtime')) {
       return
     }
-    const topologyName = getRuntimeTopologyName()
-    setOperationStatus('running')
-    try {
-      const result = await runPipelineConsoleCommand(
-        apiConfig,
-        topologyName,
-        nodeId,
-        'ip addr show',
-      )
-      if (!result.ok || result.data.data === undefined) {
-        const message = extractMessage(result.data, `HTTP ${result.status}`)
-        setOperationStatus('error')
-        setOperationMessage(message)
-        appendConsole(message, 'error')
-        return
-      }
-      const output = result.data.data.stdout_tail || result.data.data.stderr_tail || 'Sin salida'
-      setOperationStatus('success')
-      setOperationMessage(`Consola ${nodeId}`)
-      appendConsole(`Consola ${nodeId}: ${output}`, 'success')
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Petición fallida'
-      setOperationStatus('error')
-      setOperationMessage(message)
-      appendConsole(message, 'error')
-    }
+    setRuntimeConsoleNodeId(nodeId)
+    setOperationStatus('idle')
+    setOperationMessage(`Consola lista: ${nodeId}`)
+    appendConsole(`Consola runtime: ${nodeId}`, 'idle')
   }
 
   const deployPipelineRun = async () => {
@@ -2785,7 +2771,8 @@ function App() {
                   <button
                     className="toolbar-button toolbar-button--icon"
                     disabled={selectedNode === null}
-                    onClick={() => selectedNode && void openRuntimeConsole(selectedNode.id)}
+                    onClick={() => selectedNode && openRuntimeConsole(selectedNode.id)}
+                    aria-label="Abrir consola del activo"
                     title="Abrir consola del activo"
                     type="button"
                   >
@@ -2940,6 +2927,29 @@ function App() {
           pipelineArtifacts={pipelineArtifacts}
           pipelineRun={pipelineRun}
           pipelineRunText={pipelineRunText}
+        />
+      ) : null}
+
+      {runtimeConsoleNode ? (
+        <RuntimeTerminal
+          apiConfig={apiConfig}
+          nodeId={runtimeConsoleNode.id}
+          nodeLabel={runtimeConsoleNode.data.label}
+          onClose={() => setRuntimeConsoleNodeId(null)}
+          onRunningConfigSynced={(runningConfig) => {
+            pushHistorySnapshot()
+            setNodes((currentNodes) =>
+              updateNodeData(currentNodes, runtimeConsoleNode.id, {
+                runningConfig,
+              }),
+            )
+          }}
+          onStatus={(message, tone) => {
+            setOperationStatus(tone)
+            setOperationMessage(message)
+            appendConsole(message, tone)
+          }}
+          topologyName={getRuntimeTopologyName()}
         />
       ) : null}
 

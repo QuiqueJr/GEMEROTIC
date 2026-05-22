@@ -1,6 +1,27 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+vi.mock('@xterm/xterm', () => ({
+  Terminal: class TerminalMock {
+    clear = vi.fn()
+    dispose = vi.fn()
+    loadAddon = vi.fn()
+    open = vi.fn()
+    write = vi.fn()
+    writeln = vi.fn()
+
+    onData() {
+      return { dispose: vi.fn() }
+    }
+  },
+}))
+
+vi.mock('@xterm/addon-fit', () => ({
+  FitAddon: class FitAddonMock {
+    fit = vi.fn()
+  },
+}))
+
 import App from './App'
 
 beforeEach(() => {
@@ -202,6 +223,57 @@ describe('App', () => {
       screen.getAllByText(/Lab no desplegado para nuevo-proyecto-ot/i).length,
     ).toBeGreaterThan(0)
     expect(screen.queryByText('ERROR')).not.toBeInTheDocument()
+  })
+
+  it('abre la consola runtime del activo seleccionado y sincroniza running-config', async () => {
+    class WebSocketMock {
+      static OPEN = 1
+      static instances: WebSocketMock[] = []
+      readyState = WebSocketMock.OPEN
+      onclose: (() => void) | null = null
+      onerror: (() => void) | null = null
+      onmessage: ((event: MessageEvent) => void) | null = null
+      onopen: (() => void) | null = null
+
+      constructor() {
+        WebSocketMock.instances.push(this)
+        setTimeout(() => this.onopen?.(), 0)
+      }
+
+      close() {
+        this.onclose?.()
+      }
+
+      send() {}
+    }
+    vi.stubGlobal('WebSocket', WebSocketMock)
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ status: 'success', message: 'OK' }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Router Core/i }))
+    fireEvent.click(screen.getByTitle('Abrir consola del activo'))
+
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Consola runtime Router Core',
+    })
+    expect(dialog).toBeInTheDocument()
+    expect(within(dialog).getByText('Router Core')).toBeInTheDocument()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Guardar running-config' }))
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://localhost:8000/api/v1/pipeline/labs/nuevo-proyecto-ot/nodes/router-01/running-config/sync',
+        expect.objectContaining({ method: 'POST' }),
+      )
+    })
+    expect(WebSocketMock.instances).toHaveLength(1)
   })
 
   it('permite crear y editar dibujos fisicos tipo gns3', () => {

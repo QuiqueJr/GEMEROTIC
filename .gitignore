@@ -28,6 +28,9 @@ env/
 # Herramientas IA locales
 .codex/
 
+# Documentacion local no versionada
+docs/
+
 # OS
 .DS_Store
 Thumbs.db

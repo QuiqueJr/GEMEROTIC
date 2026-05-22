@@ -20,6 +20,8 @@ from app.schemas.topology import TopologyCreate
 DEFAULT_LINUX_KIND = "linux"
 DEFAULT_LINUX_IMAGE = "alpine:3.20"
 DEFAULT_LINUX_CMD = "sleep infinity"
+DEFAULT_FRR_IMAGE = "quay.io/frrouting/frr:10.5.4"
+DEFAULT_FRR_CMD = "/usr/lib/frr/docker-start"
 DEFAULT_NOS_KIND = "ceos"
 DEFAULT_NOS_IMAGE = "ceos:4.32.0F"
 TEMPLATE_ROOT = Path(__file__).resolve().parent.parent / "templates"
@@ -33,7 +35,11 @@ NOS_ASSET_TYPES = {
 class PipelineArtifactGenerator:
     """Renderiza el bundle declarativo de una topología."""
 
-    def __init__(self, template_root: Path = TEMPLATE_ROOT):
+    def __init__(
+        self,
+        template_root: Path = TEMPLATE_ROOT,
+        docker_host_output_root: Path | None = None,
+    ):
         self._environment = Environment(
             loader=FileSystemLoader(str(template_root)),
             autoescape=select_autoescape(disabled_extensions=("j2",)),
@@ -43,6 +49,7 @@ class PipelineArtifactGenerator:
         )
         self._environment.filters["json_string"] = json_string
         self._environment.filters["to_pretty_json"] = to_pretty_json
+        self._docker_host_output_root = docker_host_output_root
 
     def generate(self, topology: TopologyCreate) -> PipelineArtifacts:
         """Generar todos los artefactos soportados para la topología."""
@@ -144,6 +151,33 @@ class PipelineArtifactGenerator:
             if node["profile"] == "nos":
                 artifacts.append(
                     self._render_artifact(
+                        path=f"runtime/configs/{node['id']}/frr.conf",
+                        stage="runtime",
+                        content_type="text/plain",
+                        template_name="frr/frr.conf.j2",
+                        context={**context, "node": node},
+                    )
+                )
+                artifacts.append(
+                    self._render_artifact(
+                        path=f"runtime/configs/{node['id']}/daemons",
+                        stage="runtime",
+                        content_type="text/plain",
+                        template_name="frr/daemons.j2",
+                        context={**context, "node": node},
+                    )
+                )
+                artifacts.append(
+                    self._render_artifact(
+                        path=f"runtime/configs/{node['id']}/vtysh.conf",
+                        stage="runtime",
+                        content_type="text/plain",
+                        template_name="frr/vtysh.conf.j2",
+                        context={**context, "node": node},
+                    )
+                )
+                artifacts.append(
+                    self._render_artifact(
                         path=f"batfish/configs/{node['id']}.cfg",
                         stage="batfish",
                         content_type="text/plain",
@@ -208,6 +242,15 @@ class PipelineArtifactGenerator:
         )
 
     def _build_context(self, topology: TopologyCreate) -> dict[str, Any]:
+        runtime_config_bind_root = "../runtime/configs"
+        if self._docker_host_output_root is not None:
+            runtime_config_bind_root = (
+                self._docker_host_output_root
+                / topology.name
+                / "runtime"
+                / "configs"
+            ).as_posix()
+
         vlan_by_port = _build_vlan_memberships(topology)
         interface_by_port = {
             interface.port_id: interface for interface in topology.interfaces
@@ -260,6 +303,7 @@ class PipelineArtifactGenerator:
                 "name": device.name,
                 "asset_type": asset_type_val,
                 "profile": "nos" if is_nos else "linux",
+                "config": _extract_node_config(device),
                 "criticality": device.criticality.value,
                 "manufacturer": device.manufacturer,
                 "model": device.model,
@@ -277,8 +321,8 @@ class PipelineArtifactGenerator:
                 ),
                 "containerlab": {
                     "kind": DEFAULT_LINUX_KIND,
-                    "image": DEFAULT_LINUX_IMAGE,
-                    "cmd": DEFAULT_LINUX_CMD,
+                    "image": DEFAULT_FRR_IMAGE if is_nos else DEFAULT_LINUX_IMAGE,
+                    "cmd": DEFAULT_FRR_CMD if is_nos else DEFAULT_LINUX_CMD,
                 },
                 "batfish": {
                     "kind": DEFAULT_NOS_KIND if is_nos else DEFAULT_LINUX_KIND,
@@ -337,6 +381,7 @@ class PipelineArtifactGenerator:
             "mgmt_ipv6_subnet": mgmt_ipv6_subnet,
             "nodes": nodes,
             "runtime_nodes": runtime_nodes,
+            "runtime_config_bind_root": runtime_config_bind_root,
             "links": links,
             "vlans": [
                 {
@@ -442,6 +487,17 @@ def _build_zone_memberships(topology: TopologyCreate) -> dict[str, Any]:
         for device_id in zone.device_ids:
             zone_by_device[device_id] = zone
     return zone_by_device
+
+
+def _extract_node_config(device: Any) -> dict[str, Any]:
+    """Leer configuración opcional sin acoplar el generador a un schema cerrado."""
+    config = getattr(device, "config", None)
+    if isinstance(config, dict):
+        return config
+    model_extra = getattr(device, "model_extra", None)
+    if isinstance(model_extra, dict) and isinstance(model_extra.get("config"), dict):
+        return model_extra["config"]
+    return {}
 
 
 def _build_connected_port_ids(topology: TopologyCreate) -> set[str]:

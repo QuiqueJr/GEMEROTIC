@@ -19,6 +19,14 @@ from app.core.rate_limit import (
 from app.core.security import RateLimitMiddleware, SecurityHeadersMiddleware
 from app.persistence.database import init_database
 
+BUILT_IN_CORS_ORIGINS = (
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://212.128.44.220:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+)
+
 
 def build_rate_limiter() -> RateLimitBackend:
     """Construir el backend de rate limiting según la configuración activa."""
@@ -62,7 +70,7 @@ def create_app(rate_limiter: RateLimitBackend | None = None) -> FastAPI:
     application.add_middleware(SecurityHeadersMiddleware)
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=list(settings.CORS_ALLOWED_ORIGINS),
+        allow_origins=list(_build_cors_allowed_origins()),
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "X-API-Key"],
@@ -83,6 +91,12 @@ def create_app(rate_limiter: RateLimitBackend | None = None) -> FastAPI:
     register_exception_handlers(application)
 
     return application
+
+
+def _build_cors_allowed_origins() -> tuple[str, ...]:
+    """Mantener orígenes operativos aunque un .env local esté incompleto."""
+    origins = (*settings.CORS_ALLOWED_ORIGINS, *BUILT_IN_CORS_ORIGINS)
+    return tuple(dict.fromkeys(origins))
 
 
 app = create_app()

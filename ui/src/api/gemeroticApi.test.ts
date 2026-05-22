@@ -13,8 +13,11 @@ import {
   getPipelineLabStatus,
   getPipelineTools,
   getTopologyState,
+  buildTerminalWebSocketUrl,
+  createTerminalSession,
   runPipelineConsoleCommand,
   saveTopologyState,
+  syncRunningConfig,
 } from './gemeroticApi'
 
 const config = {
@@ -295,6 +298,71 @@ describe('gemeroticApi', () => {
     expect(fetchMock.mock.calls[0][0]).toBe(
       'http://localhost:8000/api/v1/pipeline/labs/mvp-lab-01/nodes/router-01/console',
     )
+    expect(headers.get('X-API-Key')).toBe('test-key')
+  })
+
+  it('construye URL websocket de terminal con segmentos codificados y token efimero', () => {
+    expect(
+      buildTerminalWebSocketUrl(
+        { baseUrl: 'http://api.local:8000/', apiKey: ' test-key ' },
+        'planta demo',
+        'router/01',
+        'terminal-token',
+      ),
+    ).toBe(
+      'ws://api.local:8000/api/v1/pipeline/labs/planta%20demo/nodes/router%2F01/terminal?terminal_token=terminal-token',
+    )
+
+    expect(
+      buildTerminalWebSocketUrl(
+        { baseUrl: 'https://api.local/base', apiKey: '   ' },
+        'lab-01',
+        'switch-01',
+      ),
+    ).toBe(
+      'wss://api.local/base/api/v1/pipeline/labs/lab-01/nodes/switch-01/terminal',
+    )
+  })
+
+  it('crea sesion efimera para consola con API key por header', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: 'success',
+          message: 'Pipeline terminal session created',
+          data: {
+            topology_name: 'mvp-lab-01',
+            node_id: 'router-01',
+            token: 'terminal-token',
+            expires_at: 1234,
+            ttl_seconds: 60,
+          },
+        }),
+      ),
+    )
+
+    await createTerminalSession(config, 'mvp-lab-01', 'router-01')
+    const headers = fetchMock.mock.calls[0][1]?.headers as Headers
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'http://localhost:8000/api/v1/pipeline/labs/mvp-lab-01/nodes/router-01/terminal/session',
+    )
+    expect(fetchMock.mock.calls[0][1]?.method).toBe('POST')
+    expect(headers.get('X-API-Key')).toBe('test-key')
+  })
+
+  it('sincroniza running-config del activo con API key', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ status: 'success', message: 'OK' })),
+    )
+
+    await syncRunningConfig(config, 'mvp-lab-01', 'router-01')
+    const headers = fetchMock.mock.calls[0][1]?.headers as Headers
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'http://localhost:8000/api/v1/pipeline/labs/mvp-lab-01/nodes/router-01/running-config/sync',
+    )
+    expect(fetchMock.mock.calls[0][1]?.method).toBe('POST')
     expect(headers.get('X-API-Key')).toBe('test-key')
   })
 

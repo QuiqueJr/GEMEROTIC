@@ -3,6 +3,7 @@ Tests del generador de artefactos del pipeline.
 """
 
 import json
+from pathlib import Path
 
 import yaml
 from fastapi.testclient import TestClient
@@ -66,9 +67,141 @@ class TestPipelineArtifactGenerator:
         assert document["mgmt"]["ipv4-subnet"].startswith("10.254.")
         assert document["mgmt"]["ipv6-subnet"].startswith("3fff:10:254:")
         assert document["topology"]["nodes"]["router-01"]["kind"] == "linux"
-        assert document["topology"]["nodes"]["router-01"]["cmd"] == "sleep infinity"
+        assert document["topology"]["nodes"]["router-01"]["image"] == (
+            "quay.io/frrouting/frr:10.5.4"
+        )
         endpoints = document["topology"]["links"][0]["endpoints"]
         assert all(":eth0" not in endpoint for endpoint in endpoints)
+
+    def test_nos_nodes_generate_frr_runtime_artifacts_and_mounts(self):
+        topology = TopologyCreate(**_mvp_topology_payload())
+        result = PipelineArtifactGenerator().generate(topology)
+
+        router_frr = _artifact_by_path(
+            result.artifacts,
+            "runtime/configs/router-01/frr.conf",
+        )
+        router_daemons = _artifact_by_path(
+            result.artifacts,
+            "runtime/configs/router-01/daemons",
+        )
+        router_vtysh = _artifact_by_path(
+            result.artifacts,
+            "runtime/configs/router-01/vtysh.conf",
+        )
+        containerlab = yaml.safe_load(
+            _artifact_by_path(
+                result.artifacts,
+                "containerlab/topology.clab.yml",
+            ).content
+        )
+
+        router_node = containerlab["topology"]["nodes"]["router-01"]
+        assert router_frr.stage == "runtime"
+        assert "hostname router-01" in router_frr.content
+        assert "ip address 10.0.0.1/30" in router_frr.content
+        assert "zebra=yes" in router_daemons.content
+        assert "staticd=yes" in router_daemons.content
+        assert "service integrated-vtysh-config" in router_vtysh.content
+        assert router_node["kind"] == "linux"
+        assert router_node["image"] == "quay.io/frrouting/frr:10.5.4"
+        assert "docker-start" in router_node["cmd"]
+        assert router_node["binds"] == ["../runtime/configs/router-01:/etc/frr:rw"]
+
+    def test_containerlab_can_use_host_runtime_bind_root(self):
+        topology = TopologyCreate(**_mvp_topology_payload())
+        result = PipelineArtifactGenerator(
+            docker_host_output_root=Path("/srv/gemerotic/pipeline")
+        ).generate(topology)
+
+        containerlab = yaml.safe_load(
+            _artifact_by_path(
+                result.artifacts,
+                "containerlab/topology.clab.yml",
+            ).content
+        )
+
+        router_node = containerlab["topology"]["nodes"]["router-01"]
+        assert router_node["binds"] == [
+            "/srv/gemerotic/pipeline/mvp-lab-01/runtime/configs/router-01"
+            ":/etc/frr:rw"
+        ]
+
+    def test_linux_nodes_do_not_generate_frr_runtime_artifacts(self):
+        topology = TopologyCreate(**_mvp_topology_payload())
+        result = PipelineArtifactGenerator().generate(topology)
+
+        artifact_paths = {artifact.path for artifact in result.artifacts}
+        containerlab = yaml.safe_load(
+            _artifact_by_path(
+                result.artifacts,
+                "containerlab/topology.clab.yml",
+            ).content
+        )
+
+        assert "runtime/configs/host-01/frr.conf" not in artifact_paths
+        assert "runtime/configs/host-01/daemons" not in artifact_paths
+        assert "runtime/configs/host-01/vtysh.conf" not in artifact_paths
+        assert "binds" not in containerlab["topology"]["nodes"]["host-01"]
+
+    def test_frr_config_renders_static_routes_only_from_node_config(self):
+        generator = PipelineArtifactGenerator()
+        node = {
+            "id": "router-01",
+            "interfaces": [],
+            "config": {
+                "static_routes": [
+                    {"destination": "10.10.10.0/24", "next_hop": "10.0.0.2"}
+                ]
+            },
+        }
+
+        content = generator._render_artifact(
+            path="runtime/configs/router-01/frr.conf",
+            stage="runtime",
+            content_type="text/plain",
+            template_name="frr/frr.conf.j2",
+            context={"node": node},
+        ).content
+
+        assert "ip route 10.10.10.0/24 10.0.0.2" in content
+
+    def test_frr_config_prefers_synced_running_config(self):
+        generator = PipelineArtifactGenerator()
+        node = {
+            "id": "router-01",
+            "interfaces": [{"lab_interface": "eth1", "ipv4_address": "10.0.0.1/24"}],
+            "config": {"runningConfig": "hostname runtime-router\n!"},
+        }
+
+        content = generator._render_artifact(
+            path="runtime/configs/router-01/frr.conf",
+            stage="runtime",
+            content_type="text/plain",
+            template_name="frr/frr.conf.j2",
+            context={"node": node},
+        ).content
+
+        assert "hostname runtime-router" in content
+        assert "ip address 10.0.0.1/24" not in content
+
+    def test_frr_daemons_infer_protocols_from_synced_running_config(self):
+        generator = PipelineArtifactGenerator()
+        node = {
+            "id": "router-01",
+            "config": {"runningConfig": "router bgp 65001\nrouter ospf\n!"},
+        }
+
+        content = generator._render_artifact(
+            path="runtime/configs/router-01/daemons",
+            stage="runtime",
+            content_type="text/plain",
+            template_name="frr/daemons.j2",
+            context={"node": node},
+        ).content
+
+        assert "bgpd=yes" in content
+        assert "ospfd=yes" in content
 
     def test_ansible_inventory_and_opa_input_are_valid_structured_files(self):
         topology = TopologyCreate(**_mvp_topology_payload())

@@ -7,6 +7,8 @@ services:
     container_name: gemerotic-api
     env_file:
       - .env
+    environment:
+      PIPELINE_DOCKER_HOST_OUTPUT_ROOT: ${PIPELINE_DOCKER_HOST_OUTPUT_ROOT:-}
     network_mode: host
     pid: host
     privileged: true
@@ -19,12 +21,15 @@ services:
       - /var/run/netns:/var/run/netns
       - /var/lib/docker/containers:/var/lib/docker/containers
       - ./var:/app/var
+      - ./var:${PIPELINE_DOCKER_HOST_VAR_ROOT:-/app/var-host}
 
   gemerotic-worker:
     image: gemerotic/api:latest
     container_name: gemerotic-worker
     env_file:
       - .env
+    environment:
+      PIPELINE_DOCKER_HOST_OUTPUT_ROOT: ${PIPELINE_DOCKER_HOST_OUTPUT_ROOT:-}
     network_mode: host
     pid: host
     privileged: true
@@ -41,6 +46,7 @@ services:
       - /var/run/netns:/var/run/netns
       - /var/lib/docker/containers:/var/lib/docker/containers
       - ./var:/app/var
+      - ./var:${PIPELINE_DOCKER_HOST_VAR_ROOT:-/app/var-host}
 
   gemerotic-postgres:
     image: docker.io/postgres:18-alpine

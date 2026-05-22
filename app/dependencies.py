@@ -3,6 +3,7 @@ Dependencias compartidas para inyección en endpoints.
 """
 
 from functools import lru_cache
+from pathlib import Path
 
 from app.config import settings
 from app.persistence.database import get_database_session
@@ -31,7 +32,12 @@ def get_topology_store() -> TopologyStore:
 
 def get_pipeline_runner() -> PipelineRunner:
     """Construir runner local del pipeline."""
-    return PipelineRunner()
+    docker_host_output_root = (
+        Path(settings.PIPELINE_DOCKER_HOST_OUTPUT_ROOT)
+        if settings.PIPELINE_DOCKER_HOST_OUTPUT_ROOT
+        else None
+    )
+    return PipelineRunner(docker_host_output_root=docker_host_output_root)
 
 
 __all__ = [

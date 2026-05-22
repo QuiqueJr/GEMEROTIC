@@ -1,4 +1,4 @@
-type APIConfig = {
+export type APIConfig = {
   baseUrl: string
   apiKey?: string
 }
@@ -155,6 +155,26 @@ export type PipelineConsoleResultResponse = {
   exit_code: number
   stdout_tail: string
   stderr_tail: string
+}
+
+export type PipelineRunningConfigSyncResponse = {
+  topology_name: string
+  node_id: string
+  container_name: string
+  command: string[]
+  running_config: string
+  exit_code: number
+  stdout_tail: string
+  stderr_tail: string
+  database_updated: boolean
+}
+
+export type PipelineTerminalSessionResponse = {
+  topology_name: string
+  node_id: string
+  token: string
+  expires_at: number
+  ttl_seconds: number
 }
 
 export type RuntimePowerAction = 'start' | 'stop' | 'restart'
@@ -421,6 +441,53 @@ export async function runPipelineConsoleCommand(
       method: 'POST',
       apiKeyRequired: true,
       body: { command },
+    },
+  )
+}
+
+export function buildTerminalWebSocketUrl(
+  config: APIConfig,
+  topologyName: string,
+  nodeId: string,
+  terminalToken?: string,
+): string {
+  const baseUrl = new URL(config.baseUrl.replace(/\/$/, ''))
+  baseUrl.protocol = baseUrl.protocol === 'https:' ? 'wss:' : 'ws:'
+  baseUrl.pathname = `${baseUrl.pathname.replace(/\/$/, '')}/api/v1/pipeline/labs/${encodeURIComponent(topologyName)}/nodes/${encodeURIComponent(nodeId)}/terminal`
+  baseUrl.search = ''
+  const token = terminalToken?.trim() ?? ''
+  if (token) {
+    baseUrl.searchParams.set('terminal_token', token)
+  }
+  return baseUrl.toString()
+}
+
+export async function createTerminalSession(
+  config: APIConfig,
+  topologyName: string,
+  nodeId: string,
+): Promise<APIResult<APIEnvelope<PipelineTerminalSessionResponse>>> {
+  return requestJson<APIEnvelope<PipelineTerminalSessionResponse>>(
+    config,
+    `/api/v1/pipeline/labs/${encodeURIComponent(topologyName)}/nodes/${encodeURIComponent(nodeId)}/terminal/session`,
+    {
+      method: 'POST',
+      apiKeyRequired: true,
+    },
+  )
+}
+
+export async function syncRunningConfig(
+  config: APIConfig,
+  topologyName: string,
+  nodeId: string,
+): Promise<APIResult<APIEnvelope<PipelineRunningConfigSyncResponse>>> {
+  return requestJson<APIEnvelope<PipelineRunningConfigSyncResponse>>(
+    config,
+    `/api/v1/pipeline/labs/${encodeURIComponent(topologyName)}/nodes/${encodeURIComponent(nodeId)}/running-config/sync`,
+    {
+      method: 'POST',
+      apiKeyRequired: true,
     },
   )
 }

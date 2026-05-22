@@ -107,6 +107,7 @@ class PipelineLabNode(BaseModel):
     container_id: str = Field(default="", max_length=128)
     image: str = Field(default="", max_length=256)
     kind: str = Field(default="", max_length=128)
+    profile: str = Field(default="", max_length=128)
     state: str = Field(default="", max_length=64)
     status: str = Field(default="", max_length=128)
     ipv4_address: str = Field(default="", max_length=128)
@@ -148,3 +149,40 @@ class PipelineConsoleResult(BaseModel):
     exit_code: int = Field(...)
     stdout_tail: str = Field(default="", max_length=4000)
     stderr_tail: str = Field(default="", max_length=4000)
+
+
+class PipelineTerminalTarget(BaseModel):
+    """Destino validado para una terminal interactiva de runtime."""
+
+    topology_name: str = Field(..., min_length=1, max_length=64)
+    node_id: str = Field(..., min_length=1, max_length=128)
+    container_name: str = Field(..., min_length=1, max_length=256)
+    image: str = Field(default="", max_length=256)
+    kind: str = Field(default="", max_length=128)
+    profile: str = Field(default="", max_length=128)
+    is_frr: bool = Field(default=False)
+    command: list[str] = Field(..., min_length=1)
+
+
+class PipelineTerminalSessionResponse(BaseModel):
+    """Token efímero para abrir la terminal interactiva del nodo."""
+
+    topology_name: str = Field(..., min_length=1, max_length=64)
+    node_id: str = Field(..., min_length=1, max_length=128)
+    token: str = Field(..., min_length=1, max_length=2048)
+    expires_at: int = Field(..., ge=0)
+    ttl_seconds: int = Field(..., ge=1, le=3600)
+
+
+class PipelineRunningConfigSyncResult(BaseModel):
+    """Resultado de sincronización best-effort de running-config FRR."""
+
+    topology_name: str = Field(..., min_length=1, max_length=64)
+    node_id: str = Field(..., min_length=1, max_length=128)
+    container_name: str = Field(..., min_length=1, max_length=256)
+    command: list[str] = Field(..., min_length=1)
+    running_config: str = Field(default="", max_length=200000)
+    exit_code: int = Field(default=0)
+    stdout_tail: str = Field(default="", max_length=4000)
+    stderr_tail: str = Field(default="", max_length=4000)
+    database_updated: bool = Field(default=False)

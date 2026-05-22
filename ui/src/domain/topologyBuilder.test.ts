@@ -124,6 +124,7 @@ describe('topologyBuilder', () => {
         ipv4Address: '10.22.0.1/24',
         macAddress: '00:1A:2B:3C:4D:5E',
         mgmtOnly: true,
+        runningConfig: 'hostname router-01\n!',
       },
     }
 
@@ -133,6 +134,7 @@ describe('topologyBuilder', () => {
     expect(payload.devices[0].firmware_version).toBe('17.12')
     expect(payload.devices[0].serial_number).toBe('SN-001')
     expect(payload.devices[0].rack_position).toBe(12)
+    expect(payload.devices[0].config?.runningConfig).toBe('hostname router-01\n!')
     expect(payload.interfaces[0].ipv4_address).toBe('10.22.0.1/24')
     expect(payload.interfaces[0].mac_address).toBe('00:1A:2B:3C:4D:5E')
     expect(payload.interfaces[0].mgmt_only).toBe(true)

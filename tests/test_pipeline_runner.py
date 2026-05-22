@@ -5,17 +5,26 @@ Tests del runner controlado del pipeline.
 import subprocess
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from app.api.v1.endpoints.pipeline import get_pipeline_runner
+from app.api.v1.endpoints.pipeline import (
+    _update_runtime_running_config,
+    get_pipeline_runner,
+)
 from app.config import settings
 from app.dependencies import get_topology_store
 from app.main import create_app
+from app.persistence.database import Base, get_engine, reset_engine_for_tests
+from app.persistence.models import ProjectEntityRecord, ProjectRecord
 from app.schemas.pipeline import (
     PipelineArtifact,
     PipelineConsoleResult,
     PipelineLabNode,
     PipelineLabStatus,
+    PipelineRunningConfigSyncResult,
     PipelineRunResult,
+    PipelineTerminalTarget,
     PipelineToolReport,
     PipelineToolStatus,
 )
@@ -111,6 +120,43 @@ class FakePipelineRunner:
             exit_code=0,
             stdout_tail=f"executed {command_text}",
             stderr_tail="",
+        )
+
+    def sync_node_running_config(
+        self,
+        topology_name: str,
+        node_id: str,
+    ) -> PipelineRunningConfigSyncResult:
+        return PipelineRunningConfigSyncResult(
+            topology_name=topology_name,
+            node_id=node_id,
+            container_name=f"clab-{topology_name}-{node_id}",
+            command=["docker", "exec", f"clab-{topology_name}-{node_id}", "vtysh"],
+            running_config="hostname router-01\n",
+            stdout_tail="hostname router-01\n",
+            stderr_tail="",
+        )
+
+    def resolve_terminal_target(
+        self,
+        topology_name: str,
+        node_id: str,
+    ) -> PipelineTerminalTarget:
+        return PipelineTerminalTarget(
+            topology_name=topology_name,
+            node_id=node_id,
+            container_name=f"clab-{topology_name}-{node_id}",
+            image="quay.io/frrouting/frr:10.5.4",
+            kind="linux",
+            profile="nos",
+            is_frr=True,
+            command=[
+                "docker",
+                "exec",
+                "-i",
+                f"clab-{topology_name}-{node_id}",
+                "vtysh",
+            ],
         )
 
 
@@ -289,6 +335,200 @@ class TestPipelineRunner:
         else:
             raise AssertionError("unexpected console command was accepted")
 
+    def test_terminal_target_requires_exact_container_name(self, tmp_path):
+        def command_runner(command, **kwargs):
+            if command[:2] == ["containerlab", "inspect"]:
+                return subprocess.CompletedProcess(
+                    args=command,
+                    returncode=0,
+                    stdout=(
+                        '{"mvp-lab-01":[{"name":"clab-other-lab-router-01",'
+                        '"image":"frrouting/frr:latest","kind":"linux",'
+                        '"state":"running","status":"Up 5 seconds"}]}'
+                    ),
+                    stderr="",
+                )
+            return subprocess.CompletedProcess(
+                args=command,
+                returncode=0,
+                stdout="tool ok",
+                stderr="",
+            )
+
+        runner = PipelineRunner(
+            output_root=tmp_path,
+            tool_resolver=_tool_resolver,
+            command_runner=command_runner,
+        )
+
+        try:
+            runner.resolve_terminal_target("mvp-lab-01", "router-01")
+        except PipelineRuntimeCommandError as exc:
+            assert "container target" in str(exc)
+        else:
+            raise AssertionError("unexpected terminal target was accepted")
+
+    def test_frr_running_config_uses_vtysh_command(self, tmp_path):
+        calls: list[list[str]] = []
+
+        def command_runner(command, **kwargs):
+            calls.append(command)
+            if command[:2] == ["containerlab", "inspect"]:
+                return subprocess.CompletedProcess(
+                    args=command,
+                    returncode=0,
+                    stdout=(
+                        '{"mvp-lab-01":[{"name":"clab-mvp-lab-01-router-01",'
+                        '"image":"frrouting/frr:latest","kind":"linux",'
+                        '"state":"running","status":"Up 5 seconds"}]}'
+                    ),
+                    stderr="",
+                )
+            return subprocess.CompletedProcess(
+                args=command,
+                returncode=0,
+                stdout="hostname router-01\n",
+                stderr="",
+            )
+
+        runner = PipelineRunner(
+            output_root=tmp_path,
+            tool_resolver=_tool_resolver,
+            command_runner=command_runner,
+        )
+
+        result = runner.sync_node_running_config("mvp-lab-01", "router-01")
+
+        assert result.running_config == "hostname router-01\n"
+        assert [
+            "docker",
+            "exec",
+            "clab-mvp-lab-01-router-01",
+            "vtysh",
+            "-c",
+            "show running-config",
+        ] in calls
+
+    def test_running_config_sync_rejects_non_frr_node(self, tmp_path):
+        def command_runner(command, **kwargs):
+            if command[:2] == ["containerlab", "inspect"]:
+                return subprocess.CompletedProcess(
+                    args=command,
+                    returncode=0,
+                    stdout=(
+                        '{"mvp-lab-01":[{"name":"clab-mvp-lab-01-host-01",'
+                        '"image":"ghcr.io/srl-labs/network-multitool",'
+                        '"kind":"linux","state":"running","status":"Up 5 seconds"}]}'
+                    ),
+                    stderr="",
+                )
+            return subprocess.CompletedProcess(
+                args=command,
+                returncode=0,
+                stdout="tool ok",
+                stderr="",
+            )
+
+        runner = PipelineRunner(
+            output_root=tmp_path,
+            tool_resolver=_tool_resolver,
+            command_runner=command_runner,
+        )
+
+        try:
+            runner.sync_node_running_config("mvp-lab-01", "host-01")
+        except PipelineRuntimeCommandError as exc:
+            assert "FRR" in str(exc)
+        else:
+            raise AssertionError("non-FRR node accepted running-config sync")
+
+    def test_terminal_target_rejects_non_frr_node(self, tmp_path):
+        def command_runner(command, **kwargs):
+            if command[:2] == ["containerlab", "inspect"]:
+                return subprocess.CompletedProcess(
+                    args=command,
+                    returncode=0,
+                    stdout=(
+                        '{"mvp-lab-01":[{"name":"clab-mvp-lab-01-host-01",'
+                        '"image":"ghcr.io/srl-labs/network-multitool",'
+                        '"kind":"linux","state":"running","status":"Up 5 seconds"}]}'
+                    ),
+                    stderr="",
+                )
+            return subprocess.CompletedProcess(
+                args=command,
+                returncode=0,
+                stdout="tool ok",
+                stderr="",
+            )
+
+        runner = PipelineRunner(
+            output_root=tmp_path,
+            tool_resolver=_tool_resolver,
+            command_runner=command_runner,
+        )
+
+        try:
+            runner.resolve_terminal_target("mvp-lab-01", "host-01")
+        except PipelineRuntimeCommandError as exc:
+            assert "FRR" in str(exc)
+        else:
+            raise AssertionError("non-FRR node accepted interactive terminal")
+
+    def test_running_config_sync_updates_granular_asset_config(
+        self,
+        monkeypatch,
+        tmp_path,
+    ):
+        monkeypatch.setattr(
+            settings,
+            "DATABASE_URL",
+            f"sqlite:///{tmp_path / 'db.sqlite'}",
+        )
+        reset_engine_for_tests()
+        Base.metadata.create_all(bind=get_engine())
+
+        with Session(get_engine()) as session:
+            session.add(
+                ProjectRecord(
+                    name="mvp-lab-01",
+                    display_name="MVP Lab 01",
+                    state_snapshot={
+                        "nodes": [{"id": "router-01", "data": {"label": "Router"}}]
+                    },
+                    topology_payload={
+                        "devices": [{"id": "router-01", "config": {}}]
+                    },
+                )
+            )
+            session.commit()
+
+            updated = _update_runtime_running_config(
+                session,
+                "mvp-lab-01",
+                "router-01",
+                "clab-mvp-lab-01-router-01",
+                "hostname runtime-router\n!",
+            )
+            config_row = session.scalar(
+                select(ProjectEntityRecord).where(
+                    ProjectEntityRecord.project_name == "mvp-lab-01",
+                    ProjectEntityRecord.entity_type == "asset.config",
+                    ProjectEntityRecord.entity_id == "router-01",
+                )
+            )
+            project = session.get(ProjectRecord, "mvp-lab-01")
+
+        assert updated is True
+        assert config_row is not None
+        assert config_row.payload["runningConfig"] == "hostname runtime-router\n!"
+        assert project is not None
+        assert project.state_snapshot["nodes"][0]["data"]["runningConfig"].startswith(
+            "hostname runtime-router"
+        )
+        topology_config = project.topology_payload["devices"][0]["config"]
+        assert topology_config["runningConfig"].startswith("hostname runtime-router")
+
 
 class TestPipelineRunnerEndpoint:
     """Tests HTTP de endpoints del runner."""
@@ -396,3 +636,58 @@ class TestPipelineRunnerEndpoint:
 
         assert response.status_code == 200
         assert response.json()["data"]["node_id"] == "router-01"
+
+    def test_terminal_websocket_route_is_registered(self, monkeypatch):
+        monkeypatch.setattr(settings, "API_KEY", "secret-key")
+        application = create_app(rate_limiter=AllowAllRateLimiter())
+
+        route_paths = {getattr(route, "path", "") for route in application.routes}
+
+        assert (
+            "/api/v1/pipeline/labs/{topology_name}/nodes/{node_id}/terminal"
+            in route_paths
+        )
+        assert (
+            "/api/v1/pipeline/labs/{topology_name}/nodes/{node_id}/terminal/session"
+            in route_paths
+        )
+
+    def test_terminal_session_endpoint_returns_short_lived_token(self, monkeypatch):
+        monkeypatch.setattr(settings, "API_KEY", "secret-key")
+        monkeypatch.setattr(settings, "RUNTIME_TERMINAL_TOKEN_TTL_SECONDS", 60)
+        application = create_app(rate_limiter=AllowAllRateLimiter())
+        application.dependency_overrides[get_pipeline_runner] = (
+            lambda: FakePipelineRunner()
+        )
+
+        with TestClient(application) as client:
+            response = client.post(
+                "/api/v1/pipeline/labs/mvp-lab-01/nodes/router-01/terminal/session",
+                headers={"X-API-Key": "secret-key"},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["message"] == "Pipeline terminal session created"
+        assert response.json()["data"]["node_id"] == "router-01"
+        assert response.json()["data"]["ttl_seconds"] == 60
+        assert response.json()["data"]["token"]
+
+    def test_running_config_sync_endpoint_uses_runner(self, monkeypatch):
+        monkeypatch.setattr(settings, "API_KEY", "secret-key")
+        monkeypatch.setattr(settings, "GRANULAR_STORE_ENABLED", False)
+        application = create_app(rate_limiter=AllowAllRateLimiter())
+        application.dependency_overrides[get_pipeline_runner] = (
+            lambda: FakePipelineRunner()
+        )
+
+        with TestClient(application) as client:
+            response = client.post(
+                "/api/v1/pipeline/labs/mvp-lab-01/nodes/router-01/"
+                "running-config/sync",
+                headers={"X-API-Key": "secret-key"},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["message"] == "Pipeline running config synchronized"
+        assert response.json()["data"]["node_id"] == "router-01"
+        assert response.json()["data"]["database_updated"] is False

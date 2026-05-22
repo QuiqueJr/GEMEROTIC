@@ -1,0 +1,30 @@
+{% if node.config.get("runningConfig") %}
+{{ node.config.get("runningConfig") }}
+{% elif node.config.get("running_config") %}
+{{ node.config.get("running_config") }}
+{% else %}
+frr version 10.5.4
+frr defaults traditional
+hostname {{ node.id }}
+service integrated-vtysh-config
+!
+{% for interface in node.interfaces %}
+{% if interface.ipv4_address or interface.ipv6_address %}
+interface {{ interface.lab_interface }}
+{% if interface.ipv4_address %}
+ ip address {{ interface.ipv4_address }}
+{% endif %}
+{% if interface.ipv6_address %}
+ ipv6 address {{ interface.ipv6_address }}
+{% endif %}
+!
+{% endif %}
+{% endfor %}
+{% for route in node.config.get("static_routes", []) %}
+{% if route.destination is defined and route.next_hop is defined %}
+ip route {{ route.destination }} {{ route.next_hop }}
+{% endif %}
+{% endfor %}
+line vty
+!
+{% endif %}

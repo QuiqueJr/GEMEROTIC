@@ -10,6 +10,10 @@ topology:
       kind: {{ node.containerlab.kind | json_string }}
       image: {{ node.containerlab.image | json_string }}
       cmd: {{ node.containerlab.cmd | json_string }}
+{% if node.profile == "nos" %}
+      binds:
+        - {{ (runtime_config_bind_root ~ "/" ~ node.id ~ ":/etc/frr:rw") | json_string }}
+{% endif %}
       env:
         GEMEROTIC_TOPOLOGY: {{ topology_name | json_string }}
         GEMEROTIC_DEVICE_ID: {{ node.id | json_string }}

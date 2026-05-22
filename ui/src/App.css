@@ -2322,3 +2322,75 @@ button {
   color: var(--text-muted);
   font-size: 0.82rem;
 }
+
+.runtime-terminal-backdrop {
+  align-items: flex-end;
+}
+
+.runtime-terminal {
+  grid-template-rows: auto auto minmax(0, 1fr);
+  height: min(78vh, 680px);
+  width: min(980px, calc(100vw - 48px));
+}
+
+.runtime-terminal__header {
+  align-items: center;
+  background: #ffffff;
+  border-bottom: 1px solid var(--chrome-line);
+  display: flex;
+  justify-content: space-between;
+  padding: 12px 14px;
+}
+
+.runtime-terminal__header div {
+  display: grid;
+  gap: 2px;
+}
+
+.runtime-terminal__header span {
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.runtime-terminal__header strong {
+  font-size: 15px;
+}
+
+.runtime-terminal__toolbar {
+  align-items: center;
+  background: var(--panel);
+  border-bottom: 1px solid var(--chrome-line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 14px;
+}
+
+.runtime-terminal__toolbar > span {
+  background: #ffffff;
+  border: 1px solid var(--chrome-line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 7px 10px;
+}
+
+.runtime-terminal__toolbar > span[data-status='connected'] {
+  color: var(--success);
+}
+
+.runtime-terminal__toolbar > span[data-status='error'] {
+  color: var(--danger);
+}
+
+.runtime-terminal__surface {
+  background: #101820;
+  min-height: 0;
+  overflow: hidden;
+  padding: 8px;
+}

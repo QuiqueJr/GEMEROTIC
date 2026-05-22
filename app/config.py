@@ -39,12 +39,14 @@ class Settings(BaseSettings):
     AUTO_DEPLOY_ON_SAVE: bool = False
     AUTO_DEPLOY_MAX_EVENTS_PER_RUN: int = 20
     WORKER_POLL_SECONDS: float = 2.0
+    PIPELINE_DOCKER_HOST_OUTPUT_ROOT: str = ""
 
     # --- Seguridad MVP: API key opcional durante pruebas ---
     # FUTURO: reactivar por entorno y reemplazar con usuario (JWT / OAuth2)
     #         para soportar multi-tenancy y tokens individuales de NetBox.
     API_KEY_REQUIRED: bool = False
     API_KEY: SecretStr = SecretStr("")
+    RUNTIME_TERMINAL_TOKEN_TTL_SECONDS: int = 60
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_MAX_REQUESTS: int = 60
     RATE_LIMIT_WINDOW_SECONDS: int = 60
