@@ -65,7 +65,7 @@ despliegue.
 - Exponer controles de runtime tipo GNS3/Packet Tracer:
   - `POST /api/v1/pipeline/labs/{topology_name}/power`
   - `POST /api/v1/pipeline/labs/{topology_name}/nodes/{node_id}/power`
-  - consola controlada por activo desde la UI.
+  - consola interactiva por activo desde la UI.
 
 ### Avance actual dentro de Step 11.5
 
@@ -96,22 +96,53 @@ despliegue.
 - La UI incorpora controles de runtime:
   - encender, apagar y reiniciar gemelo completo
   - encender, apagar y reiniciar activo seleccionado
-  - abrir consola controlada del activo seleccionado
+  - abrir consola interactiva del activo seleccionado
+  - guardar `running-config` sincronizado desde la consola
   - listar trabajos recientes del proyecto
 - La UI mantiene el titulo del navegador como `GEMEROTIC`.
+- Los activos de red (`router`, `switch`, `firewall`) usan imagen FRR
+  `quay.io/frrouting/frr:10.5.4` para tener una consola tangible de demo.
+- Los activos host/OT genericos (`plc`, `hmi`, `server`, `host`) siguen usando
+  `alpine:3.20` mientras se define la taxonomia final de imagenes por fabricante
+  y tipo de activo.
+- El generador de artefactos crea por activo FRR:
+  - `runtime/configs/{node_id}/frr.conf`
+  - `runtime/configs/{node_id}/daemons`
+  - `runtime/configs/{node_id}/vtysh.conf`
+- La plantilla `frr.conf.j2` prioriza el `running-config` sincronizado desde la
+  consola. Si no existe, genera una configuracion base con hostname, interfaces
+  y rutas estaticas declaradas en la configuracion del activo.
+- Containerlab monta el directorio runtime completo del nodo sobre `/etc/frr`
+  para que FRR lea y persista los ficheros esperados.
+- Cuando GEMEROTIC corre en Docker pero controla el Docker del host, el runtime
+  usa `PIPELINE_DOCKER_HOST_OUTPUT_ROOT` para emitir mounts con rutas absolutas
+  del host y evitar que Docker cree rutas internas erroneas como `/app/var`.
+- La consola interactiva se expone por WebSocket:
+  `GET /api/v1/pipeline/labs/{topology_name}/nodes/{node_id}/terminal`.
+- La sesion de terminal usa tokens HMAC de vida corta generados por:
+  `POST /api/v1/pipeline/labs/{topology_name}/nodes/{node_id}/terminal/session`.
+  Asi la API key no viaja como query persistente en la URL WebSocket.
+- La sincronizacion de configuracion se realiza con:
+  `POST /api/v1/pipeline/labs/{topology_name}/nodes/{node_id}/running-config/sync`.
+  El backend ejecuta `vtysh -c "show running-config"`, guarda el resultado en
+  `gemerotic_runtime_nodes`, actualiza `asset.config` y parchea el snapshot
+  legacy para mantener compatibilidad con la UI actual.
 - El servidor remoto queda desplegado en `/home/enrique/GEMEROTIC/GEMEROTIC`
   con `GRANULAR_STORE_ENABLED=true` y `AUTO_DEPLOY_ON_SAVE=true`.
 - Verificacion realizada en servidor:
   - `ruff check .` sin errores
-  - `223 passed` en backend
-  - `47 passed` en frontend
+  - `239 passed` en backend
+  - `51 passed` en frontend
   - `bun run build` correcto
   - `GET /api/v1/health` saludable con NetBox y rate limit conectados
   - PostgreSQL con las cuatro tablas granulares creadas
   - `nuevo-proyecto-ot` con `deployment_status=ready`,
     `netbox_status=synchronized` y `validation_status=ready`
   - Containerlab con 15 nodos de `nuevo-proyecto-ot` en estado `running`
-  - consola controlada por nodo respondiendo desde el frontend y desde API
+  - 8 nodos FRR y 7 nodos Alpine desplegados en Containerlab
+  - consola interactiva de `router-01` respondiendo `show running-config`
+    desde frontend y API
+  - sincronizacion de `running-config` probada sin warnings de `vtysh.conf`
   - reinicio de nodo mediante endpoint de power probado correctamente
 
 ### Fuera de alcance de Step 11.5
@@ -119,11 +150,11 @@ despliegue.
 - No sustituir aun el frontend completo por comandos granulares puros; el
   snapshot legacy sigue siendo el checkpoint compatible mientras se migra la
   UI por partes.
-- No implementar una terminal interactiva PTY/WebSocket completa. La consola
-  actual ejecuta comandos allowlistados sobre el contenedor del activo.
-- No garantizar imagenes NOS vendor reales para todos los activos. El runtime
-  actual usa perfiles disponibles para demo tangible y queda pendiente cerrar
-  una taxonomia de imagenes por fabricante/tipo de activo.
+- No garantizar imagenes NOS vendor reales para todos los activos. FRR cubre
+  la demo tangible de routing/switching/firewall, pero queda pendiente cerrar
+  una taxonomia de imagenes por fabricante, licencia y tipo de activo.
+- No convertir aun todos los activos OT en imagenes funcionales especificas de
+  fabricante; PLC/HMI/servidores mantienen imagen Linux generica.
 - No ejecutar OPA como binario obligatorio; el sistema genera artefactos OPA y
   mantiene compliance determinista interno, pero OPA sigue pendiente de la fase
   de auditoria.
