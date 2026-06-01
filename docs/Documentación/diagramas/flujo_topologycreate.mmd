@@ -1,0 +1,13 @@
+flowchart LR
+    VISUAL["Estado visual<br/>nodos, enlaces, puertos, dibujos"]
+    NORMALIZE["Normalización<br/>slugs, puertos, VLAN, protocolos"]
+    CONTRACT["TopologyCreate<br/>contrato desplegable"]
+    INVENTORY["Inventario<br/>NetBox"]
+    ARTIFACTS["Artefactos<br/>Containerlab, Ansible, Batfish, OPA"]
+    COMPLIANCE["Informe<br/>controles y evidencias"]
+
+    VISUAL --> NORMALIZE
+    NORMALIZE --> CONTRACT
+    CONTRACT --> INVENTORY
+    CONTRACT --> ARTIFACTS
+    CONTRACT --> COMPLIANCE

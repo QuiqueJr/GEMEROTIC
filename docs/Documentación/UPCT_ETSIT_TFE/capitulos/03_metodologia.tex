@@ -1,0 +1,67 @@
+\chapter{Metodología y Diseño del Trabajo} \label{ch:metodologia}
+
+\section{Enfoque metodológico} \label{sec:enfoque-metodologico}
+
+El trabajo adopta una metodología de ingeniería aplicada. En primer lugar se analiza el problema industrial: redes OT críticas, dificultad de inventario, riesgo de pruebas sobre producción y necesidad de mejora continua. A continuación se estudian los marcos técnicos y normativos relevantes. Finalmente se diseña e implementa un prototipo modular que permite validar la viabilidad del enfoque.
+
+La colaboración con AMC Global orienta la memoria hacia un contexto realista. No se busca construir una solución cerrada para una única planta, sino definir una arquitectura replicable que pueda adaptarse a entornos productivos con múltiples sedes, activos legacy, segmentación industrial y necesidades de auditoría. Por ello, la metodología combina análisis normativo, diseño de arquitectura software, prototipado incremental y validación por evidencias.
+
+\section{Requisitos funcionales} \label{sec:requisitos-funcionales}
+
+Los requisitos funcionales principales son:
+
+\begin{enumerate}[label=RF-\arabic*.]
+    \item Permitir al usuario construir visualmente una topología OT/IT con activos industriales y de red.
+    \item Representar infraestructura física, conectividad lógica y seguridad OT como capas diferenciadas.
+    \item Persistir el estado editable del gemelo para evitar pérdida de trabajo ante fallos de integraciones externas.
+    \item Generar inventario técnico derivado en NetBox, incluyendo dispositivos, interfaces, cables, VLAN, zonas y conductos.
+    \item Producir artefactos reproducibles para Containerlab, Ansible, Batfish y políticas de cumplimiento.
+    \item Reconciliar un runtime de laboratorio de forma transparente a partir del último estado persistido.
+    \item Permitir interacción operativa con nodos del laboratorio, incluyendo consola, acciones de encendido/apagado y sincronización de configuración cuando proceda.
+    \item Generar informes de cumplimiento técnico con evidencias y asistencia explicativa limitada al informe calculado.
+\end{enumerate}
+
+\section{Requisitos no funcionales} \label{sec:requisitos-no-funcionales}
+
+La arquitectura debe cumplir requisitos no funcionales especialmente relevantes en OT:
+
+\begin{itemize}
+    \item \textbf{Trazabilidad:} cada entidad del gemelo debe poder relacionarse con evidencias, artefactos o inventario.
+    \item \textbf{Reproducibilidad:} los laboratorios y configuraciones deben generarse de forma determinista desde el modelo.
+    \item \textbf{Separación de responsabilidades:} la capa física, lógica y de seguridad no deben mezclarse.
+    \item \textbf{Tolerancia a fallos externos:} un error de NetBox, runtime o validación no debe destruir el estado editable del usuario.
+    \item \textbf{Seguridad operacional:} las acciones sobre runtime deben estar controladas, autenticadas y limitadas.
+    \item \textbf{Extensibilidad:} el diseño debe admitir módulos futuros como observabilidad, auditoría OPA avanzada o RAG normativo.
+\end{itemize}
+
+\section{Decisiones de diseño principales} \label{sec:decisiones-diseno}
+
+La primera decisión es utilizar un modelo canónico propio de GEMEROTIC. NetBox se integra como inventario enriquecido derivado, pero no gobierna el estado operativo del gemelo. Esta distinción evita bloquear la edición cuando una integración externa falla y permite mantener el foco en la topología validable.
+
+La segunda decisión es persistir el proyecto en PostgreSQL granular. El estado visual, las entidades físicas, lógicas, de seguridad y la configuración por activo se almacenan como registros independientes. Esta estructura permite evolucionar desde el snapshot inicial hacia comandos granulares, revisiones y eventos de outbox.
+
+La tercera decisión es emplear generación declarativa de artefactos. En lugar de ejecutar cambios directos sobre producción, el sistema produce ficheros inspeccionables que pueden alimentar laboratorios, automatización y validaciones. Esta aproximación es coherente con el objetivo de reducir riesgo en redes OT.
+
+La cuarta decisión es separar cumplimiento determinista y asistencia IA. El motor de cumplimiento calcula hallazgos a partir de evidencias técnicas; la IA solo explica y prioriza esos resultados. Así se evita presentar un modelo generativo como autoridad normativa.
+
+\section{Estrategia visual de la memoria} \label{sec:estrategia-visual}
+
+La memoria se apoyará en tres tipos de material visual. En primer lugar, diagramas conceptuales generados con Mermaid o Excalidraw para explicar arquitectura, modelo de datos, pipeline y flujo de persistencia. En segundo lugar, tablas de trazabilidad inspiradas en los TFM de referencia, que relacionen requisitos, módulos, evidencias y limitaciones. En tercer lugar, capturas reales del prototipo cuando el entorno esté estabilizado: interfaz del builder, inventario NetBox, estado de PostgreSQL, laboratorio Containerlab, artefactos Ansible y consola de nodos FRR.
+
+Esta estrategia evita que el documento sea una narración de código. El objetivo es que cada figura o tabla ayude a defender una decisión de ingeniería o una evidencia de validación.
+
+\section{Criterios de validación} \label{sec:criterios-validacion}
+
+La validación se organiza por capas:
+
+\begin{itemize}
+    \item \textbf{Modelo:} pruebas de schemas, integridad referencial, duplicados, rangos, cables, VLAN, zonas y conductos.
+    \item \textbf{API:} endpoints de salud, topología, proyectos granulares, pipeline, runtime y cumplimiento.
+    \item \textbf{Persistencia:} proyectos, revisiones, entidades granulares, outbox y nodos runtime.
+    \item \textbf{Inventario:} correspondencia entre el modelo GEMEROTIC y NetBox.
+    \item \textbf{Runtime:} correspondencia entre artefactos generados y nodos desplegados en Containerlab.
+    \item \textbf{Automatización:} coherencia de inventario y playbooks Ansible, incluyendo syntax-check.
+    \item \textbf{Frontend:} transformación del estado visual en modelo formal y controles operativos del builder.
+\end{itemize}
+
+La memoria final incorporará resultados de pruebas automatizadas y evidencias recogidas mediante herramientas MCP acotadas. Esta validación por capas permite sostener afirmaciones técnicas sin depender únicamente de capturas visuales.

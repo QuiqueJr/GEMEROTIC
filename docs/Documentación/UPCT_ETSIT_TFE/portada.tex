@@ -1,0 +1,71 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% PLANTILLA TFE LIMPIA (pdfLaTeX compatible)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{titlepage}
+
+\newgeometry{ignoreall,top=2.5cm,bottom=1cm,outer=2.5cm,inner=2.5cm}
+\thispagestyle{empty}
+
+% BANDA IZQUIERDA
+\begin{textblock*}{\paperheight}(-3.02cm,-2.85cm)
+    \includegraphics[height=\paperheight]{PortadaTFG.png}
+\end{textblock*}
+
+% TEXTO SUPERIOR
+\begin{textblock*}{\textwidth}(1.75cm,0cm)
+    \centering
+    % Universidad
+    \setstretch{2}
+    {\Large \MakeUppercase{\Universidad}}\\[0.5cm]
+
+    % Facultad
+    \setstretch{1.5}
+    {\large \MakeUppercase{\Facultad}}\\[0.42cm]
+
+    % Titulación
+    {\normalsize \Titulacion}
+
+    \noindent\rule[-0.22cm]{\textwidth}{5pt} % Línea horizontal
+\end{textblock*}
+
+% Relleno hasta el título
+\vfill
+
+% TÍTULO
+\begin{textblock*}{\textwidth}(1.75cm,-15cm)
+    \color{AzulUPCT}
+    \noindent
+    \begin{minipage}{\textwidth}
+        \begin{spacing}{2.1}
+            \centering
+            {\LARGE \textbf{\titulo}}
+        \end{spacing}
+    \end{minipage}
+\end{textblock*}
+
+% AUTOR Y TUTORES
+\hfill
+
+\begin{textblock*}{7.35cm}(8.65cm,-7.88cm)
+    \color{GrisClaro}
+    \begin{flushleft}
+        % Tipo de trabajo
+        {\normalsize \MakeUppercase{\tipotrabajo}}\\[0.49cm]
+
+        % Autor
+        {\normalsize Autor:}\\ 
+        {\textbf{\miNombre}}\\[0.5cm]
+
+        % Tutores
+        {\normalsize Directores:}\\
+        {\textbf{\misTutores}}\\[0.49cm]
+
+        % Localidad y Fecha
+        {\normalsize \MakeUppercase{\miUbicacion, \number\year}}
+    \end{flushleft}
+\end{textblock*}
+
+\end{titlepage}
+
+\restoregeometry

@@ -1,0 +1,30 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% PLANTILLA TFE
+% Realizado por: Andrés Ruz Nieto
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{appendices}
+\appendix
+\clearpage
+\addappheadtotoc
+\appendixpage
+\chapter{Manual de instalación y despliegue} \label{ch:anexo-instalacion}
+
+Este anexo recogerá los pasos necesarios para levantar el entorno completo del prototipo: NetBox, PostgreSQL, Valkey, API, UI, plugin OT, herramientas de pipeline y asistente IA. La base operativa se encuentra actualmente documentada en el repositorio y se consolidará aquí cuando el flujo final quede estabilizado.
+
+\chapter{Ejemplos de payload TopologyCreate} \label{ch:anexo-payload}
+
+Este anexo incluirá ejemplos representativos del contrato \texttt{TopologyCreate}, mostrando activos, interfaces, VLAN, zonas, conductos y canvas.
+
+\chapter{Artefactos generados} \label{ch:anexo-artefactos}
+
+Este anexo recogerá ejemplos de artefactos generados por el pipeline: topología Containerlab, inventario Ansible, variables, configuraciones Batfish y entrada de cumplimiento.
+
+\chapter{Capturas de interfaz y resultados} \label{ch:anexo-capturas}
+
+Este anexo se reservará para capturas de la UI, inventario en NetBox, ejecución del pipeline, informes de cumplimiento y resultados de validación.
+
+\chapter{Código de interés} \label{ch:anexo-codigo}
+
+Este anexo incluirá fragmentos relevantes de código cuando el prototipo quede estabilizado, priorizando aquellos que expliquen decisiones arquitectónicas: transformación del estado visual, validación del modelo, generación de artefactos y motor de cumplimiento.
+
+\end{appendices}

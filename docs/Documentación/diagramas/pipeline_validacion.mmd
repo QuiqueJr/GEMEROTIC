@@ -1,0 +1,26 @@
+flowchart TB
+    SAVE["Guardado del builder"]
+    PG["PostgreSQL granular<br/>estado visual + entidades"]
+    JOBS["Outbox<br/>netbox.sync / artifacts.generate / deploy.reconcile / validate.compliance"]
+    NETBOX["NetBox<br/>inventario OT derivado"]
+    BUNDLE["Bundle IaC<br/>var/pipeline/proyecto"]
+    CLAB["Containerlab<br/>nodos y enlaces"]
+    ANSIBLE["Ansible<br/>configuración controlada"]
+    FRR["FRR<br/>running-config sincronizable"]
+    BATFISH["Batfish<br/>artefactos de análisis"]
+    OPA["OPA<br/>políticas iniciales"]
+    EVIDENCE["Evidencias<br/>MCP + tests + capturas"]
+
+    SAVE --> PG
+    PG --> JOBS
+    JOBS --> NETBOX
+    JOBS --> BUNDLE
+    BUNDLE --> CLAB
+    BUNDLE --> ANSIBLE
+    CLAB --> FRR
+    BUNDLE --> BATFISH
+    BUNDLE --> OPA
+    NETBOX --> EVIDENCE
+    FRR --> EVIDENCE
+    BATFISH --> EVIDENCE
+    OPA --> EVIDENCE

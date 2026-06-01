@@ -1,0 +1,41 @@
+\chapter{Implementación del Prototipo} \label{ch:implementacion}
+
+\section{Estructura del repositorio} \label{sec:estructura-repositorio}
+
+El repositorio de GEMEROTIC se organiza en bloques diferenciados: backend FastAPI, frontend React, plugin NetBox, plantillas Jinja2, configuración Docker, pruebas automatizadas y documentación. Esta estructura responde a la arquitectura modular descrita en el capítulo anterior. El backend concentra la validación, persistencia, generación de artefactos y endpoints. El frontend proporciona la experiencia de construcción visual. El plugin NetBox añade semántica OT al inventario. Las plantillas y servicios de pipeline transforman el modelo en laboratorio reproducible.
+
+\section{Implementación del modelo de datos} \label{sec:implementacion-modelo}
+
+El modelo se implementa mediante schemas Pydantic v2. La capa física define sites, salas, racks, dispositivos, puertos, patch panels y cables. La capa lógica define interfaces, direccionamiento, MAC y VLAN. La capa de seguridad OT define zonas, conductos, niveles Purdue, Security Levels y criticidad. El schema raíz valida referencias cruzadas para impedir inconsistencias antes de persistir o generar artefactos.
+
+Una parte relevante de la implementación es la traducción desde el estado visual del builder hacia entidades granulares. El importador convierte nodos, enlaces, dibujos, layout físico, interfaces, VLAN, zonas, conductos y configuración de activos en registros diferenciados. Esta decisión permite mantener compatibilidad con la UI actual mientras se prepara una evolución hacia comandos granulares.
+
+\section{Implementación del frontend} \label{sec:implementacion-frontend}
+
+El frontend ofrece un catálogo de activos OT/IT y un lienzo de edición con vistas física, lógica y de seguridad. El usuario puede crear equipos, definir puertos, enlazar activos, dibujar zonas o áreas de planta, editar direccionamiento, asociar VLAN, asignar criticidad y configurar niveles Purdue o Security Levels. La experiencia se orienta a operadores y responsables técnicos que necesitan entender la red desde varios planos.
+
+La UI también incorpora controles runtime: inspección del laboratorio, encendido, apagado y reinicio de nodos, apertura de consolas y sincronización de configuración. Esta capacidad acerca el prototipo a herramientas de simulación de red, pero mantiene una frontera clara entre estado visual, modelo técnico y runtime desplegado.
+
+\section{Implementación del backend} \label{sec:implementacion-backend}
+
+El backend expone endpoints para salud, bootstrap de NetBox, persistencia del estado de topología, snapshot granular, comandos de proyecto, jobs, generación de artefactos, despliegue, power control, terminales runtime y cumplimiento. La lógica de negocio se divide en servicios especializados: cliente NetBox, importadores, store granular, generador de artefactos, runner del pipeline y motor de compliance.
+
+La persistencia granular se apoya en cuatro tablas principales: proyectos, entidades, eventos de outbox y nodos runtime. Esta estructura permite distinguir estado editable, trabajos derivados y estado de ejecución. El worker procesa eventos pendientes de forma independiente, evitando que el guardado del usuario dependa de tareas potencialmente lentas.
+
+\section{Implementación del pipeline} \label{sec:implementacion-pipeline}
+
+El pipeline transforma el modelo persistido en un bundle inspeccionable. Los artefactos se separan por dominio: topología, canvas, inventario, runtime, Ansible, configuraciones y políticas. Containerlab define nodos y enlaces; Ansible aplica configuración; Batfish recibe configuraciones para análisis consultivo; OPA queda preparado para políticas de cumplimiento.
+
+Para los nodos de red se generan ficheros FRR que permiten disponer de consola y configuración tangible. La plantilla prioriza el \texttt{running-config} sincronizado desde el nodo; si no existe, genera una configuración base desde la declaración del activo. Esta decisión permite que el laboratorio evolucione desde el diseño hacia una configuración observada.
+
+\section{Implementación del cumplimiento} \label{sec:implementacion-cumplimiento}
+
+El motor de cumplimiento genera informes estructurados con controles, estados, severidad, evidencias y recomendaciones. Los controles iniciales se relacionan con segmentación, zonas, conductos, criticidad, niveles de seguridad e interfaces de gestión. El asistente IA utiliza el informe como contexto cerrado y no altera la decisión del motor determinista.
+
+Esta separación es importante desde el punto de vista académico: el prototipo puede apoyarse en IA para explicar resultados, pero no delega en ella el juicio de cumplimiento. La validación normativa debe seguir siendo trazable y auditable.
+
+\section{Despliegue y entorno de ejecución} \label{sec:despliegue-entorno}
+
+El entorno de ejecución contempla API, UI, PostgreSQL GEMEROTIC, NetBox con plugin OT, Valkey, worker de outbox, Docker, Containerlab, Ansible y, opcionalmente, Ollama. En servidor, el API se ejecuta con acceso controlado al Docker del host para desplegar laboratorios. En local, la documentación de arranque permite levantar los servicios principales para desarrollo y pruebas.
+
+La diferencia entre edición local y despliegue en servidor debe explicarse con claridad: el entorno de edición permite revisar y modificar la memoria o el código, mientras que el servidor valida el comportamiento del gemelo desplegado con herramientas reales.

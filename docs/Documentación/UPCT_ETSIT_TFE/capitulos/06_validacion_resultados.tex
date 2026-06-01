@@ -1,0 +1,76 @@
+\chapter{Validación y Resultados} \label{ch:validacion-resultados}
+
+\section{Estrategia de pruebas} \label{sec:estrategia-pruebas}
+
+La validación del prototipo combina pruebas automatizadas, compilación de frontend, comprobaciones de backend y evidencias del entorno desplegado. La estrategia se inspira en el enfoque de los TFM de referencia: no basta con describir la arquitectura, sino que debe demostrarse mediante resultados intermedios, tablas y capturas verificables.
+
+Las pruebas automatizadas cubren schemas, endpoints, seguridad, rate limiting, importadores, generación de artefactos, pipeline, persistencia granular, frontend y cliente API. Además, el entorno runtime se valida mediante herramientas MCP de solo lectura que resumen el estado de PostgreSQL, NetBox, Containerlab, Ansible y Docker.
+
+\section{Validación del modelo de datos} \label{sec:validacion-modelo}
+
+La validación del modelo comprueba que una topología cumple las reglas de integridad antes de generar inventario o artefactos. Entre los casos verificados se encuentran identificadores duplicados, referencias inexistentes, cables con puertos reutilizados, VLAN fuera de rango, conductos inválidos, zonas sin dispositivos existentes y formatos incorrectos de direcciones o MAC.
+
+Esta validación es esencial para que el constructor visual no produzca un simple dibujo. Cada operación debe terminar en una estructura técnica coherente. De este modo, el gemelo puede utilizarse como entrada fiable para inventario, despliegue y análisis.
+
+\section{Validación del constructor visual} \label{sec:validacion-constructor}
+
+El constructor visual se valida comprobando que un estado de nodos, enlaces, puertos y atributos se transforma correctamente en entidades técnicas. La UI mantiene separados los elementos gráficos auxiliares del payload operacional. Esta separación impide que anotaciones o dibujos de planta interfieran con la lógica de red, pero permite conservarlos como contexto visual del proyecto.
+
+En la memoria final se incorporarán capturas de las tres vistas principales: física, lógica y seguridad. También se documentará el panel de payload o estado técnico para mostrar la relación entre la edición visual y el modelo generado.
+
+\section{Validación de persistencia e inventario} \label{sec:validacion-inventario}
+
+El proyecto de validación principal, denominado \texttt{nuevo-proyecto-ot}, muestra un estado granular consistente. La base PostgreSQL contiene el proyecto en revisión 5, con estado de NetBox sincronizado, despliegue listo y validación lista. El recuento granular incluye 15 activos visuales, 14 conexiones, 15 dispositivos físicos, 64 interfaces lógicas, 4 VLAN, 4 zonas de seguridad y 6 conductos.
+
+NetBox refleja el mismo alcance de inventario: 15 dispositivos, 64 interfaces, 14 cables, 1 site, 1 location, 1 rack, 4 VLAN, 4 zonas OT y 6 conductos. Esta correspondencia demuestra que NetBox actúa como inventario derivado coherente con el estado persistido por GEMEROTIC.
+
+\begin{table}[H]
+    \centering
+    \small
+    \renewcommand{\arraystretch}{1.35}
+    \begin{tabularx}{\textwidth}{>{\bfseries}p{4cm}p{3cm}X}
+        \toprule
+        Evidencia & Resultado & Interpretación \\
+        \midrule
+        PostgreSQL granular & 15 activos, 14 conexiones & El estado editable está persistido por entidades. \\
+        NetBox & 15 dispositivos, 64 interfaces, 14 cables & El inventario derivado coincide con el modelo. \\
+        Zonas y conductos & 4 zonas, 6 conductos & La semántica OT se conserva fuera del lienzo visual. \\
+        Outbox & Eventos derivados completados & Sincronización, artefactos, despliegue y validación quedan trazados. \\
+        \bottomrule
+    \end{tabularx}
+    \caption{Evidencias de persistencia e inventario para el proyecto de validación.}
+    \label{tab:evidencias-persistencia-inventario}
+\end{table}
+
+\section{Validación del pipeline y runtime} \label{sec:validacion-pipeline}
+
+El laboratorio \texttt{nuevo-proyecto-ot} despliega 15 nodos y 14 enlaces en Containerlab. La distribución de imágenes incluye 8 nodos FRR para activos de red y 7 nodos Alpine para hosts o activos OT genéricos. La topología generada coincide con el runtime en ejecución: no hay nodos esperados ausentes ni nodos extra.
+
+Ansible valida un inventario de 15 nodos y 28 interfaces, sin identificadores duplicados ni contenedores ausentes. El playbook generado supera el \texttt{syntax-check}. Estas evidencias permiten afirmar que el pipeline no solo produce archivos, sino que genera artefactos coherentes con un laboratorio desplegable.
+
+\section{Validación de cumplimiento} \label{sec:validacion-cumplimiento}
+
+La capa de cumplimiento se valida mediante controles deterministas sobre la topología. Los resultados se clasifican como \texttt{pass}, \texttt{fail}, \texttt{warn} o \texttt{not\_assessed}, acompañados de evidencias. En la versión actual, el objetivo es demostrar trazabilidad y utilidad técnica, no emitir una certificación legal.
+
+La asistencia IA se evalúa como capa de explicación. Su entrada debe ser el informe ya calculado, y sus respuestas deben mantenerse dentro del alcance de la topología y de la baseline modelada. Esta restricción evita que la IA invente controles o sustituya el criterio experto.
+
+\section{Resultados obtenidos} \label{sec:resultados-obtenidos}
+
+Los resultados actuales permiten defender la viabilidad del enfoque:
+
+\begin{itemize}
+    \item El prototipo mantiene un modelo persistente y granular del gemelo.
+    \item El inventario derivado en NetBox coincide con el estado del proyecto.
+    \item El pipeline genera artefactos coherentes para Containerlab y Ansible.
+    \item El runtime despliega nodos y enlaces acordes con la topología.
+    \item Los nodos FRR proporcionan consola tangible para activos de red.
+    \item El sistema conserva el trabajo del usuario aunque las integraciones derivadas sean asíncronas.
+\end{itemize}
+
+En una iteración posterior se incorporarán capturas de UI, NetBox, runtime, consola y artefactos para completar la evidencia visual.
+
+\section{Limitaciones observadas} \label{sec:limitaciones-observadas}
+
+Las limitaciones actuales se concentran en cuatro ámbitos. Primero, Batfish está integrado como generación de artefactos y validación consultiva pendiente de ejecución completa desde la plataforma. Segundo, OPA no se utiliza todavía como motor obligatorio de auditoría avanzada. Tercero, el RAG normativo completo queda como línea de evolución. Cuarto, los activos OT genéricos no se representan aún con imágenes de fabricante o perfiles runtime específicos.
+
+Estas limitaciones no invalidan el prototipo: delimitan el estado alcanzado y justifican el trabajo futuro. En un TFM de ingeniería aplicada, esta separación entre arquitectura objetivo, prototipo implementado y evolución prevista aporta rigor y evita sobredimensionar los resultados.

@@ -1,0 +1,9 @@
+flowchart TB
+    L1["Capa 1: Infraestructura física<br/>sites, salas, racks, dispositivos, puertos, cables"]
+    L2["Capa 2: Conectividad lógica<br/>interfaces, IPv4/IPv6, MAC, VLAN"]
+    L3["Capa 3: Seguridad OT<br/>zonas, conductos, Purdue, Security Levels"]
+    ROOT["TopologyCreate<br/>validación referencial cruzada"]
+
+    L1 --> ROOT
+    L2 --> ROOT
+    L3 --> ROOT

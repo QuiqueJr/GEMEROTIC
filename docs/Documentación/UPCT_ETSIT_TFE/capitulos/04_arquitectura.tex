@@ -1,0 +1,162 @@
+\chapter{Arquitectura de GEMEROTIC} \label{ch:arquitectura}
+
+\section{Visión general} \label{sec:vision-general-arquitectura}
+
+GEMEROTIC se diseña como un constructor de gemelos digitales para redes OT/IT. La plataforma permite que el usuario modele una red industrial desde una interfaz visual, pero transforma ese diseño en una representación técnica persistente, validable y capaz de generar inventario, artefactos y runtime de laboratorio.
+
+\begin{figure}[H]
+    \centering
+    \setlength{\fboxsep}{8pt}
+    \fbox{
+    \begin{minipage}{0.92\textwidth}
+        \centering
+        \textbf{UI React Flow} $\rightarrow$
+        \textbf{Modelo GEMEROTIC} $\rightarrow$
+        \textbf{PostgreSQL granular + outbox} $\rightarrow$ \\
+        \vspace{0.15cm}
+        \textbf{NetBox / Artefactos Jinja2} $\rightarrow$
+        \textbf{Containerlab + Ansible} $\rightarrow$
+        \textbf{Validación y cumplimiento}
+    \end{minipage}}
+    \caption{Flujo arquitectónico global de GEMEROTIC.}
+    \label{fig:arquitectura-global}
+\end{figure}
+
+El elemento central no es NetBox ni el laboratorio, sino el modelo GEMEROTIC persistido de forma granular. NetBox actúa como inventario enriquecido derivado. Containerlab, Ansible, Batfish y OPA actúan como consumidores de artefactos. Esta separación permite que el gemelo sea editable, auditable y reproducible sin depender de que cada destino externo esté disponible en todo momento.
+
+\section{Principios arquitectónicos} \label{sec:principios-arquitectonicos}
+
+La arquitectura se apoya en seis principios:
+
+\begin{itemize}
+    \item \textbf{Modelo técnico antes que dibujo:} el lienzo es la interfaz de entrada, pero el resultado relevante es un modelo formal.
+    \item \textbf{Persistencia granular:} el estado editable se almacena por entidades, revisiones y eventos, no solo como una imagen o snapshot monolítico.
+    \item \textbf{Inventario derivado:} NetBox documenta activos y relaciones, pero no sustituye al modelo operativo del gemelo.
+    \item \textbf{Reproducibilidad:} los artefactos se generan desde el último estado persistido mediante plantillas.
+    \item \textbf{Validación fuera de producción:} las pruebas se desplazan a laboratorio, análisis estático o cumplimiento consultivo.
+    \item \textbf{Evolución modular:} observabilidad, OPA avanzado, RAG normativo y perfiles runtime pueden incorporarse sin rediseñar el núcleo.
+\end{itemize}
+
+\section{Modelo de datos en tres capas} \label{sec:modelo-tres-capas}
+
+El modelo de datos divide la topología en tres capas. Esta separación evita mezclar responsabilidades y permite mapear conceptos industriales con claridad.
+
+\begin{table}[H]
+    \centering
+    \small
+    \renewcommand{\arraystretch}{1.4}
+    \begin{tabularx}{\textwidth}{>{\bfseries}p{2.5cm}p{4.0cm}X}
+        \toprule
+        Capa & Entidades & Finalidad \\
+        \midrule
+        Física & Sites, salas, racks, dispositivos, puertos, patch panels y cables & Representar infraestructura tangible, ubicación y terminaciones físicas. \\
+        Lógica & Interfaces, MAC, IPv4/IPv6 y VLAN & Representar conectividad lógica y servicios asociados a puertos físicos. \\
+        Seguridad OT & Zonas, conductos, niveles Purdue, Security Levels y criticidad & Representar segmentación industrial y requisitos de comunicación entre dominios. \\
+        \bottomrule
+    \end{tabularx}
+    \caption{Modelo de datos en tres capas empleado por GEMEROTIC.}
+    \label{tab:modelo-tres-capas}
+\end{table}
+
+Esta estructura permite validar integridad referencial: un cable debe terminar en puertos existentes, una VLAN debe referenciar interfaces válidas, una zona debe contener dispositivos existentes y un conducto debe conectar zonas distintas. La separación también facilita explicar el sistema ante un auditor: cada dato pertenece a una capa concreta y tiene un propósito técnico definido.
+
+\section{Constructor visual de topologías} \label{sec:constructor-visual}
+
+El frontend se implementa como un constructor visual basado en React Flow. La interfaz ofrece vistas diferenciadas para la capa física, lógica y de seguridad. En la vista física se trabaja con ubicaciones, mapas, racks, activos y cableado. En la vista lógica se revisan enlaces, interfaces, direcciones y VLAN. En la vista de seguridad se modelan zonas, conductos, criticidad, niveles Purdue y Security Levels.
+
+El enfoque visual se inspira en herramientas de diseño y simulación de red, pero el objetivo no es crear un lienzo libre sin semántica. Cada activo del canvas puede transformarse en una entidad técnica. Los dibujos auxiliares, mapas o anotaciones se mantienen como estado visual separado para no contaminar el payload operacional.
+
+\begin{figure}[H]
+    \centering
+    \setlength{\fboxsep}{8pt}
+    \fbox{
+    \begin{minipage}{0.9\textwidth}
+        \centering
+        \textbf{Estado visual editable} \\
+        nodos, enlaces, puertos, vista activa, mapas, dibujos \\
+        \vspace{0.15cm}
+        $\downarrow$ normalización, validación y persistencia granular \\
+        \vspace{0.15cm}
+        \textbf{Modelo GEMEROTIC} \\
+        entidades físicas, lógicas, seguridad OT y configuración por activo
+    \end{minipage}}
+    \caption{Transformación del estado visual en modelo técnico.}
+    \label{fig:estado-visual-modelo}
+\end{figure}
+
+\section{Backend, API y persistencia granular} \label{sec:backend-api}
+
+El backend se implementa con FastAPI y Pydantic v2. FastAPI proporciona los endpoints y la documentación OpenAPI \cite{fastapidocs}, mientras que Pydantic valida contratos de entrada y salida \cite{pydanticdocs}. La API se organiza en superficies funcionales: salud, NetBox, topología, proyectos granulares, pipeline y cumplimiento.
+
+La persistencia granular se implementa con PostgreSQL y SQLAlchemy. El sistema almacena proyectos, entidades de proyecto, eventos de outbox y nodos runtime. Cada guardado del builder puede traducirse a entidades como \texttt{ui.asset}, \texttt{ui.connection}, \texttt{physical.device}, \texttt{logical.interface}, \texttt{security.zone} o \texttt{asset.config}. Esta estructura permite evolucionar hacia edición granular sin perder compatibilidad con el snapshot visual de la interfaz.
+
+El outbox desacopla el guardado del usuario de los trabajos derivados. Cuando se persiste una topología, el sistema encola eventos como sincronización de NetBox, generación de artefactos, reconciliación de despliegue y validación de cumplimiento. Si una integración falla, el estado editable no se pierde.
+
+\section{Inventario enriquecido con NetBox} \label{sec:inventario-netbox}
+
+NetBox se utiliza como repositorio estructurado de inventario \cite{netboxdocs}. GEMEROTIC sincroniza dispositivos, interfaces, cables, ubicaciones, racks, VLAN y metadatos relevantes. Además, un plugin específico añade conceptos OT como zonas de seguridad y conductos.
+
+La decisión importante es que NetBox no se presenta como fuente única de verdad absoluta. En este trabajo, el estado operativo del gemelo reside en GEMEROTIC; NetBox documenta y enriquece ese estado como destino derivado. Esta elección encaja con el objetivo del proyecto: ayudar a una organización industrial a construir inventario técnico fiable sin condicionar todo el flujo a una herramienta externa.
+
+\section{Generación de artefactos} \label{sec:generacion-artefactos}
+
+El modelo persistido se transforma en artefactos mediante plantillas Jinja2 \cite{jinjadocs}. La salida incluye topología Containerlab, inventarios y playbooks Ansible, artefactos Batfish, entradas para OPA, JSON intermedios y manifiestos. Esta separación permite revisar cada etapa y evita que el despliegue sea una caja negra.
+
+\begin{table}[H]
+    \centering
+    \small
+    \renewcommand{\arraystretch}{1.35}
+    \begin{tabularx}{\textwidth}{>{\bfseries}p{3.3cm}X}
+        \toprule
+        Destino & Artefactos principales \\
+        \midrule
+        Containerlab & Topología de nodos, enlaces, imágenes y montajes runtime. \\
+        Ansible & Inventario, variables y playbooks de configuración. \\
+        Batfish & Configuraciones y perfiles mixtos para análisis consultivo. \\
+        OPA & Entrada de evaluación y políticas Rego iniciales. \\
+        Runtime FRR & Ficheros \texttt{frr.conf}, \texttt{daemons} y \texttt{vtysh.conf} por nodo de red. \\
+        \bottomrule
+    \end{tabularx}
+    \caption{Artefactos derivados del modelo GEMEROTIC.}
+    \label{tab:artefactos-derivados}
+\end{table}
+
+\section{Runtime transparente del gemelo} \label{sec:runtime-transparente}
+
+El runtime permite desplegar el gemelo con Containerlab y configurar nodos mediante Ansible. Los activos de red como routers, switches y firewalls utilizan FRR para disponer de una consola realista en la demo. Los activos OT o host genéricos se representan con imágenes Linux ligeras mientras se define una taxonomía futura de perfiles runtime por fabricante y tipo de activo.
+
+La interfaz incorpora controles de encendido, apagado y reinicio del gemelo completo o de nodos individuales. También permite abrir terminales interactivas para activos desplegados. La sesión de terminal utiliza tokens efímeros HMAC para que la API key no viaje como parámetro persistente en el WebSocket. En nodos FRR, el sistema puede sincronizar el \texttt{running-config}, almacenarlo como estado runtime, actualizar la configuración del activo y mantener compatibilidad con el snapshot visual.
+
+\section{Validación y cumplimiento} \label{sec:compliance-ia}
+
+La validación se plantea como consultiva. Batfish se integra mediante generación de artefactos y perfiles mixtos, pero su papel no debe bloquear la existencia del gemelo. En redes legacy, el primer objetivo es poder reproducir y analizar la red; los hallazgos deben orientar mejoras, no impedir la documentación.
+
+El motor de cumplimiento evalúa evidencias técnicas de la topología y devuelve estados como \texttt{pass}, \texttt{fail}, \texttt{warn} o \texttt{not\_assessed}. La asistencia IA se sitúa encima del informe determinista: explica, prioriza y responde preguntas dentro del alcance del modelo. No certifica cumplimiento legal ni sustituye una auditoría formal.
+
+\section{Estado de implementación de la arquitectura} \label{sec:estado-implementacion-arquitectura}
+
+\begin{longtable}{p{4.0cm}p{3.0cm}p{7.2cm}}
+    \caption{Estado de implementación de los módulos principales de GEMEROTIC.}
+    \label{tab:estado-implementacion}\\
+    \toprule
+    Módulo & Estado & Observaciones \\
+    \midrule
+    \endfirsthead
+    \toprule
+    Módulo & Estado & Observaciones \\
+    \midrule
+    \endhead
+    Modelo de tres capas & Implementado & Schemas Pydantic con validaciones referenciales entre capas. \\
+    Constructor visual & Implementado & UI con vistas física, lógica y seguridad; estado visual separado del modelo técnico. \\
+    Persistencia granular & Implementado & PostgreSQL almacena proyectos, entidades, revisiones, outbox y runtime nodes. \\
+    Inventario NetBox & Implementado & Sincronización derivada de dispositivos, interfaces, cables, VLAN, zonas y conductos. \\
+    Generación de artefactos & Implementado & Jinja2 produce bundles para Containerlab, Ansible, Batfish, OPA y manifiestos. \\
+    Runtime transparente & Implementado & Despliegue Containerlab/Ansible desde el último estado guardado, con controles desde UI. \\
+    Terminales FRR & Implementado & Consola WebSocket con token efímero y sincronización de \texttt{running-config}. \\
+    Batfish & Parcial & Generación de artefactos y perfiles mixtos; análisis completo desde plataforma pendiente. \\
+    Cumplimiento determinista & Implementado inicial & Baseline técnica trazable a IEC 62443, NIS2 e ISO/IEC 27001. \\
+    Asistencia IA & Implementado inicial & Capa explicativa local/Ollama sobre informe determinista. \\
+    Observabilidad & Futuro & Integración prevista con LibreNMS y Oxidized. \\
+    Auditoría OPA avanzada & Futuro & Políticas de cumplimiento completas pendientes de maduración. \\
+    \bottomrule
+\end{longtable}

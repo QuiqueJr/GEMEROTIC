@@ -1,0 +1,25 @@
+flowchart LR
+    AMC["Contexto industrial<br/>AMC Global / redes OT"]
+    UI["UI React Flow<br/>constructor visual OT/IT"]
+    MODEL["Modelo GEMEROTIC<br/>físico + lógico + seguridad OT"]
+    PG["PostgreSQL granular<br/>estado editable + revisiones"]
+    OUTBOX["Outbox<br/>trabajos derivados"]
+    NETBOX["NetBox<br/>inventario enriquecido"]
+    ART["Jinja2<br/>artefactos reproducibles"]
+    LAB["Containerlab + Ansible<br/>runtime transparente"]
+    FRR["FRR / Alpine<br/>consola y nodos demo"]
+    VALID["Batfish / OPA<br/>validación consultiva"]
+    COMP["Compliance determinista<br/>evidencias y hallazgos"]
+    AI["Asistencia IA<br/>explicación acotada"]
+
+    AMC --> UI
+    UI --> MODEL
+    MODEL --> PG
+    PG --> OUTBOX
+    OUTBOX --> NETBOX
+    OUTBOX --> ART
+    ART --> LAB
+    LAB --> FRR
+    ART --> VALID
+    MODEL --> COMP
+    COMP --> AI

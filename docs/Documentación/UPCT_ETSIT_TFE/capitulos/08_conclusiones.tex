@@ -1,0 +1,34 @@
+\chapter{Conclusiones y Trabajo Futuro} \label{ch:conclusiones}
+
+\section{Conclusiones técnicas} \label{sec:conclusiones-tecnicas}
+
+El trabajo demuestra la viabilidad de plantear un constructor de gemelos digitales para redes OT/IT a partir de un modelo formal, una interfaz visual y un pipeline de artefactos reproducibles. La arquitectura propuesta permite separar estado visual, modelo técnico, inventario derivado y runtime de laboratorio. Esta separación es fundamental para evitar que el sistema sea solo una herramienta de dibujo o una automatización rígida.
+
+La persistencia granular y el outbox representan una evolución relevante del prototipo. Permiten guardar el trabajo del usuario, desacoplar integraciones externas y procesar tareas derivadas sin bloquear la edición. Además, el uso de Containerlab, Ansible y FRR muestra que el gemelo puede pasar de modelo a laboratorio interactivo.
+
+\section{Conclusiones de ciberseguridad OT} \label{sec:conclusiones-ot}
+
+Desde la perspectiva de ciberseguridad OT, el enfoque aporta valor porque permite analizar sin intervenir directamente sobre producción. La plataforma facilita estructurar inventario, segmentación, comunicaciones, criticidad y evidencias, elementos necesarios para avanzar en ciber-resiliencia y conformidad con marcos como ISA/IEC 62443, NIS2, NIST SP 800-82 y ENS.
+
+La colaboración con AMC Global refuerza la motivación industrial del trabajo. El problema no es abstracto: las organizaciones con varias plantas y procesos críticos necesitan herramientas que permitan comprender y validar sus redes antes de ejecutar cambios que puedan afectar a la continuidad operacional.
+
+\section{Limitaciones del prototipo} \label{sec:limitaciones-prototipo}
+
+El prototipo no sustituye una auditoría formal ni certifica cumplimiento legal. Tampoco incorpora todavía observabilidad completa, análisis Batfish ejecutado de extremo a extremo desde la plataforma, auditoría OPA avanzada, perfiles runtime específicos por fabricante ni RAG normativo con trazabilidad completa de fuentes.
+
+Estas limitaciones delimitan el alcance desarrollado. La aportación principal del TFM no es cerrar todas las capacidades de una plataforma industrial madura, sino diseñar una arquitectura viable, implementar sus bases y validar que el enfoque puede generar inventario, artefactos y evidencias útiles.
+
+\section{Trabajo futuro} \label{sec:trabajo-futuro}
+
+Las líneas de trabajo futuro incluyen:
+
+\begin{itemize}
+    \item Integración de observabilidad con LibreNMS y Oxidized para comparar estado diseñado, desplegado y observado.
+    \item Auditoría avanzada de cumplimiento mediante OPA y políticas Rego más completas.
+    \item Ejecución completa de análisis Batfish desde la plataforma, con consultas de reachability, aislamiento y cambios de configuración.
+    \item Incorporación de un sistema RAG normativo con fuentes controladas, citas trazables y separación clara entre evidencia, recomendación y explicación.
+    \item Definición de runtime profiles por tipo de activo OT, fabricante, licencia y función.
+    \item Gestión multiusuario, autenticación avanzada, gobierno de proyectos y control de permisos por rol.
+    \item Validación con escenarios industriales reales o pilotos controlados en colaboración con empresas.
+    \item Preparación de una metodología de adopción para organizaciones con inventario incompleto o redes legacy.
+\end{itemize}

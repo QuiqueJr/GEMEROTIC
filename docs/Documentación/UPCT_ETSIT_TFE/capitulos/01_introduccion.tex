@@ -1,0 +1,43 @@
+\chapter{Introducción} \label{ch:introduccion}
+
+\section{Contexto y motivación} \label{sec:contexto-motivacion}
+
+La digitalización de la industria ha incrementado la interdependencia entre las redes corporativas IT y las redes industriales OT. En una planta moderna conviven sistemas de planificación, servidores, estaciones de ingeniería, controladores, HMI, PLC, sensores, actuadores, comunicaciones industriales y servicios conectados. Esta convergencia facilita la supervisión y la eficiencia operativa, pero también amplía la superficie de exposición frente a incidentes de ciberseguridad.
+
+El trabajo se contextualiza en una colaboración con AMC Global, grupo empresarial español especializado en el sector de alimentación y bebidas naturales. La compañía desarrolla actividad industrial con múltiples centros de producción e infraestructuras IT y OT relevantes para la continuidad del negocio. La información pública de la compañía describe un grupo global orientado a la producción y comercialización de productos naturales, con plantas internacionales, una fuerte actividad de innovación y un volumen significativo de producción y referencias comerciales \cite{amcglobal,amcnatural}. En el marco del trabajo, AMC Global se considera un escenario industrial de referencia para estudiar cómo un gemelo digital puede apoyar la documentación, análisis y mejora continua de redes OT.
+
+El punto de partida es común en muchas organizaciones industriales: las redes OT son críticas para la operación, pero no siempre existe una documentación completa, actualizada y conectada con criterios de ciberseguridad. Además, las auditorías intrusivas, el pentesting o la modificación directa de configuraciones sobre producción pueden suponer un riesgo operativo. Un error en una regla de firewall, una actualización no verificada o una prueba de escaneo agresiva pueden afectar a la disponibilidad de una línea de producción. Por ello, resulta necesario disponer de entornos seguros donde diseñar, reproducir y validar cambios antes de actuar sobre la instalación real.
+
+\section{Problema abordado} \label{sec:problema-abordado}
+
+El problema que aborda este trabajo es la dificultad de modelar, inventariar y validar redes OT de forma estructurada sin interferir en la operación real. Aunque existen herramientas maduras para inventario, automatización o simulación de redes, muchas de ellas parten de entornos bien documentados, redes modernas o necesidades propias de IT. En cambio, las redes OT suelen incorporar equipos legacy, protocolos industriales, restricciones de disponibilidad, segmentación por zonas y conductos, y requisitos normativos específicos.
+
+La hipótesis de partida es que un constructor de gemelos digitales orientado a redes OT puede reducir esta brecha. La herramienta debe permitir dibujar y editar la red como si se tratara de un entorno de diseño asistido, pero su resultado debe ser un modelo técnico formal, no un diagrama aislado. Ese modelo debe poder transformarse en inventario, artefactos reproducibles, despliegues de laboratorio y evidencias de validación.
+
+\section{Objetivo general} \label{sec:objetivo-general}
+
+El objetivo general del Trabajo Fin de Máster es diseñar la arquitectura y establecer las bases de un constructor de gemelos digitales para redes industriales OT/IT, capaz de representar activos, conectividad, segmentación y configuración de una red OT, generar inventario técnico y facilitar validaciones de ciberseguridad en un entorno seguro y controlado.
+
+\section{Objetivos específicos} \label{sec:objetivos-especificos}
+
+Para alcanzar el objetivo general se plantean los siguientes objetivos específicos:
+
+\begin{enumerate}[label=\arabic*.]
+    \item Analizar las necesidades de ciberseguridad, inventario y mejora continua en redes industriales OT, tomando como referencia el contexto de colaboración con AMC Global.
+    \item Estudiar los marcos normativos y técnicos aplicables a redes OT, especialmente ISA/IEC 62443, NIST SP 800-82, NIS2 y el Esquema Nacional de Seguridad.
+    \item Diseñar un modelo de datos que separe infraestructura física, conectividad lógica y seguridad OT, incorporando activos, puertos, cables, interfaces, VLAN, zonas, conductos, niveles Purdue y niveles de seguridad.
+    \item Definir la arquitectura de GEMEROTIC como constructor visual de gemelos digitales, diferenciando el estado editable del proyecto, el inventario derivado y los artefactos de validación.
+    \item Implementar y documentar un prototipo funcional que permita persistir el estado del gemelo, sincronizar inventario técnico, generar artefactos reproducibles y reconciliar un runtime de laboratorio.
+    \item Validar la arquitectura mediante pruebas automatizadas y evidencias por capa: modelo, API, frontend, persistencia granular, inventario NetBox, artefactos, Containerlab, Ansible y consola runtime.
+    \item Identificar limitaciones y líneas de evolución hacia auditoría avanzada, RAG normativo, observabilidad y validación más profunda de configuraciones de red.
+\end{enumerate}
+
+\section{Alcance del trabajo} \label{sec:alcance-trabajo}
+
+El alcance del trabajo se centra en la arquitectura y prototipo de un constructor de gemelos digitales para redes OT. La memoria no se redacta como una bitácora de desarrollo por pasos, sino como una propuesta de ingeniería aplicada: se describe el problema industrial, se justifican las decisiones de diseño, se explica la arquitectura del sistema y se presentan evidencias de validación.
+
+El prototipo no pretende sustituir una auditoría formal ni certificar automáticamente el cumplimiento de una organización. Su finalidad es crear una representación técnica controlada que permita documentar, analizar y ensayar cambios con menor riesgo. Las capacidades de cumplimiento se plantean como apoyo a la auditoría y a la mejora continua, no como decisión legal autónoma.
+
+\section{Estructura del documento} \label{sec:estructura-documento}
+
+El capítulo~\ref{ch:estado-arte} presenta el estado del arte y el marco normativo asociado a redes OT, gemelos digitales, inventario y validación de ciberseguridad. El capítulo~\ref{ch:metodologia} describe la metodología del trabajo, los requisitos y las decisiones de diseño. El capítulo~\ref{ch:arquitectura} desarrolla la arquitectura de GEMEROTIC. El capítulo~\ref{ch:implementacion} resume la implementación del prototipo. El capítulo~\ref{ch:validacion-resultados} recoge la estrategia de validación y los resultados previstos. El capítulo~\ref{ch:valor-aplicabilidad} analiza la aplicabilidad industrial del enfoque. Finalmente, el capítulo~\ref{ch:conclusiones} presenta las conclusiones y líneas de trabajo futuro.

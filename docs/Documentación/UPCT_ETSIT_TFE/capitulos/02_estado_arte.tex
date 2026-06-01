@@ -1,0 +1,43 @@
+\chapter{Estado del Arte y Marco Normativo} \label{ch:estado-arte}
+
+\section{Redes industriales OT/IT} \label{sec:redes-ot-it}
+
+Las redes OT integran sistemas encargados de monitorizar o modificar procesos físicos: PLC, HMI, SCADA, RTU, sensores, actuadores, estaciones de ingeniería, sistemas de historización y redes de planta. A diferencia de una red IT convencional, su objetivo principal no es únicamente proteger información, sino preservar la continuidad, seguridad y disponibilidad de procesos industriales.
+
+La convergencia IT/OT permite centralizar datos, optimizar la producción y conectar plantas con servicios corporativos, pero también introduce dependencias nuevas. Un incidente que en IT podría limitarse a pérdida de confidencialidad o indisponibilidad temporal puede traducirse en OT en parada de línea, pérdida de producción, afectación de seguridad física o incumplimiento regulatorio. Por ello, la arquitectura de red, la segmentación y la trazabilidad de cambios son elementos esenciales.
+
+\section{Particularidades de la ciberseguridad OT} \label{sec:particularidades-ot}
+
+La ciberseguridad OT presenta restricciones específicas. Los equipos tienen ciclos de vida largos, pueden ejecutar firmware antiguo, no siempre admiten agentes de seguridad y suelen operar con protocolos diseñados antes de que la autenticación o el cifrado fueran requisitos comunes. Además, muchas instalaciones industriales no pueden detenerse con facilidad para aplicar cambios o ejecutar pruebas.
+
+Esta realidad hace que las auditorías técnicas deban plantearse con precaución. Un escaneo activo, una prueba de explotación o una actualización no ensayada puede generar comportamientos inesperados. NIST SP 800-82 destaca precisamente que la tecnología operacional debe protegerse considerando requisitos particulares de rendimiento, fiabilidad y seguridad física \cite{nist80082}. En este contexto, un gemelo digital aporta un entorno intermedio para documentar, ensayar y validar antes de intervenir sobre producción.
+
+\section{Modelos de referencia para entornos industriales} \label{sec:modelos-referencia}
+
+El modelo Purdue y la norma ISA-95 se utilizan como referencias para ordenar la arquitectura funcional de una instalación industrial. Aunque no son modelos de seguridad por sí mismos, ayudan a diferenciar niveles de campo, control, supervisión, operaciones, DMZ industrial y red corporativa. Esta separación facilita analizar rutas de comunicación, dependencias entre dominios y exposición de activos críticos.
+
+ISA/IEC 62443 aporta conceptos directamente aplicables a la ciberseguridad OT, especialmente zonas, conductos y niveles de seguridad \cite{isa62443}. Una zona agrupa activos con requisitos de seguridad similares, mientras que un conducto define comunicaciones permitidas entre zonas. Estos conceptos encajan de forma natural con un gemelo digital, porque convierten la segmentación en un objeto modelable, auditable y validable.
+
+\section{Normativas y estándares aplicables} \label{sec:normativas}
+
+La Directiva NIS2 refuerza en la Unión Europea las obligaciones de gestión de riesgos, continuidad, supervisión y notificación de incidentes para entidades esenciales e importantes \cite{nis2}. En España, el Esquema Nacional de Seguridad establece principios básicos y requisitos mínimos orientados a proteger información y servicios, incluyendo gestión basada en riesgos, prevención, detección, respuesta, vigilancia continua y reevaluación periódica \cite{ens}.
+
+Estos marcos no convierten automáticamente una herramienta técnica en una solución de cumplimiento, pero sí proporcionan una guía para estructurar evidencias. En el caso de GEMEROTIC, las referencias normativas sirven para justificar qué información debe recoger el modelo, qué relaciones son relevantes y cómo pueden presentarse hallazgos técnicos de forma trazable.
+
+\section{Gemelos digitales aplicados a ciberseguridad} \label{sec:gemelos-digitales}
+
+Un gemelo digital aplicado a ciberseguridad debe ir más allá de una representación visual. Para aportar valor en redes OT, debe mantener una relación explícita entre activos, ubicaciones, puertos, cableado, interfaces, VLAN, configuración, zonas, conductos y evidencias de validación. Solo así puede convertirse en una herramienta útil para análisis de cambios, preparación de auditorías y mejora continua.
+
+En este trabajo se adopta el concepto de constructor de gemelos digitales como un entorno de diseño técnico. El usuario puede trabajar visualmente, pero el sistema debe generar un modelo formal persistente. La analogía con una herramienta tipo AutoCAD resulta útil: el lienzo permite diseñar, pero el valor real reside en que lo dibujado tiene estructura, propiedades y capacidad de derivar artefactos técnicos.
+
+\section{Herramientas relacionadas} \label{sec:herramientas-relacionadas}
+
+NetBox se utiliza en el sector como plataforma de inventario de red e IPAM/DCIM \cite{netboxdocs}. Containerlab permite definir laboratorios de red basados en contenedores \cite{containerlabdocs}. Ansible facilita la automatización declarativa de configuraciones \cite{ansibledocs}. Batfish proporciona análisis estático de configuraciones de red \cite{batfish}. OPA permite expresar políticas como código \cite{opadocs}. FastAPI, Pydantic, Jinja2 y React Flow aportan la base software del prototipo \cite{fastapidocs,pydanticdocs,jinjadocs,reactflowdocs}.
+
+La aportación de GEMEROTIC no consiste en sustituir estas herramientas, sino en integrarlas en una arquitectura orientada a redes OT. El modelo de tres capas y la persistencia granular permiten coordinar inventario, artefactos y runtime desde una representación común.
+
+\section{Limitaciones de las aproximaciones existentes} \label{sec:limitaciones-existentes}
+
+Muchas soluciones existentes abordan una parte del problema: inventario, automatización, simulación, análisis de configuración o cumplimiento. Sin embargo, en una organización industrial el reto suele estar en conectar esas piezas sin asumir que la red está perfectamente documentada ni que puede modificarse sin riesgo.
+
+GEMEROTIC se sitúa en ese hueco: prioriza la construcción del conocimiento técnico de la red, la generación de inventario enriquecido y la validación en laboratorio antes de cualquier cambio sobre producción. Esta decisión encaja especialmente con organizaciones industriales que necesitan avanzar en ciber-resiliencia y conformidad normativa sin comprometer la continuidad operacional.
